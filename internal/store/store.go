@@ -510,8 +510,12 @@ type CountItem struct {
 	Count int    `json:"count"`
 }
 
-// Stats computes aggregate stats.
-func (s *Store) Stats() (*Stats, error) {
+// Stats computes aggregate stats. topCompaniesLimit bounds the top-companies
+// ranking (0 falls back to a sane default).
+func (s *Store) Stats(topCompaniesLimit int) (*Stats, error) {
+	if topCompaniesLimit <= 0 {
+		topCompaniesLimit = 50
+	}
 	st := &Stats{ByStatus: map[string]int{}, BySource: map[string]int{}, SalaryBands: map[string]int{}}
 	s.db.QueryRow(`SELECT COUNT(*) FROM jobs`).Scan(&st.Total)
 	s.db.QueryRow(`SELECT COUNT(*) FROM jobs WHERE salary_high IS NOT NULL`).Scan(&st.WithSalary)
@@ -537,7 +541,7 @@ func (s *Store) Stats() (*Stats, error) {
 		}
 		sr.Close()
 	}
-	sr, _ = s.db.Query(`SELECT COALESCE(company,'Unknown'), COUNT(*) c FROM jobs GROUP BY company ORDER BY c DESC LIMIT 10`)
+	sr, _ = s.db.Query(`SELECT COALESCE(company,'Unknown'), COUNT(*) c FROM jobs GROUP BY company ORDER BY c DESC LIMIT ?`, topCompaniesLimit)
 	if sr != nil {
 		for sr.Next() {
 			var k string

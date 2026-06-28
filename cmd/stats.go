@@ -5,8 +5,11 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"linkedin-jobs/internal/config"
 	"linkedin-jobs/internal/render"
 )
+
+var statsTop int
 
 var statsCmd = &cobra.Command{
 	Use:   "stats",
@@ -17,7 +20,12 @@ var statsCmd = &cobra.Command{
 			die("failed to open DB: %v", err)
 		}
 		defer st.Close()
-		s, err := st.Stats()
+		settings, _ := config.LoadSettings()
+		limit := settings.Stats.TopCompaniesLimit
+		if cmd.Flags().Changed("top") {
+			limit = statsTop
+		}
+		s, err := st.Stats(limit)
 		if err != nil {
 			die("stats failed: %v", err)
 		}
@@ -31,5 +39,6 @@ var statsCmd = &cobra.Command{
 }
 
 func init() {
+	statsCmd.Flags().IntVar(&statsTop, "top", 50, "number of top companies to show (overrides settings.yaml top_companies_limit; default 50)")
 	rootCmd.AddCommand(statsCmd)
 }
