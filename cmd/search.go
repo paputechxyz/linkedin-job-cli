@@ -14,6 +14,8 @@ var (
 	searchExclude   []string
 	searchNoDetail  bool
 	searchNoSummar  bool
+	searchNoScore   bool
+	searchNoFilter  bool
 )
 
 var searchCmd = &cobra.Command{
@@ -47,6 +49,8 @@ Examples:
 			remote:           searchRemote,
 			noDetail:         searchNoDetail,
 			noSummarize:      searchNoSummar,
+			noScore:          searchNoScore,
+			noFilter:         searchNoFilter,
 			detailDelay:      resolveDetailDelay(),
 			jsonOut:          jsonOut,
 		})
@@ -60,6 +64,8 @@ func init() {
 	searchCmd.Flags().BoolVar(&searchRemote, "remote", false, "only keep remote-friendly jobs")
 	searchCmd.Flags().StringSliceVar(&searchExclude, "exclude-company", nil, "drop jobs whose company matches (repeatable)")
 	searchCmd.Flags().BoolVar(&searchNoDetail, "no-detail", false, "skip detail page fetching")
-	searchCmd.Flags().BoolVar(&searchNoSummar, "no-summarize", false, "skip LLM summarization")
+	searchCmd.Flags().BoolVar(&searchNoSummar, "no-summarize", false, "skip LLM scoring (alias of --no-score)")
+	searchCmd.Flags().BoolVar(&searchNoScore, "no-score", false, "skip LLM enrichment+fit-scoring")
+	searchCmd.Flags().BoolVar(&searchNoFilter, "no-filter", false, "skip the hard preference filter")
 	rootCmd.AddCommand(searchCmd)
 }

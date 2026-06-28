@@ -6,9 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"linkedin-jobs/internal/linkedin"
 	"linkedin-jobs/internal/models"
-	"linkedin-jobs/internal/render"
 )
 
 var (
@@ -59,38 +57,15 @@ handy as a recurring "what's new" check.`,
 		}
 		fmt.Fprintf(os.Stderr, "Found %d jobs, %d new since last run.\n", len(jobs), len(fresh))
 
-		if !watchNoDetail && len(fresh) > 0 {
-			linkedin.New(loadCfg()).FetchDetailsBatch(fresh, resolveDetailDelay(), nil)
-		}
-		if !jsonOut && len(fresh) > 0 {
-			for _, j := range fresh {
-				j.LLMSummary = llmSum(j)
-			}
-		} else if len(fresh) > 0 {
-			for _, j := range fresh {
-				j.LLMSummary = llmSum(j)
-			}
-		}
-		opts := ingestOptions{
+		// Run fresh jobs through the standard dedup -> hard-filter -> score pipeline.
+		ingest(fresh, ingestOptions{
 			minSalary:        parseMinSalary(watchMinSalary),
 			excludeCompanies: watchExclude,
 			remote:           watchRemote,
 			noDetail:         watchNoDetail,
-			noSummarize:      true, // summarized inline above
 			detailDelay:      resolveDetailDelay(),
 			jsonOut:          jsonOut,
-		}
-		filtered := filterJobs(fresh, opts)
-		for _, j := range fresh {
-			st.Upsert(j)
-		}
-		if jsonOut {
-			render.AsJSON(os.Stdout, filtered)
-		} else if len(filtered) == 0 {
-			fmt.Fprintln(os.Stderr, "No new jobs matched your filters.")
-		} else {
-			render.Table(os.Stdout, filtered)
-		}
+		})
 		return nil
 	},
 }

@@ -26,7 +26,7 @@ var exportCmd = &cobra.Command{
 			die("failed to open DB: %v", err)
 		}
 		defer st.Close()
-		jobs, err := st.List(store.Filters{Limit: 100000})
+		jobs, err := st.List(store.Filters{Limit: 100000, IncludeFiltered: true})
 		if err != nil {
 			die("query failed: %v", err)
 		}
@@ -42,23 +42,31 @@ var exportCmd = &cobra.Command{
 			w.Write(append(b, '\n'))
 		case "csv":
 			cw := csv.NewWriter(w)
-			cw.Write([]string{"id", "title", "company", "location", "salary_high", "currency", "remote_type", "status", "source", "url"})
+			cw.Write([]string{"id", "title", "company", "location", "salary_high", "currency", "remote_type", "status", "fit_score", "seniority", "tech_stack", "industry", "company_size_band", "fit_reason", "source", "url"})
 			for _, j := range jobs {
 				sal := ""
 				if j.SalaryHigh != nil {
 					sal = fmt.Sprintf("%.0f", *j.SalaryHigh)
 				}
-				cw.Write([]string{j.ID, j.Title, j.Company, j.Location, sal, j.SalaryCurrency, j.RemoteType, j.Status, j.Source, j.URL})
+				score := ""
+				if j.FitScore != nil {
+					score = fmt.Sprintf("%d", *j.FitScore)
+				}
+				cw.Write([]string{j.ID, j.Title, j.Company, j.Location, sal, j.SalaryCurrency, j.RemoteType, j.Status, score, j.Seniority, j.TechStack, j.Industry, j.CompanySizeBand, j.FitReason, j.Source, j.URL})
 			}
 			cw.Flush()
 		case "markdown", "md":
 			fmt.Fprintln(w, "# LinkedIn Jobs Export")
 			fmt.Fprintln(w)
-			fmt.Fprintln(w, "| Title | Company | Location | Salary | Status | URL |")
-			fmt.Fprintln(w, "|-------|---------|----------|--------|--------|-----|")
+			fmt.Fprintln(w, "| Score | Title | Company | Location | Salary | Status | URL |")
+			fmt.Fprintln(w, "|-------|-------|---------|----------|--------|--------|-----|")
 			for _, j := range jobs {
-				fmt.Fprintf(w, "| %s | %s | %s | %s | %s | %s |\n",
-					j.Title, j.Company, j.Location, j.SalaryDisplay(), j.Status, j.URL)
+				score := "-"
+				if j.FitScore != nil {
+					score = fmt.Sprintf("%d", *j.FitScore)
+				}
+				fmt.Fprintf(w, "| %s | %s | %s | %s | %s | %s | %s |\n",
+					score, j.Title, j.Company, j.Location, j.SalaryDisplay(), j.Status, j.URL)
 			}
 		default:
 			die("unknown format %q (use json|csv|markdown)", exportFormat)

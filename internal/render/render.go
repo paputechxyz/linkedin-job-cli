@@ -27,7 +27,7 @@ func Table(w io.Writer, jobs []*models.JobPosting) {
 		fmt.Fprintln(w, "No jobs found.")
 		return
 	}
-	cols := []string{"#", "Title", "Company", "Location", "Salary", "Source"}
+	cols := []string{"#", "Score", "Title", "Company", "Location", "Salary", "Source"}
 	widths := make([]int, len(cols))
 	for i, c := range cols {
 		widths[i] = len(c)
@@ -36,10 +36,11 @@ func Table(w io.Writer, jobs []*models.JobPosting) {
 	for i, j := range jobs {
 		row := []string{
 			fmt.Sprintf("%d", i+1),
-			trunc(j.Title, 42),
-			trunc(orDash(j.Company), 26),
-			trunc(orDash(j.Location), 22),
-			trunc(j.SalaryDisplay(), 18),
+			scoreCell(j),
+			trunc(j.Title, 38),
+			trunc(orDash(j.Company), 24),
+			trunc(orDash(j.Location), 20),
+			trunc(j.SalaryDisplay(), 16),
 			orDash(j.Source),
 		}
 		rows[i] = row
@@ -61,6 +62,13 @@ func Table(w io.Writer, jobs []*models.JobPosting) {
 		}
 		fmt.Fprintln(w)
 	}
+}
+
+func scoreCell(j *models.JobPosting) string {
+	if j.FitScore == nil {
+		return "-"
+	}
+	return fmt.Sprintf("%d", *j.FitScore)
 }
 
 func writeCell(w io.Writer, s string, width int, last bool) {
@@ -100,6 +108,46 @@ func Detail(w io.Writer, j *models.JobPosting) {
 		fmt.Fprintf(w, "Notes:      %s\n", j.Notes)
 	}
 	fmt.Fprintln(w)
+	if j.FitScore != nil {
+		fmt.Fprintf(w, "Fit score:  %d/100\n", *j.FitScore)
+		if j.FitReason != "" {
+			fmt.Fprintf(w, "Fit reason: %s\n", j.FitReason)
+		}
+	}
+	if hasEnrichment(j) {
+		fmt.Fprintln(w, "\nStructured:")
+		if j.CompanyOverview != "" {
+			fmt.Fprintf(w, "  Company:     %s\n", j.CompanyOverview)
+		}
+		if j.Industry != "" {
+			fmt.Fprintf(w, "  Industry:    %s\n", j.Industry)
+		}
+		if j.TechStack != "" {
+			fmt.Fprintf(w, "  Tech stack:  %s\n", j.TechStack)
+		}
+		if j.Seniority != "" {
+			fmt.Fprintf(w, "  Seniority:   %s\n", j.Seniority)
+		}
+		if j.EmploymentType != "" {
+			fmt.Fprintf(w, "  Type:        %s\n", j.EmploymentType)
+		}
+		if j.YearsExperience != nil {
+			fmt.Fprintf(w, "  Years exp:   %d+\n", *j.YearsExperience)
+		}
+		if j.CompanySizeBand != "" {
+			fmt.Fprintf(w, "  Co size:     %s\n", j.CompanySizeBand)
+		}
+		if j.CompanyStage != "" {
+			fmt.Fprintf(w, "  Co stage:    %s\n", j.CompanyStage)
+		}
+		if j.IsFoundingRole {
+			fmt.Fprintln(w, "  Founding:    yes")
+		}
+		if j.VisaSponsorship != "" {
+			fmt.Fprintf(w, "  Visa:        %s\n", j.VisaSponsorship)
+		}
+		fmt.Fprintln(w)
+	}
 	if j.LLMSummary != "" {
 		fmt.Fprintln(w, "Summary:")
 		fmt.Fprintln(w, j.LLMSummary)
@@ -111,6 +159,12 @@ func Detail(w io.Writer, j *models.JobPosting) {
 		fmt.Fprintln(w, "Description (excerpt):")
 		fmt.Fprintln(w, desc)
 	}
+}
+
+func hasEnrichment(j *models.JobPosting) bool {
+	return j.CompanyOverview != "" || j.Industry != "" || j.TechStack != "" ||
+		j.Seniority != "" || j.EmploymentType != "" || j.CompanySizeBand != "" ||
+		j.CompanyStage != "" || j.VisaSponsorship != ""
 }
 
 // Stats writes aggregate stats.

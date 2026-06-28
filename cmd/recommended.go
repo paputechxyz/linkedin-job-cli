@@ -14,6 +14,8 @@ var (
 	recExclude     []string
 	recNoDetail    bool
 	recNoSummarize bool
+	recNoScore     bool
+	recNoFilter    bool
 )
 
 var recommendedCmd = &cobra.Command{
@@ -47,6 +49,8 @@ displays the results.`,
 			remote:           recRemote,
 			noDetail:         recNoDetail,
 			noSummarize:      recNoSummarize,
+			noScore:          recNoScore,
+			noFilter:         recNoFilter,
 			detailDelay:      resolveDetailDelay(),
 			jsonOut:          jsonOut,
 		})
@@ -60,6 +64,8 @@ func init() {
 	recommendedCmd.Flags().BoolVar(&recRemote, "remote", false, "only keep remote-friendly jobs")
 	recommendedCmd.Flags().StringSliceVar(&recExclude, "exclude-company", nil, "drop jobs whose company matches (repeatable)")
 	recommendedCmd.Flags().BoolVar(&recNoDetail, "no-detail", false, "skip detail page fetching (faster; no salary/description)")
-	recommendedCmd.Flags().BoolVar(&recNoSummarize, "no-summarize", false, "skip LLM summarization")
+	recommendedCmd.Flags().BoolVar(&recNoSummarize, "no-summarize", false, "skip LLM scoring (alias of --no-score)")
+	recommendedCmd.Flags().BoolVar(&recNoScore, "no-score", false, "skip LLM enrichment+fit-scoring")
+	recommendedCmd.Flags().BoolVar(&recNoFilter, "no-filter", false, "skip the hard preference filter")
 	rootCmd.AddCommand(recommendedCmd)
 }
