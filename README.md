@@ -20,6 +20,12 @@ This is a Go rewrite + extension of an earlier Python tool (`linkedin-job-cli`).
   offline across title, company, and description.
 - **Agent-native** — every read command supports `--json`.
 - **Pipeline tracking** — tag jobs `saved` / `applied` / `rejected` with notes.
+- **Fit scoring** — each job is enriched and scored 0-100 against your pasted
+  resume + preferences in a single LLM call, with a fit reason for strong matches.
+- **Token-frugal** — duplicates (content-hash) and clear preference mismatches
+  are detected with zero LLM calls; only genuine new candidates are scored.
+- **Profile** — paste your resume and preferences; preferences also drive a
+  deterministic hard filter that auto-tags non-matches.
 - **Export** — JSON / CSV / Markdown.
 
 ## Install
@@ -80,20 +86,70 @@ linkedin-jobs search "Senior Developer" "Remote, US" --pages 2
 
 ```bash
 linkedin-jobs list --company Google --min-salary 150k
+linkedin-jobs list --sort-score --min-score 70      # your best-fit shortlist
 linkedin-jobs show 4430749190
 linkedin-jobs query "staff backend"            # offline FTS5 search
 linkedin-jobs query "engineer" --exclude amazon
-linkedin-jobs summarize                         # backfill LLM summaries
-linkedin-jobs stats
+linkedin-jobs summarize                         # backfill legacy LLM summaries
+linkedin-jobs stats --top 25
 linkedin-jobs tag 4430749190 applied --note "referred by Sam"
 linkedin-jobs export --format csv -o jobs.csv
 linkedin-jobs watch "Staff Engineer" Toronto   # show only jobs new since last run
 linkedin-jobs clear
 ```
 
-## LLM configuration
+### Profile + fit scoring
 
-The summarizer uses any OpenAI-compatible API:
+Paste your resume and preferences once; they drive both scoring and filtering.
+
+```bash
+linkedin-jobs profile resume          # paste resume text, end with Ctrl-D
+linkedin-jobs profile prefs \         # paste preferences + hard-filter knobs
+  --work remote --min-salary 200k --locations "Remote,US"
+linkedin-jobs profile show
+```
+
+When you fetch jobs (`recommended` / `search` / `watch`), each job flows through
+five gates — only the last costs an LLM token:
+
+1. **Persist full description** (always saved, for dedup memory).
+2. **Dedup** — a content-hash of company + title + full description. Re-fetched
+   or cross-source duplicates skip scoring entirely (zero tokens).
+3. **Hard filter** — a deterministic check using only pre-LLM fields (work
+   arrangement, salary floor, preferred locations). Clear mismatches are tagged
+   `filtered` / score 0 and hidden from `list` (use `--include-filtered`).
+4. **Enrich + score** — one OpenAI-compatible call per genuine new candidate
+   fills structured fields (company overview, industry, tech stack, seniority,
+   employment type, years, company size/stage, founding role, visa, work
+   arrangement) and a 0-100 `fit_score`, plus a `fit_reason` when score ≥ 70.
+5. **Display** — sorted/filtered output.
+
+```bash
+linkedin-jobs enrich 4430749190       # enrich+score one job
+linkedin-jobs enrich --all            # backfill all unenriched jobs
+linkedin-jobs score --all             # re-score everything after a profile edit
+```
+
+Token-frugality flags: `--no-score` (skip the LLM), `--no-filter` (skip the hard
+filter), `--no-detail` (skip salary/description fetch).
+
+### LLM configuration
+
+Bring your own key — no provider key ships. The fastest setup is the wizard,
+which reuses credentials you already have:
+
+```bash
+linkedin-jobs config llm              # connect: opencode / Claude / custom
+linkedin-jobs config show             # resolved provider (key redacted) + settings
+linkedin-jobs config path
+```
+
+Resolution order (first match wins): persisted `config.json` → opencode's stored
+credentials → `ANTHROPIC_API_KEY` → `OPENAI_API_KEY` / `LJ_LLM_*` env. The
+opencode preset reuses the provider configured in opencode (e.g. your GLM key);
+the Claude preset targets Anthropic's OpenAI-compatible endpoint.
+
+Or set env vars directly:
 
 ```bash
 export OPENAI_API_KEY="sk-..."                 # or LJ_LLM_API_KEY
@@ -102,7 +158,22 @@ export LJ_LLM_MODEL="gpt-4o-mini"              # optional, default gpt-4o-mini
 export LJ_LLM_BASE_URL="http://localhost:11434/v1"
 ```
 
-No key? Summaries fall back to a rule-based extractive summary.
+No key? Scoring is skipped with a clear message; all other commands still work.
+
+### Settings
+
+Optional `~/.linkedin-jobs/settings.yaml` (override the dir with `LJ_CONFIG_DIR`):
+
+```yaml
+stats:
+  top_companies_limit: 50        # default 50 (was hardcoded 10); also `stats --top N`
+filter:
+  auto_filter: true              # set false to disable the hard filter
+scoring:
+  reason_threshold: 70           # fit_reason included at/above this score
+enrich:
+  auto_enrich_on_save: false     # tag saved does not auto-score by default
+```
 
 ## How recommended works
 
@@ -120,6 +191,8 @@ description are fetched per-job from the public detail page (JSON-LD
 | Variable          | Purpose                                            | Default                          |
 |-------------------|----------------------------------------------------|----------------------------------|
 | `LJ_DB_PATH`      | SQLite database path                               | `./linkedin_jobs.db`             |
+| `LJ_CONFIG_DIR`   | directory for `config.json` + `settings.yaml`      | `~/.linkedin-jobs`               |
+| `ANTHROPIC_API_KEY` | Claude provider (auto-detected by config)        | —                                |
 | `LJ_COOKIES_FILE` | path to a file with a raw `Cookie:` header          | —                                |
 | `LJ_COOKIE`       | raw cookie header string                            | —                                |
 | `OPENAI_API_KEY`  | LLM key (or `LJ_LLM_API_KEY`)                      | —                                |
@@ -130,16 +203,17 @@ description are fetched per-job from the public detail page (JSON-LD
 
 ```
 main.go
-cmd/                       cobra commands (recommended, search, list, show, query, …)
+cmd/                       cobra commands (recommended, search, list, enrich, score, profile, config, …)
 internal/
   auth/                    session resolution (press-auth → env → file) + csrf
-  config/                  env-based configuration
+  config/                  env-based config + YAML settings
+  filter/                  deterministic hard preference filter
   linkedin/                HTTP client, anonymous scraper, recommended graphql
-  llm/                     OpenAI-compatible summarizer + extractive fallback
-  models/                  JobPosting
+  llm/                     OpenAI-compatible provider resolution + enrich/score + legacy summarizer
+  models/                  JobPosting, Profile, Enrichment
   render/                  table / detail / JSON / stats output
   salary/                  salary parsing + filtering
-  store/                   SQLite + FTS5 persistence
+  store/                   SQLite + FTS5 persistence + content-hash dedup
 ```
 
 ## Notes
