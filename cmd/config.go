@@ -95,12 +95,11 @@ var configShowCmd = &cobra.Command{
 		fmt.Printf("Base URL: %s\n", p.BaseURL)
 		fmt.Printf("Model:    %s\n", p.Model)
 		fmt.Printf("API key:  %s\n", p.Redacted())
-		if s, _ := config.LoadSettings(); true {
-			fmt.Printf("\nSettings: %s\n", config.SettingsPath())
-			fmt.Printf("  top_companies_limit: %d\n", s.Stats.TopCompaniesLimit)
-			fmt.Printf("  auto_filter:         %v\n", s.Filter.AutoFilter)
-			fmt.Printf("  reason_threshold:    %d\n", s.Scoring.ReasonThreshold)
-		}
+		s, _ := config.LoadSettings()
+		fmt.Printf("\nSettings: %s\n", config.SettingsPath())
+		fmt.Printf("  top_companies_limit: %d\n", s.Stats.TopCompaniesLimit)
+		fmt.Printf("  auto_filter:         %v\n", s.Filter.AutoFilter)
+		fmt.Printf("  reason_threshold:    %d\n", s.Scoring.ReasonThreshold)
 		return nil
 	},
 }
