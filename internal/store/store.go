@@ -410,15 +410,18 @@ func (s *Store) ExistingIDs(ids []string) (map[string]bool, error) {
 
 // Filters selects jobs from the local DB.
 type Filters struct {
-	MinSalary float64 // 0 = no filter
-	HasSalary bool
-	Company   string
-	Title     string
-	Location  string
-	Remote    bool
-	Status    string
-	Source    string
-	Limit     int
+	MinSalary       float64 // 0 = no filter
+	HasSalary       bool
+	Company         string
+	Title           string
+	Location        string
+	Remote          bool
+	Status          string
+	Source          string
+	MinScore        int   // 0 = no score filter
+	IncludeFiltered bool  // include status='filtered' jobs (excluded by default)
+	SortByScore     bool  // order by fit_score desc instead of salary
+	Limit           int
 }
 
 // List returns jobs matching the filters, newest salary first.
@@ -450,12 +453,23 @@ func (s *Store) List(f Filters) ([]*models.JobPosting, error) {
 	if f.Status != "" {
 		q += ` AND status=?`
 		args = append(args, f.Status)
+	} else if !f.IncludeFiltered {
+		// Hard-filter mismatches are hidden from the default list but stay stored.
+		q += ` AND (status IS NULL OR status!='filtered')`
 	}
 	if f.Source != "" {
 		q += ` AND source=?`
 		args = append(args, f.Source)
 	}
-	q += ` ORDER BY salary_high DESC`
+	if f.MinScore > 0 {
+		q += ` AND fit_score>=?`
+		args = append(args, f.MinScore)
+	}
+	if f.SortByScore {
+		q += ` ORDER BY fit_score DESC`
+	} else {
+		q += ` ORDER BY salary_high DESC`
+	}
 	if f.Limit > 0 {
 		q += ` LIMIT ?`
 		args = append(args, f.Limit)

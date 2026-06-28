@@ -236,3 +236,44 @@ func TestFindByContentHash(t *testing.T) {
 		t.Errorf("missing hash should return nil")
 	}
 }
+
+func TestList_ExcludesFilteredByDefault(t *testing.T) {
+	st := tmpDB(t)
+	st.Upsert(sampleJob("keep"))
+	st.Upsert(sampleJob("hid"))
+	st.SetFiltered("hid")
+
+	got, err := st.List(Filters{})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for _, j := range got {
+		if j.ID == "hid" {
+			t.Errorf("filtered job should be hidden by default")
+		}
+	}
+
+	// Explicit status=filtered returns it.
+	got, _ = st.List(Filters{Status: "filtered"})
+	found := false
+	for _, j := range got {
+		if j.ID == "hid" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("status=filtered should return the filtered job")
+	}
+
+	// IncludeFiltered flag returns it alongside others.
+	got, _ = st.List(Filters{IncludeFiltered: true})
+	found = false
+	for _, j := range got {
+		if j.ID == "hid" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("IncludeFiltered should return the filtered job")
+	}
+}
