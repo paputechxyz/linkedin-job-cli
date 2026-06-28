@@ -374,6 +374,12 @@ ON CONFLICT(id) DO UPDATE SET
 	return err
 }
 
+// ClearProfile removes the user profile.
+func (s *Store) ClearProfile() error {
+	_, err := s.db.Exec(`DELETE FROM profile WHERE id=1`)
+	return err
+}
+
 // Get returns one job by id.
 func (s *Store) Get(id string) (*models.JobPosting, error) {
 	row := s.db.QueryRow(jobCols+` FROM jobs WHERE id=?`, id)
