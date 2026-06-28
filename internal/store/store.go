@@ -1,0 +1,449 @@
+package store
+
+import (
+	"database/sql"
+	"fmt"
+	"time"
+
+	_ "modernc.org/sqlite"
+
+	"linkedin-job-cli/internal/models"
+)
+
+const schema = `
+CREATE TABLE IF NOT EXISTS jobs (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    company TEXT,
+    location TEXT,
+    url TEXT NOT NULL,
+    salary_raw TEXT,
+    salary_low REAL,
+    salary_high REAL,
+    salary_currency TEXT,
+    description TEXT,
+    summary TEXT,
+    llm_summary TEXT,
+    remote_type TEXT,
+    status TEXT DEFAULT 'new',
+    notes TEXT,
+    source TEXT,
+    listed_at INTEGER,
+    searched_at TEXT NOT NULL,
+    fetched_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company);
+CREATE INDEX IF NOT EXISTS idx_jobs_salary_high ON jobs(salary_high);
+CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source);
+CREATE VIRTUAL TABLE IF NOT EXISTS jobs_fts USING fts5(id UNINDEXED, title, company, description);
+`
+
+// Store is the SQLite persistence layer.
+type Store struct {
+	db *sql.DB
+}
+
+// Open opens (creating if needed) the database at path.
+func Open(path string) (*Store, error) {
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1) // avoid SQLITE_BUSY under concurrency
+	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if _, err := db.Exec(schema); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return &Store{db: db}, nil
+}
+
+// Close closes the database.
+func (s *Store) Close() error { return s.db.Close() }
+
+// Upsert inserts or updates a job, preserving llm_summary/status/notes when
+// the incoming fields are empty.
+func (s *Store) Upsert(j *models.JobPosting) error {
+	_, err := s.db.Exec(`
+INSERT INTO jobs (id,title,company,location,url,salary_raw,salary_low,salary_high,
+  salary_currency,description,summary,remote_type,status,notes,source,listed_at,
+  searched_at,fetched_at,llm_summary)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(id) DO UPDATE SET
+  title=excluded.title,
+  company=COALESCE(NULLIF(excluded.company,''), jobs.company),
+  location=COALESCE(NULLIF(excluded.location,''), jobs.location),
+  url=excluded.url,
+  salary_raw=COALESCE(NULLIF(excluded.salary_raw,''), jobs.salary_raw),
+  salary_low=COALESCE(excluded.salary_low, jobs.salary_low),
+  salary_high=COALESCE(excluded.salary_high, jobs.salary_high),
+  salary_currency=COALESCE(NULLIF(excluded.salary_currency,''), jobs.salary_currency),
+  description=COALESCE(NULLIF(excluded.description,''), jobs.description),
+  remote_type=COALESCE(NULLIF(excluded.remote_type,''), jobs.remote_type),
+  source=COALESCE(NULLIF(excluded.source,''), jobs.source),
+  listed_at=COALESCE(NULLIF(excluded.listed_at,0), jobs.listed_at),
+  fetched_at=COALESCE(NULLIF(excluded.fetched_at,''), jobs.fetched_at),
+  llm_summary=COALESCE(NULLIF(excluded.llm_summary,''), jobs.llm_summary)`,
+		j.ID, j.Title, j.Company, j.Location, j.URL, j.SalaryRaw,
+		nullFloat(j.SalaryLow), nullFloat(j.SalaryHigh), j.SalaryCurrency,
+		j.Description, j.Summary, j.RemoteType, statusOrDefault(j.Status), j.Notes,
+		j.Source, j.ListedAt, j.SearchedAt, j.FetchedAt, j.LLMSummary)
+	if err != nil {
+		return err
+	}
+	// keep FTS in sync
+	if _, err := s.db.Exec(`DELETE FROM jobs_fts WHERE id=?`, j.ID); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`INSERT INTO jobs_fts(id,title,company,description) VALUES (?,?,?,?)`,
+		j.ID, j.Title, j.Company, j.Description); err != nil {
+		return err
+	}
+	return nil
+}
+
+// UpdateDetail sets salary + description + fetched_at for a job.
+func (s *Store) UpdateDetail(id, salaryRaw, cur, desc, fetchedAt string, low, high *float64) error {
+	_, err := s.db.Exec(`
+UPDATE jobs SET salary_raw=COALESCE(NULLIF(?, ''), salary_raw),
+  salary_low=COALESCE(?, salary_low), salary_high=COALESCE(?, salary_high),
+  salary_currency=COALESCE(NULLIF(?, ''), salary_currency),
+  description=COALESCE(NULLIF(?, ''), description),
+  fetched_at=COALESCE(NULLIF(?, ''), fetched_at)
+WHERE id=?`,
+		salaryRaw, nullFloat(low), nullFloat(high), cur, desc, fetchedAt, id)
+	if err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`DELETE FROM jobs_fts WHERE id=?`, id); err == nil {
+		var title, company, description string
+		s.db.QueryRow(`SELECT title,company,description FROM jobs WHERE id=?`, id).Scan(&title, &company, &description)
+		s.db.Exec(`INSERT INTO jobs_fts(id,title,company,description) VALUES (?,?,?,?)`, id, title, company, description)
+	}
+	return nil
+}
+
+// SetLLMSummary writes the LLM summary for a job.
+func (s *Store) SetLLMSummary(id, summary string) error {
+	_, err := s.db.Exec(`UPDATE jobs SET llm_summary=? WHERE id=?`, summary, id)
+	return err
+}
+
+// SetTag updates status and notes for a job.
+func (s *Store) SetTag(id, status, notes string) error {
+	if status == "" && notes == "" {
+		return nil
+	}
+	if status != "" {
+		if _, err := s.db.Exec(`UPDATE jobs SET status=? WHERE id=?`, status, id); err != nil {
+			return err
+		}
+	}
+	if notes != "" {
+		if _, err := s.db.Exec(`UPDATE jobs SET notes=? WHERE id=?`, notes, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Get returns one job by id.
+func (s *Store) Get(id string) (*models.JobPosting, error) {
+	row := s.db.QueryRow(jobCols+` FROM jobs WHERE id=?`, id)
+	return scanJob(row)
+}
+
+// Exists returns the set of job ids already stored (for diffing in watch mode).
+func (s *Store) ExistingIDs(ids []string) (map[string]bool, error) {
+	out := make(map[string]bool, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	q, args := inQuery(ids)
+	rows, err := s.db.Query(`SELECT id FROM jobs WHERE id IN (`+q+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
+// Filters selects jobs from the local DB.
+type Filters struct {
+	MinSalary float64 // 0 = no filter
+	HasSalary bool
+	Company   string
+	Title     string
+	Location  string
+	Remote    bool
+	Status    string
+	Source    string
+	Limit     int
+}
+
+// List returns jobs matching the filters, newest salary first.
+func (s *Store) List(f Filters) ([]*models.JobPosting, error) {
+	q := jobCols + ` FROM jobs WHERE 1=1`
+	var args []interface{}
+	if f.MinSalary > 0 {
+		q += ` AND salary_high >= ?`
+		args = append(args, f.MinSalary)
+	}
+	if f.HasSalary {
+		q += ` AND salary_high IS NOT NULL`
+	}
+	if f.Company != "" {
+		q += ` AND LOWER(company) LIKE ?`
+		args = append(args, "%"+toLowerCase(f.Company)+"%")
+	}
+	if f.Title != "" {
+		q += ` AND LOWER(title) LIKE ?`
+		args = append(args, "%"+toLowerCase(f.Title)+"%")
+	}
+	if f.Location != "" {
+		q += ` AND LOWER(location) LIKE ?`
+		args = append(args, "%"+toLowerCase(f.Location)+"%")
+	}
+	if f.Remote {
+		q += ` AND LOWER(COALESCE(location,'') || ' ' || COALESCE(remote_type,'')) LIKE '%remote%'`
+	}
+	if f.Status != "" {
+		q += ` AND status=?`
+		args = append(args, f.Status)
+	}
+	if f.Source != "" {
+		q += ` AND source=?`
+		args = append(args, f.Source)
+	}
+	q += ` ORDER BY salary_high DESC`
+	if f.Limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, f.Limit)
+	}
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanJobs(rows)
+}
+
+// SearchFTS runs an offline full-text query over stored jobs.
+func (s *Store) SearchFTS(expr string, limit int) ([]*models.JobPosting, error) {
+	q := `SELECT j.id,j.title,j.company,j.location,j.url,j.salary_raw,j.salary_low,j.salary_high,
+  j.salary_currency,j.description,j.summary,j.llm_summary,j.remote_type,j.status,j.notes,j.source,j.listed_at,
+  j.searched_at,j.fetched_at FROM jobs j JOIN (SELECT id, rank FROM jobs_fts WHERE jobs_fts MATCH ?`
+	args := []interface{}{expr}
+	if limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, limit)
+	}
+	q += `) f ON f.id = j.id ORDER BY f.rank`
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanJobs(rows)
+}
+
+// Unsummarized returns jobs that have a description but no LLM summary.
+func (s *Store) Unsummarized() ([]*models.JobPosting, error) {
+	rows, err := s.db.Query(jobCols + ` FROM jobs WHERE llm_summary IS NULL AND description IS NOT NULL AND description != ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanJobs(rows)
+}
+
+// Stats holds aggregate stats over the DB.
+type Stats struct {
+	Total       int            `json:"total"`
+	WithSalary  int            `json:"with_salary"`
+	ByStatus    map[string]int `json:"by_status"`
+	BySource    map[string]int `json:"by_source"`
+	ByCompany   []CountItem    `json:"top_companies"`
+	SalaryBands map[string]int `json:"salary_bands"`
+	RemoteCount int            `json:"remote"`
+}
+
+// CountItem is a label/count pair.
+type CountItem struct {
+	Label string `json:"label"`
+	Count int    `json:"count"`
+}
+
+// Stats computes aggregate stats.
+func (s *Store) Stats() (*Stats, error) {
+	st := &Stats{ByStatus: map[string]int{}, BySource: map[string]int{}, SalaryBands: map[string]int{}}
+	s.db.QueryRow(`SELECT COUNT(*) FROM jobs`).Scan(&st.Total)
+	s.db.QueryRow(`SELECT COUNT(*) FROM jobs WHERE salary_high IS NOT NULL`).Scan(&st.WithSalary)
+	s.db.QueryRow(`SELECT COUNT(*) FROM jobs WHERE LOWER(COALESCE(location,'')||' '||COALESCE(remote_type,'')) LIKE '%remote%'`).Scan(&st.RemoteCount)
+
+	sr, _ := s.db.Query(`SELECT COALESCE(status,'new'), COUNT(*) FROM jobs GROUP BY status`)
+	if sr != nil {
+		for sr.Next() {
+			var k string
+			var c int
+			sr.Scan(&k, &c)
+			st.ByStatus[k] = c
+		}
+		sr.Close()
+	}
+	sr, _ = s.db.Query(`SELECT COALESCE(source,''), COUNT(*) FROM jobs GROUP BY source`)
+	if sr != nil {
+		for sr.Next() {
+			var k string
+			var c int
+			sr.Scan(&k, &c)
+			st.BySource[k] = c
+		}
+		sr.Close()
+	}
+	sr, _ = s.db.Query(`SELECT COALESCE(company,'Unknown'), COUNT(*) c FROM jobs GROUP BY company ORDER BY c DESC LIMIT 10`)
+	if sr != nil {
+		for sr.Next() {
+			var k string
+			var c int
+			sr.Scan(&k, &c)
+			st.ByCompany = append(st.ByCompany, CountItem{k, c})
+		}
+		sr.Close()
+	}
+	sr, _ = s.db.Query(`SELECT CAST(salary_high/50000 AS INT)*50000 AS band, COUNT(*) FROM jobs WHERE salary_high IS NOT NULL GROUP BY band ORDER BY band`)
+	if sr != nil {
+		for sr.Next() {
+			var band, c int
+			sr.Scan(&band, &c)
+			st.SalaryBands[fmt.Sprintf("%d-%d", band, band+49999)] = c
+		}
+		sr.Close()
+	}
+	return st, nil
+}
+
+// DeleteAll removes all jobs (and FTS). Returns count removed.
+func (s *Store) DeleteAll() (int64, error) {
+	res, err := s.db.Exec(`DELETE FROM jobs`)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	s.db.Exec(`DELETE FROM jobs_fts`)
+	return n, nil
+}
+
+// --- helpers ---
+
+const jobCols = `SELECT id,title,company,location,url,salary_raw,salary_low,salary_high,
+  salary_currency,description,summary,llm_summary,remote_type,status,notes,source,listed_at,
+  searched_at,fetched_at`
+
+type scanner interface {
+	Scan(dest ...interface{}) error
+}
+
+func scanJob(row scanner) (*models.JobPosting, error) {
+	j := &models.JobPosting{}
+	var sl, sh sql.NullFloat64
+	var company, location, salaryRaw, cur, desc, summary, llm, remote, status, notes, source, fetched sql.NullString
+	var listed sql.NullInt64
+	if err := row.Scan(&j.ID, &j.Title, &company, &location, &j.URL, &salaryRaw, &sl, &sh,
+		&cur, &desc, &summary, &llm, &remote, &status, &notes, &source, &listed, &j.SearchedAt, &fetched); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	j.Company = company.String
+	j.Location = location.String
+	j.SalaryRaw = salaryRaw.String
+	if sl.Valid {
+		v := sl.Float64
+		j.SalaryLow = &v
+	}
+	if sh.Valid {
+		v := sh.Float64
+		j.SalaryHigh = &v
+	}
+	j.SalaryCurrency = cur.String
+	j.Description = desc.String
+	j.Summary = summary.String
+	j.LLMSummary = llm.String
+	j.RemoteType = remote.String
+	j.Status = status.String
+	j.Notes = notes.String
+	j.Source = source.String
+	j.ListedAt = listed.Int64
+	j.FetchedAt = fetched.String
+	if j.Status == "" {
+		j.Status = "new"
+	}
+	return j, nil
+}
+
+func scanJobs(rows *sql.Rows) ([]*models.JobPosting, error) {
+	var out []*models.JobPosting
+	for rows.Next() {
+		j, err := scanJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, j)
+	}
+	return out, rows.Err()
+}
+
+func nullFloat(p *float64) interface{} {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+
+func statusOrDefault(s string) string {
+	if s == "" {
+		return "new"
+	}
+	return s
+}
+
+func toLowerCase(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c >= 'A' && c <= 'Z' {
+			b[i] = c + 32
+		}
+	}
+	return string(b)
+}
+
+func inQuery(ids []string) (string, []interface{}) {
+	q := ""
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		if i > 0 {
+			q += ","
+		}
+		q += "?"
+		args[i] = id
+	}
+	return q, args
+}
+
+// NowISO returns the current UTC time in ISO format.
+func NowISO() string {
+	return time.Now().UTC().Format(time.RFC3339)
+}

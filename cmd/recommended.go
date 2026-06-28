@@ -1,0 +1,65 @@
+package cmd
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/spf13/cobra"
+)
+
+var (
+	recLimit       int
+	recMinSalary   string
+	recRemote      bool
+	recExclude     []string
+	recNoDetail    bool
+	recNoSummarize bool
+)
+
+var recommendedCmd = &cobra.Command{
+	Use:   "recommended",
+	Short: "Pull your personalized LinkedIn 'Recommended for you' job feed",
+	Long: `Fetches the authenticated 'Recommended for you' job collection using your
+captured browser session (see 'auth login'). Requires a session. Pulls up to
+--limit jobs, fetches salary + description, filters, summarizes, stores, and
+displays the results.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := newClient(true)
+		if err != nil {
+			die("%v", err)
+		}
+		if !c.HasSession() {
+			fmt.Fprintln(os.Stderr, "No LinkedIn session. Run: linkedin-jobs auth login")
+			fmt.Fprintln(os.Stderr, "(or set LJ_COOKIES_FILE / LJ_COOKIE to a raw Cookie header)")
+			os.Exit(1)
+		}
+		fmt.Fprintln(os.Stderr, "Fetching your recommended jobs…")
+		jobs, err := c.Recommended(recLimit)
+		if err != nil && len(jobs) == 0 {
+			die("failed to fetch recommended jobs: %v", err)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+		}
+		ingest(jobs, ingestOptions{
+			minSalary:        parseMinSalary(recMinSalary),
+			excludeCompanies: recExclude,
+			remote:           recRemote,
+			noDetail:         recNoDetail,
+			noSummarize:      recNoSummarize,
+			detailDelay:      resolveDetailDelay(),
+			jsonOut:          jsonOut,
+		})
+		return nil
+	},
+}
+
+func init() {
+	recommendedCmd.Flags().IntVar(&recLimit, "limit", 50, "max number of recommended jobs to fetch")
+	recommendedCmd.Flags().StringVar(&recMinSalary, "min-salary", "", "only keep jobs paying at or above this (e.g. 200k)")
+	recommendedCmd.Flags().BoolVar(&recRemote, "remote", false, "only keep remote-friendly jobs")
+	recommendedCmd.Flags().StringSliceVar(&recExclude, "exclude-company", nil, "drop jobs whose company matches (repeatable)")
+	recommendedCmd.Flags().BoolVar(&recNoDetail, "no-detail", false, "skip detail page fetching (faster; no salary/description)")
+	recommendedCmd.Flags().BoolVar(&recNoSummarize, "no-summarize", false, "skip LLM summarization")
+	rootCmd.AddCommand(recommendedCmd)
+}
