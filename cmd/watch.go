@@ -6,9 +6,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"linkedin-job-cli/internal/linkedin"
-	"linkedin-job-cli/internal/models"
-	"linkedin-job-cli/internal/render"
+	"linkedin-jobs/internal/linkedin"
+	"linkedin-jobs/internal/models"
+	"linkedin-jobs/internal/render"
 )
 
 var (

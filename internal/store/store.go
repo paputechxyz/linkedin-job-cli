@@ -7,7 +7,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"linkedin-job-cli/internal/models"
+	"linkedin-jobs/internal/models"
 )
 
 const schema = `

@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"linkedin-job-cli/internal/config"
+	"linkedin-jobs/internal/config"
 )
 
 // Session holds the resolved LinkedIn session credentials.

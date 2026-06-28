@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"linkedin-job-cli/internal/llm"
+	"linkedin-jobs/internal/llm"
 )
 
 var summarizeCmd = &cobra.Command{

@@ -5,12 +5,12 @@ import (
 	"os"
 	"strings"
 
-	"linkedin-job-cli/internal/config"
-	"linkedin-job-cli/internal/linkedin"
-	"linkedin-job-cli/internal/llm"
-	"linkedin-job-cli/internal/models"
-	"linkedin-job-cli/internal/render"
-	"linkedin-job-cli/internal/salary"
+	"linkedin-jobs/internal/config"
+	"linkedin-jobs/internal/linkedin"
+	"linkedin-jobs/internal/llm"
+	"linkedin-jobs/internal/models"
+	"linkedin-jobs/internal/render"
+	"linkedin-jobs/internal/salary"
 )
 
 // ingestOptions controls the shared fetch→filter→summarize→store→display pipeline.

@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"linkedin-job-cli/internal/auth"
-	"linkedin-job-cli/internal/linkedin"
+	"linkedin-jobs/internal/auth"
+	"linkedin-jobs/internal/linkedin"
 )
 
 // attachSession resolves a LinkedIn session and attaches it to the client.

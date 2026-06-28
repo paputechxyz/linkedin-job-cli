@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"linkedin-job-cli/internal/models"
-	"linkedin-job-cli/internal/store"
+	"linkedin-jobs/internal/models"
+	"linkedin-jobs/internal/store"
 )
 
 // AsJSON writes any value as compact-but-readable JSON.

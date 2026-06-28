@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"linkedin-job-cli/internal/auth"
-	"linkedin-job-cli/internal/config"
+	"linkedin-jobs/internal/auth"
+	"linkedin-jobs/internal/config"
 )
 
 // Client is the LinkedIn HTTP client. Anonymous calls (search/detail) need no

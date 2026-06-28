@@ -1,4 +1,4 @@
-module linkedin-job-cli
+module linkedin-jobs
 
 go 1.26
 

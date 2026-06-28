@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"linkedin-job-cli/internal/render"
+	"linkedin-jobs/internal/render"
 )
 
 var showCmd = &cobra.Command{

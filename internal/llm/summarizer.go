@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"linkedin-job-cli/internal/config"
-	"linkedin-job-cli/internal/models"
+	"linkedin-jobs/internal/config"
+	"linkedin-jobs/internal/models"
 )
 
 const systemPrompt = "You are an expert technical recruiter assistant. Summarize job postings concisely for a senior engineer evaluating opportunities."

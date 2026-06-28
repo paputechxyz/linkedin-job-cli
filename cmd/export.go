@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"linkedin-job-cli/internal/store"
+	"linkedin-jobs/internal/store"
 )
 
 var (

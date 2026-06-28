@@ -1,6 +1,6 @@
 package main
 
-import "linkedin-job-cli/cmd"
+import "linkedin-jobs/cmd"
 
 func main() {
 	cmd.Execute()

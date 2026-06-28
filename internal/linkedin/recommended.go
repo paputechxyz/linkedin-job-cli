@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"linkedin-job-cli/internal/models"
-	"linkedin-job-cli/internal/store"
+	"linkedin-jobs/internal/models"
+	"linkedin-jobs/internal/store"
 )
 
 const (

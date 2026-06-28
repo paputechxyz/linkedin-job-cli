@@ -7,9 +7,9 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 
-	"linkedin-job-cli/internal/models"
-	"linkedin-job-cli/internal/salary"
-	"linkedin-job-cli/internal/store"
+	"linkedin-jobs/internal/models"
+	"linkedin-jobs/internal/salary"
+	"linkedin-jobs/internal/store"
 )
 
 const guestSearchURL = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
