@@ -1,0 +1,13 @@
+package models
+
+// Profile is the single-row user profile: resume + preferences. The free-text
+// fields feed LLM fit scoring; the structured preference fields drive the
+// deterministic hard filter (work arrangement, salary floor, locations).
+type Profile struct {
+	ResumeText          string   `json:"resume_text,omitempty"`
+	PreferencesText     string   `json:"preferences_text,omitempty"`
+	PrefWorkArrangement string   `json:"pref_work_arrangement,omitempty"` // remote|hybrid|onsite|""
+	PrefMinSalary       *float64 `json:"pref_min_salary,omitempty"`
+	PrefLocations       string   `json:"pref_locations,omitempty"` // comma-separated
+	UpdatedAt           string   `json:"updated_at,omitempty"`
+}

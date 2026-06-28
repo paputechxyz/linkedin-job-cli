@@ -30,14 +30,63 @@ CREATE TABLE IF NOT EXISTS jobs (
     source TEXT,
     listed_at INTEGER,
     searched_at TEXT NOT NULL,
-    fetched_at TEXT
+    fetched_at TEXT,
+    company_overview TEXT,
+    industry TEXT,
+    tech_stack TEXT,
+    seniority TEXT,
+    employment_type TEXT,
+    years_experience INTEGER,
+    company_size_band TEXT,
+    company_stage TEXT,
+    is_founding_role INTEGER DEFAULT 0,
+    visa_sponsorship TEXT,
+    fit_score INTEGER,
+    fit_reason TEXT,
+    content_hash TEXT,
+    enriched_at TEXT,
+    scored_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company);
 CREATE INDEX IF NOT EXISTS idx_jobs_salary_high ON jobs(salary_high);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source);
 CREATE VIRTUAL TABLE IF NOT EXISTS jobs_fts USING fts5(id UNINDEXED, title, company, description);
+CREATE TABLE IF NOT EXISTS profile (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    resume_text TEXT,
+    preferences_text TEXT,
+    pref_work_arrangement TEXT,
+    pref_min_salary REAL,
+    pref_locations TEXT,
+    updated_at TEXT
+);
 `
+
+// addColumns lists columns added by the fit-engine migration that must be
+// ALTER-TABLE-added onto pre-existing databases. Fresh databases get them from
+// the schema above; this list heals DBs created by older binary versions.
+// (typeDDL must be valid after "ADD COLUMN".)
+var addColumns = []struct {
+	name    string
+	typeDDL string
+}{
+	{"company_overview", "TEXT"},
+	{"industry", "TEXT"},
+	{"tech_stack", "TEXT"},
+	{"seniority", "TEXT"},
+	{"employment_type", "TEXT"},
+	{"years_experience", "INTEGER"},
+	{"company_size_band", "TEXT"},
+	{"company_stage", "TEXT"},
+	{"is_founding_role", "INTEGER DEFAULT 0"},
+	{"visa_sponsorship", "TEXT"},
+	{"fit_score", "INTEGER"},
+	{"fit_reason", "TEXT"},
+	{"content_hash", "TEXT"},
+	{"enriched_at", "TEXT"},
+	{"scored_at", "TEXT"},
+}
 
 // Store is the SQLite persistence layer.
 type Store struct {
@@ -59,7 +108,57 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := migrate(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Store{db: db}, nil
+}
+
+// migrate adds any fit-engine columns missing from a pre-existing database.
+// Idempotent: queries PRAGMA table_info once and only ALTER-TABLE-adds columns
+// that are absent, so re-opening an already-migrated DB is a no-op.
+func migrate(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(jobs)`)
+	if err != nil {
+		return err
+	}
+	existing := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		existing[name] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, c := range addColumns {
+		if existing[c.name] {
+			continue
+		}
+		if _, err := db.Exec(fmt.Sprintf("ALTER TABLE jobs ADD COLUMN %s %s", c.name, c.typeDDL)); err != nil {
+			return err
+		}
+	}
+	// Indexes on migrated columns (created here so they only run once the
+	// columns exist on pre-existing databases; on fresh DBs the columns already
+	// exist, so these are no-ops via IF NOT EXISTS).
+	for _, idx := range []string{
+		`CREATE INDEX IF NOT EXISTS idx_jobs_content_hash ON jobs(content_hash)`,
+		`CREATE INDEX IF NOT EXISTS idx_jobs_fit_score ON jobs(fit_score)`,
+	} {
+		if _, err := db.Exec(idx); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Close closes the database.
@@ -71,8 +170,8 @@ func (s *Store) Upsert(j *models.JobPosting) error {
 	_, err := s.db.Exec(`
 INSERT INTO jobs (id,title,company,location,url,salary_raw,salary_low,salary_high,
   salary_currency,description,summary,remote_type,status,notes,source,listed_at,
-  searched_at,fetched_at,llm_summary)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  searched_at,fetched_at,llm_summary,content_hash)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(id) DO UPDATE SET
   title=excluded.title,
   company=COALESCE(NULLIF(excluded.company,''), jobs.company),
@@ -87,11 +186,12 @@ ON CONFLICT(id) DO UPDATE SET
   source=COALESCE(NULLIF(excluded.source,''), jobs.source),
   listed_at=COALESCE(NULLIF(excluded.listed_at,0), jobs.listed_at),
   fetched_at=COALESCE(NULLIF(excluded.fetched_at,''), jobs.fetched_at),
-  llm_summary=COALESCE(NULLIF(excluded.llm_summary,''), jobs.llm_summary)`,
+  llm_summary=COALESCE(NULLIF(excluded.llm_summary,''), jobs.llm_summary),
+  content_hash=COALESCE(NULLIF(excluded.content_hash,''), jobs.content_hash)`,
 		j.ID, j.Title, j.Company, j.Location, j.URL, j.SalaryRaw,
 		nullFloat(j.SalaryLow), nullFloat(j.SalaryHigh), j.SalaryCurrency,
 		j.Description, j.Summary, j.RemoteType, statusOrDefault(j.Status), j.Notes,
-		j.Source, j.ListedAt, j.SearchedAt, j.FetchedAt, j.LLMSummary)
+		j.Source, j.ListedAt, j.SearchedAt, j.FetchedAt, j.LLMSummary, j.ContentHash)
 	if err != nil {
 		return err
 	}
@@ -149,6 +249,129 @@ func (s *Store) SetTag(id, status, notes string) error {
 		}
 	}
 	return nil
+}
+
+// SetEnrichmentAndScore persists the combined enrichment + fit-score result for
+// a job, stamping enriched_at and scored_at. remote_type is refined only when
+// the LLM returned a non-empty work arrangement (so it never clobbers an
+// existing DetectRemote value with empty).
+func (s *Store) SetEnrichmentAndScore(id string, e models.Enrichment) error {
+	now := NowISO()
+	var years interface{}
+	if e.YearsExperience != nil {
+		years = *e.YearsExperience
+	}
+	var fit interface{}
+	if e.FitScore != nil {
+		fit = *e.FitScore
+	}
+	founding := 0
+	if e.IsFoundingRole {
+		founding = 1
+	}
+	_, err := s.db.Exec(`
+UPDATE jobs SET
+  company_overview=?, industry=?, tech_stack=?, seniority=?, employment_type=?,
+  years_experience=COALESCE(?, years_experience), company_size_band=?, company_stage=?,
+  is_founding_role=?, visa_sponsorship=?,
+  remote_type=COALESCE(NULLIF(?, ''), remote_type),
+  fit_score=COALESCE(?, fit_score), fit_reason=?,
+  enriched_at=?, scored_at=?
+WHERE id=?`,
+		e.CompanyOverview, e.Industry, e.TechStack, e.Seniority, e.EmploymentType,
+		years, e.CompanySizeBand, e.CompanyStage, founding, e.VisaSponsorship,
+		e.WorkArrangement, fit, e.FitReason, now, now, id)
+	return err
+}
+
+// SetFiltered marks a job as a hard-filter mismatch: status=filtered, fit_score=0.
+func (s *Store) SetFiltered(id string) error {
+	zero := 0
+	_, err := s.db.Exec(`UPDATE jobs SET status='filtered', fit_score=? WHERE id=?`, zero, id)
+	return err
+}
+
+// SetFetchedTimes refreshes fetch metadata for a job already known (used when a
+// re-fetched job is recognized as a duplicate and we skip re-processing).
+func (s *Store) SetFetchedTimes(id, searchedAt, fetchedAt string) error {
+	_, err := s.db.Exec(`UPDATE jobs SET searched_at=?, fetched_at=COALESCE(NULLIF(?, ''), fetched_at) WHERE id=?`,
+		searchedAt, fetchedAt, id)
+	return err
+}
+
+// FindByContentHash returns a job matching the dedup fingerprint, or nil.
+func (s *Store) FindByContentHash(hash string) (*models.JobPosting, error) {
+	if hash == "" {
+		return nil, nil
+	}
+	row := s.db.QueryRow(jobCols+` FROM jobs WHERE content_hash=? LIMIT 1`, hash)
+	return scanJob(row)
+}
+
+// Unenriched returns jobs that have a description but have not been enriched.
+func (s *Store) Unenriched() ([]*models.JobPosting, error) {
+	rows, err := s.db.Query(jobCols + ` FROM jobs WHERE enriched_at IS NULL AND description IS NOT NULL AND description != ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanJobs(rows)
+}
+
+// Unscored returns non-filtered jobs that have not been scored, for re-scoring
+// after a profile edit. (Enriched jobs that predate scoring, plus new jobs.)
+func (s *Store) Unscored() ([]*models.JobPosting, error) {
+	rows, err := s.db.Query(jobCols + ` FROM jobs WHERE scored_at IS NULL AND status!='filtered'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanJobs(rows)
+}
+
+// GetProfile returns the user profile, or nil if none is set.
+func (s *Store) GetProfile() (*models.Profile, error) {
+	row := s.db.QueryRow(`SELECT resume_text, preferences_text, pref_work_arrangement, pref_min_salary, pref_locations, updated_at FROM profile WHERE id=1`)
+	p := &models.Profile{}
+	var resume, prefs, work, locs sql.NullString
+	var min sql.NullFloat64
+	var updated sql.NullString
+	if err := row.Scan(&resume, &prefs, &work, &min, &locs, &updated); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	p.ResumeText = resume.String
+	p.PreferencesText = prefs.String
+	p.PrefWorkArrangement = work.String
+	if min.Valid {
+		v := min.Float64
+		p.PrefMinSalary = &v
+	}
+	p.PrefLocations = locs.String
+	p.UpdatedAt = updated.String
+	return p, nil
+}
+
+// SetProfile upserts the single-row user profile.
+func (s *Store) SetProfile(p *models.Profile) error {
+	var min interface{}
+	if p.PrefMinSalary != nil {
+		min = *p.PrefMinSalary
+	}
+	_, err := s.db.Exec(`
+INSERT INTO profile (id, resume_text, preferences_text, pref_work_arrangement, pref_min_salary, pref_locations, updated_at)
+VALUES (1, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  resume_text=excluded.resume_text,
+  preferences_text=excluded.preferences_text,
+  pref_work_arrangement=excluded.pref_work_arrangement,
+  pref_min_salary=excluded.pref_min_salary,
+  pref_locations=excluded.pref_locations,
+  updated_at=excluded.updated_at`,
+		p.ResumeText, p.PreferencesText, p.PrefWorkArrangement, min, p.PrefLocations, NowISO())
+	return err
 }
 
 // Get returns one job by id.
@@ -243,7 +466,9 @@ func (s *Store) List(f Filters) ([]*models.JobPosting, error) {
 func (s *Store) SearchFTS(expr string, limit int) ([]*models.JobPosting, error) {
 	q := `SELECT j.id,j.title,j.company,j.location,j.url,j.salary_raw,j.salary_low,j.salary_high,
   j.salary_currency,j.description,j.summary,j.llm_summary,j.remote_type,j.status,j.notes,j.source,j.listed_at,
-  j.searched_at,j.fetched_at FROM jobs j JOIN (SELECT id, rank FROM jobs_fts WHERE jobs_fts MATCH ?`
+  j.searched_at,j.fetched_at,j.company_overview,j.industry,j.tech_stack,j.seniority,j.employment_type,
+  j.years_experience,j.company_size_band,j.company_stage,j.is_founding_role,j.visa_sponsorship,j.fit_score,
+  j.fit_reason,j.content_hash,j.enriched_at,j.scored_at FROM jobs j JOIN (SELECT id, rank FROM jobs_fts WHERE jobs_fts MATCH ?`
 	args := []interface{}{expr}
 	if limit > 0 {
 		q += ` LIMIT ?`
@@ -349,7 +574,9 @@ func (s *Store) DeleteAll() (int64, error) {
 
 const jobCols = `SELECT id,title,company,location,url,salary_raw,salary_low,salary_high,
   salary_currency,description,summary,llm_summary,remote_type,status,notes,source,listed_at,
-  searched_at,fetched_at`
+  searched_at,fetched_at,company_overview,industry,tech_stack,seniority,employment_type,
+  years_experience,company_size_band,company_stage,is_founding_role,visa_sponsorship,fit_score,
+  fit_reason,content_hash,enriched_at,scored_at`
 
 type scanner interface {
 	Scan(dest ...interface{}) error
@@ -360,8 +587,13 @@ func scanJob(row scanner) (*models.JobPosting, error) {
 	var sl, sh sql.NullFloat64
 	var company, location, salaryRaw, cur, desc, summary, llm, remote, status, notes, source, fetched sql.NullString
 	var listed sql.NullInt64
+	var companyOverview, industry, techStack, seniority, employmentType, companySizeBand, companyStage, visaSponsorship, fitReason, contentHash, enrichedAt, scoredAt sql.NullString
+	var yearsExp, isFounding, fitScore sql.NullInt64
 	if err := row.Scan(&j.ID, &j.Title, &company, &location, &j.URL, &salaryRaw, &sl, &sh,
-		&cur, &desc, &summary, &llm, &remote, &status, &notes, &source, &listed, &j.SearchedAt, &fetched); err != nil {
+		&cur, &desc, &summary, &llm, &remote, &status, &notes, &source, &listed, &j.SearchedAt, &fetched,
+		&companyOverview, &industry, &techStack, &seniority, &employmentType, &yearsExp,
+		&companySizeBand, &companyStage, &isFounding, &visaSponsorship, &fitScore,
+		&fitReason, &contentHash, &enrichedAt, &scoredAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
@@ -391,6 +623,27 @@ func scanJob(row scanner) (*models.JobPosting, error) {
 	if j.Status == "" {
 		j.Status = "new"
 	}
+	j.CompanyOverview = companyOverview.String
+	j.Industry = industry.String
+	j.TechStack = techStack.String
+	j.Seniority = seniority.String
+	j.EmploymentType = employmentType.String
+	if yearsExp.Valid {
+		v := int(yearsExp.Int64)
+		j.YearsExperience = &v
+	}
+	j.CompanySizeBand = companySizeBand.String
+	j.CompanyStage = companyStage.String
+	j.IsFoundingRole = isFounding.Valid && isFounding.Int64 != 0
+	j.VisaSponsorship = visaSponsorship.String
+	if fitScore.Valid {
+		v := int(fitScore.Int64)
+		j.FitScore = &v
+	}
+	j.FitReason = fitReason.String
+	j.ContentHash = contentHash.String
+	j.EnrichedAt = enrichedAt.String
+	j.ScoredAt = scoredAt.String
 	return j, nil
 }
 

@@ -24,7 +24,34 @@ type JobPosting struct {
 	ListedAt       int64    `json:"listed_at,omitempty"` // epoch ms
 	SearchedAt     string   `json:"searched_at,omitempty"`
 	FetchedAt      string   `json:"fetched_at,omitempty"`
+
+	// Structured enrichment (LLM-extracted). Zero values mean "not enriched."
+	CompanyOverview  string `json:"company_overview,omitempty"`
+	Industry         string `json:"industry,omitempty"`
+	TechStack        string `json:"tech_stack,omitempty"`
+	Seniority        string `json:"seniority,omitempty"`
+	EmploymentType   string `json:"employment_type,omitempty"`
+	YearsExperience  *int   `json:"years_experience,omitempty"`
+	CompanySizeBand  string `json:"company_size_band,omitempty"`
+	CompanyStage     string `json:"company_stage,omitempty"`
+	IsFoundingRole   bool   `json:"is_founding_role,omitempty"`
+	VisaSponsorship  string `json:"visa_sponsorship,omitempty"`
+	EnrichedAt       string `json:"enriched_at,omitempty"`
+
+	// Fit scoring against the user's resume + preferences.
+	FitScore  *int  `json:"fit_score,omitempty"` // 0-100, nil = unscored
+	FitReason string `json:"fit_reason,omitempty"`
+	ScoredAt  string `json:"scored_at,omitempty"`
+
+	// LLM-free dedup fingerprint.
+	ContentHash string `json:"content_hash,omitempty"`
 }
+
+// IsEnriched reports whether structured enrichment has run for this job.
+func (j *JobPosting) IsEnriched() bool { return j.EnrichedAt != "" }
+
+// IsFiltered reports whether the hard preference filter marked this job a mismatch.
+func (j *JobPosting) IsFiltered() bool { return j.Status == "filtered" }
 
 // HasSalary reports whether any numeric salary was parsed.
 func (j *JobPosting) HasSalary() bool {
