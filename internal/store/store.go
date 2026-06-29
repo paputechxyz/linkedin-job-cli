@@ -52,15 +52,6 @@ CREATE INDEX IF NOT EXISTS idx_jobs_salary_high ON jobs(salary_high);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source);
 CREATE VIRTUAL TABLE IF NOT EXISTS jobs_fts USING fts5(id UNINDEXED, title, company, description);
-CREATE TABLE IF NOT EXISTS profile (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    resume_text TEXT,
-    preferences_text TEXT,
-    pref_work_arrangement TEXT,
-    pref_min_salary REAL,
-    pref_locations TEXT,
-    updated_at TEXT
-);
 `
 
 // addColumns lists columns added by the fit-engine migration that must be
@@ -327,57 +318,6 @@ func (s *Store) Unscored() ([]*models.JobPosting, error) {
 	}
 	defer rows.Close()
 	return scanJobs(rows)
-}
-
-// GetProfile returns the user profile, or nil if none is set.
-func (s *Store) GetProfile() (*models.Profile, error) {
-	row := s.db.QueryRow(`SELECT resume_text, preferences_text, pref_work_arrangement, pref_min_salary, pref_locations, updated_at FROM profile WHERE id=1`)
-	p := &models.Profile{}
-	var resume, prefs, work, locs sql.NullString
-	var min sql.NullFloat64
-	var updated sql.NullString
-	if err := row.Scan(&resume, &prefs, &work, &min, &locs, &updated); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, err
-	}
-	p.ResumeText = resume.String
-	p.PreferencesText = prefs.String
-	p.PrefWorkArrangement = work.String
-	if min.Valid {
-		v := min.Float64
-		p.PrefMinSalary = &v
-	}
-	p.PrefLocations = locs.String
-	p.UpdatedAt = updated.String
-	return p, nil
-}
-
-// SetProfile upserts the single-row user profile.
-func (s *Store) SetProfile(p *models.Profile) error {
-	var min interface{}
-	if p.PrefMinSalary != nil {
-		min = *p.PrefMinSalary
-	}
-	_, err := s.db.Exec(`
-INSERT INTO profile (id, resume_text, preferences_text, pref_work_arrangement, pref_min_salary, pref_locations, updated_at)
-VALUES (1, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(id) DO UPDATE SET
-  resume_text=excluded.resume_text,
-  preferences_text=excluded.preferences_text,
-  pref_work_arrangement=excluded.pref_work_arrangement,
-  pref_min_salary=excluded.pref_min_salary,
-  pref_locations=excluded.pref_locations,
-  updated_at=excluded.updated_at`,
-		p.ResumeText, p.PreferencesText, p.PrefWorkArrangement, min, p.PrefLocations, NowISO())
-	return err
-}
-
-// ClearProfile removes the user profile.
-func (s *Store) ClearProfile() error {
-	_, err := s.db.Exec(`DELETE FROM profile WHERE id=1`)
-	return err
 }
 
 // Get returns one job by id.

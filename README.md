@@ -24,7 +24,8 @@ This is a Go rewrite + extension of an earlier Python tool (`linkedin-job-cli`).
   resume + preferences in a single LLM call, with a fit reason for strong matches.
 - **Token-frugal** — duplicates (content-hash) and clear preference mismatches
   are detected with zero LLM calls; only genuine new candidates are scored.
-- **Profile** — paste your resume and preferences; preferences also drive a
+- **Profile** — paste your resume and preferences into editable markdown files
+  (`RESUME.md`, `JOB_PREFERENCE.md`); preference knobs also drive a
   deterministic hard filter that auto-tags non-matches.
 - **Export** — JSON / CSV / Markdown.
 
@@ -101,6 +102,22 @@ linkedin-jobs clear
 ### Profile + fit scoring
 
 Paste your resume and preferences once; they drive both scoring and filtering.
+Both live as plain markdown files in your config dir (`~/.linkedin-jobs/`,
+override with `LJ_CONFIG_DIR`) so you can edit them by hand at any time:
+
+- `RESUME.md` — your resume (free text)
+- `JOB_PREFERENCE.md` — preferences (free text) plus optional YAML
+  front-matter knobs for the hard filter:
+
+  ```markdown
+  ---
+  work_arrangement: remote
+  min_salary: 200000
+  locations: Remote,US
+  ---
+
+  I want staff/founding roles at startups…
+  ```
 
 ```bash
 linkedin-jobs profile resume          # paste resume text, end with Ctrl-D
@@ -191,7 +208,7 @@ description are fetched per-job from the public detail page (JSON-LD
 | Variable          | Purpose                                            | Default                          |
 |-------------------|----------------------------------------------------|----------------------------------|
 | `LJ_DB_PATH`      | SQLite database path                               | `./linkedin_jobs.db`             |
-| `LJ_CONFIG_DIR`   | directory for `config.json` + `settings.yaml`      | `~/.linkedin-jobs`               |
+| `LJ_CONFIG_DIR`   | directory for `config.json`, `settings.yaml`, `RESUME.md`, `JOB_PREFERENCE.md` | `~/.linkedin-jobs` |
 | `ANTHROPIC_API_KEY` | Claude provider (auto-detected by config)        | —                                |
 | `LJ_COOKIES_FILE` | path to a file with a raw `Cookie:` header          | —                                |
 | `LJ_COOKIE`       | raw cookie header string                            | —                                |
@@ -211,6 +228,7 @@ internal/
   linkedin/                HTTP client, anonymous scraper, recommended graphql
   llm/                     OpenAI-compatible provider resolution + enrich/score + legacy summarizer
   models/                  JobPosting, Profile, Enrichment
+  profile/                resume + preferences as editable markdown files
   render/                  table / detail / JSON / stats output
   salary/                  salary parsing + filtering
   store/                   SQLite + FTS5 persistence + content-hash dedup

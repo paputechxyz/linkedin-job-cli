@@ -192,33 +192,6 @@ func TestSetFiltered(t *testing.T) {
 	}
 }
 
-func TestProfile_RoundTrip(t *testing.T) {
-	st := tmpDB(t)
-	if got, _ := st.GetProfile(); got != nil {
-		t.Fatalf("empty profile should be nil, got %+v", got)
-	}
-	in := &models.Profile{
-		ResumeText:          "Go engineer 10y",
-		PreferencesText:     "Staff/founding, remote, startups",
-		PrefWorkArrangement: "remote",
-		PrefMinSalary:       fptr(180000),
-		PrefLocations:       "Remote,US",
-	}
-	if err := st.SetProfile(in); err != nil {
-		t.Fatalf("SetProfile: %v", err)
-	}
-	got, err := st.GetProfile()
-	if err != nil || got == nil {
-		t.Fatalf("GetProfile: %v %+v", err, got)
-	}
-	if got.ResumeText != "Go engineer 10y" || got.PrefWorkArrangement != "remote" {
-		t.Errorf("profile mismatch: %+v", got)
-	}
-	if got.PrefMinSalary == nil || *got.PrefMinSalary != 180000 {
-		t.Errorf("pref_min_salary: %+v", got.PrefMinSalary)
-	}
-}
-
 func TestFindByContentHash(t *testing.T) {
 	st := tmpDB(t)
 	j := sampleJob("h1")

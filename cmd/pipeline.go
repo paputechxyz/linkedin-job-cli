@@ -10,6 +10,7 @@ import (
 	"linkedin-jobs/internal/linkedin"
 	"linkedin-jobs/internal/llm"
 	"linkedin-jobs/internal/models"
+	"linkedin-jobs/internal/profile"
 	"linkedin-jobs/internal/render"
 	"linkedin-jobs/internal/salary"
 	"linkedin-jobs/internal/store"
@@ -67,7 +68,7 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 
 	// 3. Run gates per job: dedup -> hard-filter -> score.
 	noScore := opts.noScore || opts.noSummarize
-	profile, _ := st.GetProfile()
+	profileData, _ := profile.Load()
 	var provider *llm.Provider
 	if !noScore {
 		p, err := llm.Resolve(cfg)
@@ -84,14 +85,14 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 			dupsN++
 			continue
 		}
-		if !opts.noFilter && settings.Filter.AutoFilter && !filter.PassesHardFilter(j, profile) {
+		if !opts.noFilter && settings.Filter.AutoFilter && !filter.PassesHardFilter(j, profileData) {
 			st.SetFiltered(j.ID)
 			j.Status = "filtered"
 			filteredN++
 			continue
 		}
 		if provider != nil {
-			if _, err := enrichAndScoreJob(st, j, profile, provider, threshold); err != nil {
+			if _, err := enrichAndScoreJob(st, j, profileData, provider, threshold); err != nil {
 				fmt.Fprintf(os.Stderr, "  ! %s: %v\n", j.Title, err)
 			} else {
 				scoredN++

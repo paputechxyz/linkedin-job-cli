@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"linkedin-jobs/internal/models"
+	"linkedin-jobs/internal/profile"
 	"linkedin-jobs/internal/render"
 	"linkedin-jobs/internal/salary"
 )
@@ -23,13 +24,20 @@ var (
 var profileCmd = &cobra.Command{
 	Use:   "profile",
 	Short: "Manage your resume and preferences (drive fit scoring & hard filtering)",
-	Long: `Store your resume and job preferences as text in the local DB.
+	Long: `Store your resume and job preferences as plain markdown files in
+` + "`" + `~/.linkedin-jobs/` + "`" + ` (override with LJ_CONFIG_DIR):
+
+    RESUME.md            — your resume (free text)
+    JOB_PREFERENCE.md    — preferences (free text) + YAML front-matter knobs
 
 The resume and free-text preferences are sent to your LLM provider when scoring
-jobs for fit. The structured preference flags (--work, --min-salary, --locations)
-drive the deterministic hard filter that tags clear mismatches without an LLM call.
+jobs for fit. The structured knobs in the front-matter (work_arrangement,
+min_salary, locations) drive the deterministic hard filter that tags clear
+mismatches without an LLM call.
 
-Paste text on stdin; end with Ctrl-D (macOS/Linux) or Ctrl-Z then Enter (Windows):
+Edit the files by hand any time, or use the subcommands below. Paste text on
+stdin; end with Ctrl-D (macOS/Linux) or Ctrl-Z then Enter (Windows):
+
     linkedin-jobs profile resume < resume.txt
     pbpaste | linkedin-jobs profile resume
     linkedin-jobs profile resume   # then type/paste and Ctrl-D`,
@@ -37,7 +45,7 @@ Paste text on stdin; end with Ctrl-D (macOS/Linux) or Ctrl-Z then Enter (Windows
 
 var profileResumeCmd = &cobra.Command{
 	Use:   "resume",
-	Short: "Paste your resume text (read from stdin)",
+	Short: "Paste your resume text (read from stdin), writing RESUME.md",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		text, err := readPasted(os.Stdin)
 		if err != nil {
@@ -46,20 +54,10 @@ var profileResumeCmd = &cobra.Command{
 		if strings.TrimSpace(text) == "" {
 			die("no resume text received on stdin")
 		}
-		st, err := openStore()
-		if err != nil {
-			die("failed to open DB: %v", err)
-		}
-		defer st.Close()
-		p, _ := st.GetProfile()
-		if p == nil {
-			p = &models.Profile{}
-		}
-		p.ResumeText = text
-		if err := st.SetProfile(p); err != nil {
+		if err := profile.SaveResume(text); err != nil {
 			die("failed to save resume: %v", err)
 		}
-		fmt.Fprintf(os.Stderr, "Resume saved (%d chars).\n", len(text))
+		fmt.Fprintf(os.Stderr, "Resume saved to %s (%d chars).\n", profile.ResumePath(), len(text))
 		return nil
 	},
 }
@@ -72,12 +70,9 @@ var profilePrefsCmd = &cobra.Command{
 		if err != nil {
 			die("failed to read preferences: %v", err)
 		}
-		st, err := openStore()
-		if err != nil {
-			die("failed to open DB: %v", err)
-		}
-		defer st.Close()
-		p, _ := st.GetProfile()
+
+		// Merge onto the existing on-disk profile so unset flags are preserved.
+		p, _ := profile.Load()
 		if p == nil {
 			p = &models.Profile{}
 		}
@@ -97,10 +92,10 @@ var profilePrefsCmd = &cobra.Command{
 		if cmd.Flags().Changed("locations") {
 			p.PrefLocations = prefLocations
 		}
-		if err := st.SetProfile(p); err != nil {
+		if err := profile.SavePrefs(p); err != nil {
 			die("failed to save preferences: %v", err)
 		}
-		fmt.Fprintf(os.Stderr, "Preferences saved.\n")
+		fmt.Fprintf(os.Stderr, "Preferences saved to %s.\n", profile.PrefsPath())
 		return nil
 	},
 }
@@ -109,30 +104,26 @@ var profileShowCmd = &cobra.Command{
 	Use:   "show",
 	Short: "Show the stored resume and preferences",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		st, err := openStore()
+		p, err := profile.Load()
 		if err != nil {
-			die("failed to open DB: %v", err)
-		}
-		defer st.Close()
-		p, err := st.GetProfile()
-		if err != nil {
-			die("query failed: %v", err)
+			die("failed to read profile: %v", err)
 		}
 		if p == nil {
-			fmt.Println("No profile set. Run: linkedin-jobs profile resume")
+			fmt.Println("No profile set. Edit these files (or run: linkedin-jobs profile resume):")
+			fmt.Printf("  %s\n  %s\n", profile.ResumePath(), profile.PrefsPath())
 			return nil
 		}
 		if jsonOut {
 			render.AsJSON(os.Stdout, p)
 			return nil
 		}
-		fmt.Println("Resume:")
+		fmt.Printf("Resume (%s):\n", profile.ResumePath())
 		if p.ResumeText == "" {
 			fmt.Println("  (none)")
 		} else {
 			fmt.Println(indent(p.ResumeText))
 		}
-		fmt.Println("\nPreferences:")
+		fmt.Printf("\nPreferences (%s):\n", profile.PrefsPath())
 		if p.PreferencesText == "" {
 			fmt.Println("  (none)")
 		} else {
@@ -147,7 +138,7 @@ var profileShowCmd = &cobra.Command{
 		}
 		fmt.Printf("  locations:         %s\n", orNone(p.PrefLocations))
 		if p.UpdatedAt != "" {
-			fmt.Printf("\nUpdated: %s\n", p.UpdatedAt)
+			fmt.Printf("\nLoaded at: %s\n", p.UpdatedAt)
 		}
 		return nil
 	},
@@ -155,17 +146,12 @@ var profileShowCmd = &cobra.Command{
 
 var profileClearCmd = &cobra.Command{
 	Use:   "clear",
-	Short: "Delete the stored resume and preferences",
+	Short: "Delete the stored resume and preferences files",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		st, err := openStore()
-		if err != nil {
-			die("failed to open DB: %v", err)
-		}
-		defer st.Close()
-		if err := st.ClearProfile(); err != nil {
+		if err := profile.Clear(); err != nil {
 			die("clear failed: %v", err)
 		}
-		fmt.Println("Profile cleared.")
+		fmt.Println("Profile cleared (RESUME.md and JOB_PREFERENCE.md removed).")
 		return nil
 	},
 }

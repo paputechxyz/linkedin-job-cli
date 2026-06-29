@@ -9,6 +9,7 @@ import (
 	"linkedin-jobs/internal/config"
 	"linkedin-jobs/internal/llm"
 	"linkedin-jobs/internal/models"
+	"linkedin-jobs/internal/profile"
 	"linkedin-jobs/internal/render"
 )
 
@@ -30,7 +31,7 @@ var enrichCmd = &cobra.Command{
 			die("failed to open DB: %v", err)
 		}
 		defer st.Close()
-		profile, _ := st.GetProfile()
+		p, _ := profile.Load()
 
 		var jobs []*models.JobPosting
 		if enrichAll {
@@ -58,7 +59,7 @@ var enrichCmd = &cobra.Command{
 
 		fmt.Fprintf(os.Stderr, "Enriching + scoring %d job(s) via %s…\n", len(jobs), provider.Source)
 		for _, j := range jobs {
-			if _, err := enrichAndScoreJob(st, j, profile, provider, settings.Scoring.ReasonThreshold); err != nil {
+			if _, err := enrichAndScoreJob(st, j, p, provider, settings.Scoring.ReasonThreshold); err != nil {
 				fmt.Fprintf(os.Stderr, "  ! %s: %v\n", j.Title, err)
 				continue
 			}
