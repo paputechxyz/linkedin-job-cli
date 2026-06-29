@@ -49,7 +49,7 @@ type providerPreset struct {
 
 var presets = map[string]providerPreset{
 	"zai":             {"https://api.z.ai/api/paas/v4", nil, "", "glm-4.5"},
-	"zai-coding-plan": {"https://api.z.ai/api/paas/v4", nil, "", "glm-4.5"},
+	"zai-coding-plan": {"https://api.z.ai/api/coding/paas/v4", nil, "", "glm-5.2"},
 	"anthropic":       {"https://api.anthropic.com/v1", map[string]string{"anthropic-version": "2023-06-01"}, "x-api-key", "claude-3-5-sonnet-latest"},
 }
 
@@ -63,11 +63,11 @@ func (p *Provider) Apply(req *http.Request) {
 	}
 }
 
-// Resolve resolves a provider in priority order (KTD6):
-//  1. persisted config file
-//  2. opencode stored credentials
-//  3. ANTHROPIC_API_KEY env (Anthropic OpenAI-compat)
-//  4. LJ_LLM_* / OPENAI_* env (existing config)
+// Resolve resolves a provider in priority order (most-explicit first):
+//  1. persisted config file (explicit user action via wizard)
+//  2. LJ_LLM_* / OPENAI_* env (explicit env override)
+//  3. ANTHROPIC_API_KEY env (explicit, Anthropic-compat)
+//  4. opencode stored credentials (implicit discovery)
 //  5. ErrNoProvider
 //
 // Resolution is non-interactive; the interactive wizard lives in the `config`
@@ -77,14 +77,6 @@ func Resolve(cfg config.Config) (*Provider, error) {
 		p.Source = "config"
 		return p, nil
 	}
-	if p, ok := FromOpencode(); ok {
-		return p, nil
-	}
-	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-		p := buildProvider(presets["anthropic"], key)
-		p.Source = "anthropic-env"
-		return p, nil
-	}
 	if cfg.LLMAPIKey != "" {
 		return &Provider{
 			BaseURL: cfg.LLMBaseURL,
@@ -92,6 +84,14 @@ func Resolve(cfg config.Config) (*Provider, error) {
 			Model:   cfg.LLMModel,
 			Source:  "env",
 		}, nil
+	}
+	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
+		p := buildProvider(presets["anthropic"], key)
+		p.Source = "anthropic-env"
+		return p, nil
+	}
+	if p, ok := FromOpencode(); ok {
+		return p, nil
 	}
 	return nil, ErrNoProvider
 }

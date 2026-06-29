@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 // Config holds runtime configuration resolved from the environment.
@@ -19,6 +20,10 @@ type Config struct {
 	RequestTimeoutSeconds int
 	DetailDelaySeconds    float64
 
+	// LLM pacing: seconds to wait between successive scoring calls in a run,
+	// to avoid provider rate limits (HTTP 429). 0 = no delay.
+	LLMDelaySeconds float64
+
 	// LinkedIn session (for recommended). Press-auth is preferred; these are fallbacks.
 	CookiesFile  string // path to a file holding a raw "Cookie:" header value or Netscape cookies.txt
 	CookieHeader string // raw cookie header override (env LJ_COOKIE)
@@ -34,6 +39,7 @@ func Load() Config {
 		UserAgent:             defaultUA(),
 		RequestTimeoutSeconds: 20,
 		DetailDelaySeconds:    0.8,
+		LLMDelaySeconds:       envFloat("LJ_LLM_DELAY_SECONDS", 2.0),
 		CookiesFile:           os.Getenv("LJ_COOKIES_FILE"),
 		CookieHeader:          os.Getenv("LJ_COOKIE"),
 	}
@@ -51,6 +57,19 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// envFloat parses key as a float, falling back to def on missing/invalid.
+func envFloat(key string, def float64) float64 {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil || f < 0 {
+		return def
+	}
+	return f
 }
 
 func cwd() string {

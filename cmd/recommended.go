@@ -52,6 +52,7 @@ displays the results.`,
 			noScore:          recNoScore,
 			noFilter:         recNoFilter,
 			detailDelay:      resolveDetailDelay(),
+			scoreDelay:       resolveLLMDelay(),
 			jsonOut:          jsonOut,
 		})
 		return nil

@@ -58,11 +58,15 @@ var enrichCmd = &cobra.Command{
 		}
 
 		fmt.Fprintf(os.Stderr, "Enriching + scoring %d job(s) via %s…\n", len(jobs), provider.Source)
+		delay := resolveLLMDelay()
+		scored := 0
 		for _, j := range jobs {
+			paceLLM(delay, scored)
 			if _, err := enrichAndScoreJob(st, j, p, provider, settings.Scoring.ReasonThreshold); err != nil {
 				fmt.Fprintf(os.Stderr, "  ! %s: %v\n", j.Title, err)
 				continue
 			}
+			scored++
 			score := "-"
 			if j.FitScore != nil {
 				score = fmt.Sprintf("%d", *j.FitScore)

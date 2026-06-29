@@ -70,8 +70,46 @@ func TestResolve_FromOpencode(t *testing.T) {
 	if p.Model != "glm-5.2" {
 		t.Errorf("Model=%q want glm-5.2", p.Model)
 	}
-	if p.BaseURL == "" {
-		t.Errorf("base URL should be resolved from preset")
+	// Coding Plan keys must hit the /coding/ endpoint — a wrong URL here is the
+	// bug that produces ZAI's "Insufficient balance" (code 1113).
+	if p.BaseURL != "https://api.z.ai/api/coding/paas/v4" {
+		t.Errorf("Coding Plan base URL=%q, want https://api.z.ai/api/coding/paas/v4", p.BaseURL)
+	}
+}
+
+// TestResolve_LLMEnvBeatsOpencode confirms explicit LJ_LLM_* env vars override
+// opencode discovery (otherwise users cannot override the discovered provider
+// without running the wizard).
+func TestResolve_LLMEnvBeatsOpencode(t *testing.T) {
+	_, home := clearProviderEnv(t)
+	writeJSON(t, filepath.Join(home, ".local", "share", "opencode", "auth.json"),
+		map[string]map[string]string{"zai-coding-plan": {"type": "api", "key": "opencode-secret"}})
+	p, err := Resolve(config.Config{
+		LLMBaseURL: "https://api.example.com/v1",
+		LLMAPIKey:  "env-key",
+		LLMModel:   "env-model",
+	})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if p.Source != "env" || p.APIKey != "env-key" || p.Model != "env-model" {
+		t.Errorf("env should win over opencode: %+v", p)
+	}
+}
+
+// TestResolve_AnthropicEnvBeatsOpencode confirms ANTHROPIC_API_KEY also wins
+// over opencode discovery.
+func TestResolve_AnthropicEnvBeatsOpencode(t *testing.T) {
+	_, home := clearProviderEnv(t)
+	writeJSON(t, filepath.Join(home, ".local", "share", "opencode", "auth.json"),
+		map[string]map[string]string{"zai-coding-plan": {"type": "api", "key": "opencode-secret"}})
+	t.Setenv("ANTHROPIC_API_KEY", "ant-key")
+	p, err := Resolve(config.Config{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if p.Source != "anthropic-env" || p.APIKey != "ant-key" {
+		t.Errorf("ANTHROPIC env should win over opencode: %+v", p)
 	}
 }
 

@@ -42,11 +42,15 @@ profile to refresh scores across the DB. (Dedup is ignored on re-score.)`,
 			die("query failed: %v", err)
 		}
 		fmt.Fprintf(os.Stderr, "Re-scoring %d job(s) via %s…\n", len(jobs), provider.Source)
+		delay := resolveLLMDelay()
+		scored := 0
 		for _, j := range jobs {
+			paceLLM(delay, scored)
 			if _, err := enrichAndScoreJob(st, j, p, provider, settings.Scoring.ReasonThreshold); err != nil {
 				fmt.Fprintf(os.Stderr, "  ! %s: %v\n", j.Title, err)
 				continue
 			}
+			scored++
 		}
 		fmt.Fprintln(os.Stderr, "Done.")
 		return nil

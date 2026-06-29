@@ -80,7 +80,7 @@ linkedin-jobs recommended --json                # machine-readable output
 
 ```bash
 linkedin-jobs search "Staff Engineer" Toronto --min-salary 200k
-linkedin-jobs search "Senior Developer" "Remote, US" --pages 2
+linkedin-jobs search "Senior Developer" "Remote, US" --top 3   # cap at 3 jobs
 ```
 
 ### Work with stored jobs
@@ -95,7 +95,7 @@ linkedin-jobs summarize                         # backfill legacy LLM summaries
 linkedin-jobs stats --top 25
 linkedin-jobs tag 4430749190 applied --note "referred by Sam"
 linkedin-jobs export --format csv -o jobs.csv
-linkedin-jobs watch "Staff Engineer" Toronto   # show only jobs new since last run
+linkedin-jobs watch "Staff Engineer" Toronto --top 10  # only jobs new since last run
 linkedin-jobs clear
 ```
 
@@ -161,10 +161,12 @@ linkedin-jobs config show             # resolved provider (key redacted) + setti
 linkedin-jobs config path
 ```
 
-Resolution order (first match wins): persisted `config.json` → opencode's stored
-credentials → `ANTHROPIC_API_KEY` → `OPENAI_API_KEY` / `LJ_LLM_*` env. The
-opencode preset reuses the provider configured in opencode (e.g. your GLM key);
-the Claude preset targets Anthropic's OpenAI-compatible endpoint.
+Resolution order (first match wins): persisted `config.json` → `LJ_LLM_*` /
+`OPENAI_API_KEY` env → `ANTHROPIC_API_KEY` env → opencode's stored credentials.
+Explicit env vars win over opencode discovery so you can override the discovered
+provider without running the wizard. The opencode preset reuses the provider
+configured in opencode (e.g. your GLM Coding Plan key → `glm-5.2`); the Claude
+preset targets Anthropic's OpenAI-compatible endpoint.
 
 Or set env vars directly:
 
@@ -209,6 +211,7 @@ description are fetched per-job from the public detail page (JSON-LD
 |-------------------|----------------------------------------------------|----------------------------------|
 | `LJ_DB_PATH`      | SQLite database path                               | `./linkedin_jobs.db`             |
 | `LJ_CONFIG_DIR`   | directory for `config.json`, `settings.yaml`, `RESUME.md`, `JOB_PREFERENCE.md` | `~/.linkedin-jobs` |
+| `LJ_LLM_DELAY_SECONDS` | seconds to pause between successive LLM scoring calls (avoids 429s) | `2.0` |
 | `ANTHROPIC_API_KEY` | Claude provider (auto-detected by config)        | —                                |
 | `LJ_COOKIES_FILE` | path to a file with a raw `Cookie:` header          | —                                |
 | `LJ_COOKIE`       | raw cookie header string                            | —                                |
@@ -237,6 +240,7 @@ internal/
 ## Notes
 
 - LinkedIn may rate-limit aggressive scraping. Detail fetches use a polite
-  delay (default 0.8s, configurable).
+  delay (default 0.8s, configurable). LLM scoring calls are paced too
+  (`LJ_LLM_DELAY_SECONDS`, default 2.0) to avoid provider rate limits (HTTP 429).
 - Salary data is only present on jobs where the employer provided it.
 - This tool is for personal job-search use. Respect LinkedIn's Terms of Service.

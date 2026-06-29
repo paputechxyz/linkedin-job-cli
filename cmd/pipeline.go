@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"linkedin-jobs/internal/config"
 	"linkedin-jobs/internal/filter"
@@ -26,6 +27,7 @@ type ingestOptions struct {
 	noScore          bool
 	noFilter         bool
 	detailDelay      float64
+	scoreDelay       float64 // pause between successive LLM scoring calls (avoids 429s)
 	jsonOut          bool
 }
 
@@ -92,6 +94,7 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 			continue
 		}
 		if provider != nil {
+			paceLLM(opts.scoreDelay, scoredN)
 			if _, err := enrichAndScoreJob(st, j, profileData, provider, threshold); err != nil {
 				fmt.Fprintf(os.Stderr, "  ! %s: %v\n", j.Title, err)
 			} else {
@@ -191,4 +194,19 @@ func parseMinSalary(s string) float64 {
 // resolveDetailDelay reads the configured delay between detail fetches.
 func resolveDetailDelay() float64 {
 	return config.Load().DetailDelaySeconds
+}
+
+// resolveLLMDelay reads the configured delay between successive LLM scoring
+// calls. Set LJ_LLM_DELAY_SECONDS (default 2.0) to pace bulk runs and avoid
+// provider rate limits (HTTP 429). 0 disables pacing.
+func resolveLLMDelay() float64 {
+	return config.Load().LLMDelaySeconds
+}
+
+// paceLLM sleeps for delay when callIdx > 0, i.e. between successive LLM calls
+// rather than before the first one. Pass the count of calls already made.
+func paceLLM(delay float64, callIdx int) {
+	if callIdx > 0 && delay > 0 {
+		time.Sleep(time.Duration(delay * float64(time.Second)))
+	}
 }
