@@ -99,6 +99,21 @@ linkedin-jobs watch "Staff Engineer" Toronto --top 10  # only jobs new since las
 linkedin-jobs clear
 ```
 
+### Web UI (local browser)
+
+```bash
+linkedin-jobs serve                      # read-only browser on http://127.0.0.1:8080
+linkedin-jobs serve --port 9000          # custom port
+```
+
+Serves a read-only page listing every stored job with all fields visible.
+Long-text fields (description, summaries, company overview, fit reason, notes)
+are collapsed by default and expand on click; the job title links out to its
+LinkedIn posting. Includes full-text search (FTS5), filters (company, location,
+salary, score, status, source, remote), and sort by fit score or salary — all
+reusing the same store layer as the CLI. Binds to localhost only; no data is
+written.
+
 ### Profile + fit scoring
 
 Paste your resume and preferences once; they drive both scoring and filtering.
