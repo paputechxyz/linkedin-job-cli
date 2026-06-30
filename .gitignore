@@ -1,5 +1,6 @@
 linkedin_jobs.db
 linkedin_jobs.db-*
+linkedin_cookie.txt
 *.bak
 /linkedin-jobs
 RESUME.md
