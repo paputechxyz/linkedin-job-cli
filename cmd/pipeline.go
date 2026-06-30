@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -81,6 +82,10 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 			fmt.Fprintf(os.Stderr, "Scoring skipped: %v\n", err)
 		} else {
 			provider = p
+			// Surface profile state so the user can tell whether scores will
+			// reflect their actual resume/preferences or run context-free.
+			// (Profile files live in the project dir — see profile.ResumePath.)
+			fmt.Fprintln(os.Stderr, profileStatus(profileData))
 		}
 	}
 	threshold := settings.Scoring.ReasonThreshold
@@ -122,6 +127,37 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 		render.Table(os.Stdout, shown)
 	}
 	return shown
+}
+
+// profileStatus renders a one-line summary of which profile files were loaded,
+// so scoring behavior is debuggable at a glance. Reports resume + preferences
+// character counts and the project dir the loader looked in.
+func profileStatus(p *models.Profile) string {
+	dir := profileDir()
+	if p == nil || (p.ResumeText == "" && p.PreferencesText == "") {
+		return fmt.Sprintf("Profile: no RESUME.md / JOB_PREFERENCE.md found in %s (scoring without candidate context).", dir)
+	}
+	parts := make([]string, 0, 2)
+	if p.ResumeText != "" {
+		parts = append(parts, fmt.Sprintf("resume (%d chars)", len(p.ResumeText)))
+	} else {
+		parts = append(parts, "no resume")
+	}
+	if p.PreferencesText != "" {
+		parts = append(parts, fmt.Sprintf("preferences (%d chars)", len(p.PreferencesText)))
+	} else {
+		parts = append(parts, "no preferences")
+	}
+	return fmt.Sprintf("Profile: loaded %s from %s.", strings.Join(parts, ", "), dir)
+}
+
+// profileDir returns the directory the profile loader looked in, for display.
+// Mirrors profile.ResumePath's location without re-deriving the filename.
+func profileDir() string {
+	if abs, err := filepath.Abs(profile.ResumePath()); err == nil {
+		return filepath.Dir(abs)
+	}
+	return filepath.Dir(profile.ResumePath())
 }
 
 // enrichAndScoreJob runs the combined enrichment + fit-score call for one job

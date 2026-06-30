@@ -58,6 +58,7 @@ var enrichCmd = &cobra.Command{
 		}
 
 		fmt.Fprintf(os.Stderr, "Enriching + scoring %d job(s) via %s…\n", len(jobs), provider.Source)
+		fmt.Fprintln(os.Stderr, profileStatus(p))
 		delay := resolveLLMDelay()
 		scored := 0
 		for _, j := range jobs {

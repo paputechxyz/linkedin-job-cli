@@ -1,0 +1,24 @@
+{
+  "data": {
+    "jobPostingId": 4430758087,
+    "title": "Senior Software Engineer II",
+    "formattedLocation": "Canada",
+    "formattedEmploymentStatus": "Full-time",
+    "formattedExperienceLevel": "Mid-Senior level",
+    "workRemoteAllowed": true,
+    "listedAt": 1781820367000,
+    "originalListedAt": 1781819610000,
+    "formattedIndustries": ["Individual and Family Services"],
+    "description": {
+      "text": "About the Company\n\nSample company description body used as a test fixture. Responsibilities include building services and APIs. Salary range for this position is $118,500 to $216,500 USD. Nice to have: experience with Kafka.\n\n",
+      "attributes": [
+        {"start": 0, "length": 16, "type": {"$type": "com.linkedin.pemberly.text.Bold"}},
+        {"start": 16, "length": 1, "type": {"$type": "com.linkedin.pemberly.text.LineBreak"}}
+      ],
+      "$type": "com.linkedin.pemberly.text.AttributedText"
+    },
+    "$type": "com.linkedin.voyager.jobs.ats.jobposting.JobPosting"
+  },
+  "included": [],
+  "errors": []
+}

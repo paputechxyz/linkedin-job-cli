@@ -133,14 +133,13 @@ func TestScore_EmptyDescriptionMakesNoCall(t *testing.T) {
 	srv, p := fakeCompletions(t, "{}", 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: ""}
-	e, err := Score(j, nil, p, 70)
-	if err != nil {
-		t.Fatalf("Score: %v", err)
+	_, err := Score(j, nil, p, 70)
+	if err != ErrEmptyDescription {
+		t.Fatalf("Score err = %v, want ErrEmptyDescription", err)
 	}
 	if calls != 0 {
 		t.Errorf("empty description should make no API call, got %d", calls)
 	}
-	_ = e
 }
 
 func TestScore_TransportFailureReturnsError(t *testing.T) {

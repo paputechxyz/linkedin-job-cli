@@ -42,6 +42,7 @@ profile to refresh scores across the DB. (Dedup is ignored on re-score.)`,
 			die("query failed: %v", err)
 		}
 		fmt.Fprintf(os.Stderr, "Re-scoring %d job(s) via %s…\n", len(jobs), provider.Source)
+		fmt.Fprintln(os.Stderr, profileStatus(p))
 		delay := resolveLLMDelay()
 		scored := 0
 		for _, j := range jobs {

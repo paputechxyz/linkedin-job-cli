@@ -1,0 +1,14 @@
+# linkedin-jobs settings — edit freely, delete a key to fall back to its default.
+# Docs: https://github.com/paputechxyz/linkedin-job-cli → README → Settings
+
+stats:
+  top_companies_limit: 25        # `stats` command + serve UI; also `stats --top N`
+
+filter:
+  auto_filter: true              # hard preference filter on fetch; set false to disable
+
+scoring:
+  reason_threshold: 70           # fit_reason only emitted at/above this score (0-100)
+
+enrich:
+  auto_enrich_on_save: false     # set true to auto-score jobs when you tag them `saved`

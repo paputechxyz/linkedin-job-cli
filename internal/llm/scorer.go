@@ -16,7 +16,9 @@ import (
 
 const enrichSystem = "You are an expert technical recruiter assistant. Analyze a job posting for an engineering candidate and extract structured facts plus a fit score against the candidate's resume and preferences."
 
-const enrichPromptTmpl = `Analyze this job posting and return ONLY a JSON object (no prose, no code fences) with EXACTLY these keys:
+const enrichPromptTmpl = `Analyze this job posting and return ONLY a JSON object (no prose, no code fences) with EXACTLY these keys (emit fit_score and fit_reason FIRST so they are never lost to a length truncation):
+"fit_score": integer 0-100 reflecting how well this role fits the candidate's resume and stated preferences,
+"fit_reason": one concise sentence explaining the fit (include ONLY when fit_score >= %d; otherwise empty string),
 "company_overview": 1-2 sentences on what the company does,
 "industry": the company's industry,
 "tech_stack": comma-separated technologies required,
@@ -27,9 +29,7 @@ const enrichPromptTmpl = `Analyze this job posting and return ONLY a JSON object
 "company_stage": one of seed|early|growth|mature|public,
 "is_founding_role": boolean (founding/founding-engineer role),
 "visa_sponsorship": one of yes|no|unknown,
-"work_arrangement": one of remote|hybrid|onsite|unknown,
-"fit_score": integer 0-100 reflecting how well this role fits the candidate's resume and stated preferences,
-"fit_reason": one concise sentence explaining the fit (include ONLY when fit_score >= %d; otherwise empty string).
+"work_arrangement": one of remote|hybrid|onsite|unknown.
 
 Job Title: %s
 Company: %s
@@ -45,14 +45,22 @@ Candidate preferences:
 Job description:
 %s`
 
+// ErrEmptyDescription means the job had no description body to analyze. The
+// caller (ingest) treats this as a non-fatal miss: it must NOT persist
+// enriched_at/scored_at, otherwise the dedup gate would hide the job from
+// future retries (a real regression risk now that LinkedIn's detail page is a
+// SPA whose description sometimes fails to load).
+var ErrEmptyDescription = errors.New("job description is empty; cannot score")
+
 // Score runs the combined enrichment + fit-scoring LLM call for one job and
-// returns the structured result. An empty description yields a zero result
-// without any HTTP call. A transport/HTTP failure returns an error so the caller
-// can warn and persist the job unenriched; an unparseable response never errors
-// (it yields a partial Enrichment) per KTD2.
+// returns the structured result. An empty description yields ErrEmptyDescription
+// without any HTTP call so the caller can skip silently persisting a no-op
+// result. A transport/HTTP failure returns an error so the caller can warn and
+// persist the job unenriched; an unparseable response never errors (it yields a
+// partial Enrichment) per KTD2.
 func Score(j *models.JobPosting, p *models.Profile, provider *Provider, reasonThreshold int) (models.Enrichment, error) {
 	if strings.TrimSpace(j.Description) == "" {
-		return models.Enrichment{}, nil
+		return models.Enrichment{}, ErrEmptyDescription
 	}
 	if reasonThreshold <= 0 || reasonThreshold > 100 {
 		reasonThreshold = 70
@@ -86,7 +94,7 @@ func enrichPrompt(j *models.JobPosting, p *models.Profile, reasonThreshold int) 
 func requestEnrichment(j *models.JobPosting, p *models.Profile, provider *Provider, reasonThreshold int) (string, error) {
 	reqBody := map[string]interface{}{
 		"model":       provider.Model,
-		"max_tokens":  700,
+		"max_tokens":  4096,
 		"temperature": 0.2,
 		"messages": []map[string]string{
 			{"role": "system", "content": enrichSystem},
@@ -142,19 +150,19 @@ func truncateForError(s string) string {
 }
 
 type enrichJSON struct {
-	CompanyOverview  string `json:"company_overview"`
-	Industry         string `json:"industry"`
-	TechStack        string `json:"tech_stack"`
-	Seniority        string `json:"seniority"`
-	EmploymentType   string `json:"employment_type"`
-	YearsExperience  *int   `json:"years_experience"`
-	CompanySizeBand  string `json:"company_size_band"`
-	CompanyStage     string `json:"company_stage"`
-	IsFoundingRole   bool   `json:"is_founding_role"`
-	VisaSponsorship  string `json:"visa_sponsorship"`
-	WorkArrangement  string `json:"work_arrangement"`
-	FitScore         *int   `json:"fit_score"`
-	FitReason        string `json:"fit_reason"`
+	CompanyOverview string `json:"company_overview"`
+	Industry        string `json:"industry"`
+	TechStack       string `json:"tech_stack"`
+	Seniority       string `json:"seniority"`
+	EmploymentType  string `json:"employment_type"`
+	YearsExperience *int   `json:"years_experience"`
+	CompanySizeBand string `json:"company_size_band"`
+	CompanyStage    string `json:"company_stage"`
+	IsFoundingRole  bool   `json:"is_founding_role"`
+	VisaSponsorship string `json:"visa_sponsorship"`
+	WorkArrangement string `json:"work_arrangement"`
+	FitScore        *int   `json:"fit_score"`
+	FitReason       string `json:"fit_reason"`
 }
 
 func parseEnrichment(content string, reasonThreshold int) models.Enrichment {
@@ -207,11 +215,11 @@ func toEnrichment(ej enrichJSON, reasonThreshold int) models.Enrichment {
 }
 
 var (
-	seniorityVals   = []string{"intern", "junior", "mid", "senior", "staff", "principal", "lead", "manager", "director"}
-	employmentVals  = []string{"full-time", "part-time", "contract", "temporary", "internship"}
-	sizeVals        = []string{"1-10", "11-50", "51-200", "201-1000", "1000+"}
-	stageVals       = []string{"seed", "early", "growth", "mature", "public"}
-	visaVals        = []string{"yes", "no", "unknown"}
+	seniorityVals  = []string{"intern", "junior", "mid", "senior", "staff", "principal", "lead", "manager", "director"}
+	employmentVals = []string{"full-time", "part-time", "contract", "temporary", "internship"}
+	sizeVals       = []string{"1-10", "11-50", "51-200", "201-1000", "1000+"}
+	stageVals      = []string{"seed", "early", "growth", "mature", "public"}
+	visaVals       = []string{"yes", "no", "unknown"}
 )
 
 func normalizeEnum(v string, allowed []string) string {
@@ -251,10 +259,10 @@ func parseDelimiter(content string) enrichJSON {
 	segs := splitDelimiters(content)
 	set := map[string]*string{
 		"company_overview": &ej.CompanyOverview, "company": &ej.CompanyOverview,
-		"industry": &ej.Industry,
+		"industry":   &ej.Industry,
 		"tech_stack": &ej.TechStack, "stack": &ej.TechStack, "tech stack": &ej.TechStack,
-		"seniority":        &ej.Seniority,
-		"employment_type":  &ej.EmploymentType, "employment": &ej.EmploymentType,
+		"seniority":       &ej.Seniority,
+		"employment_type": &ej.EmploymentType, "employment": &ej.EmploymentType,
 		"company_size_band": &ej.CompanySizeBand, "size": &ej.CompanySizeBand, "company size": &ej.CompanySizeBand,
 		"company_stage": &ej.CompanyStage, "stage": &ej.CompanyStage,
 		"visa_sponsorship": &ej.VisaSponsorship, "visa": &ej.VisaSponsorship,
