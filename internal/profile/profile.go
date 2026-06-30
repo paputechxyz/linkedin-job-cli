@@ -1,8 +1,11 @@
 // Package profile stores the user's resume and job preferences as plain
-// markdown files in the config directory, so they are trivial to edit by hand:
+// markdown files in the project directory (CWD), so they travel with the
+// repo/folder you run the CLI from and are trivial to edit by hand:
 //
-//	$LJ_CONFIG_DIR/RESUME.md          — resume body (free text)
-//	$LJ_CONFIG_DIR/JOB_PREFERENCE.md  — preferences body + YAML front-matter knobs
+//	$CWD/RESUME.md          — resume body (free text)
+//	$CWD/JOB_PREFERENCE.md  — preferences body + YAML front-matter knobs
+//
+// (Override the directory with $LJ_CONFIG_DIR.)
 //
 // JOB_PREFERENCE.md layout (front-matter is optional; body is free text):
 //
@@ -37,11 +40,11 @@ const ResumeFile = "RESUME.md"
 // PrefsFile is the filename holding preferences + front-matter knobs.
 const PrefsFile = "JOB_PREFERENCE.md"
 
-// ResumePath returns the resolved path to RESUME.md.
-func ResumePath() string { return filepath.Join(config.ConfigDir(), ResumeFile) }
+// ResumePath returns the resolved path to RESUME.md (project-local).
+func ResumePath() string { return filepath.Join(config.ProjectDir(), ResumeFile) }
 
-// PrefsPath returns the resolved path to JOB_PREFERENCE.md.
-func PrefsPath() string { return filepath.Join(config.ConfigDir(), PrefsFile) }
+// PrefsPath returns the resolved path to JOB_PREFERENCE.md (project-local).
+func PrefsPath() string { return filepath.Join(config.ProjectDir(), PrefsFile) }
 
 // prefsFrontmatter mirrors the YAML block at the top of JOB_PREFERENCE.md.
 // Pointer types let users express "unset" by deleting the key.
@@ -92,11 +95,11 @@ func Load() (*models.Profile, error) {
 	return p, nil
 }
 
-// SaveResume writes the resume body to RESUME.md (creating the config dir if
+// SaveResume writes the resume body to RESUME.md (creating the project dir if
 // needed). An empty text clears the file.
 func SaveResume(text string) error {
-	if err := os.MkdirAll(config.ConfigDir(), 0o755); err != nil {
-		return fmt.Errorf("create config dir: %w", err)
+	if err := os.MkdirAll(config.ProjectDir(), 0o755); err != nil {
+		return fmt.Errorf("create project dir: %w", err)
 	}
 	if err := os.WriteFile(ResumePath(), []byte(strings.TrimSpace(text)+"\n"), 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", ResumeFile, err)
@@ -107,8 +110,8 @@ func SaveResume(text string) error {
 // SavePrefs writes preferences (body + front-matter knobs) to JOB_PREFERENCE.md.
 // All fields come from p; an empty profile yields a minimal empty file.
 func SavePrefs(p *models.Profile) error {
-	if err := os.MkdirAll(config.ConfigDir(), 0o755); err != nil {
-		return fmt.Errorf("create config dir: %w", err)
+	if err := os.MkdirAll(config.ProjectDir(), 0o755); err != nil {
+		return fmt.Errorf("create project dir: %w", err)
 	}
 	fm := prefsFrontmatter{
 		WorkArrangement:   p.PrefWorkArrangement,

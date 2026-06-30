@@ -2,6 +2,7 @@ package linkedin
 
 import (
 	"encoding/json"
+	"net/http"
 	"regexp"
 	"strings"
 
@@ -148,6 +149,16 @@ func (c *Client) FetchDetail(j *models.JobPosting) error {
 	// pages where LinkedIn doesn't serve a JobPosting JSON-LD block.
 	j.Description = extractDescription(doc)
 
+	// 2b. LinkedIn's detail page is now a React Server Components SPA that does
+	// not include the description body in the initial HTML. When the HTML
+	// extraction misses AND we have a CSRF-bearing session, fetch the
+	// description from the Voyager jobPostings API (data.description.text).
+	if strings.TrimSpace(j.Description) == "" {
+		if desc, err := c.fetchDescriptionViaAPI(j.ID); err == nil {
+			j.Description = desc
+		}
+	}
+
 	// 3. Description-body salary is authoritative (carries the localized band +
 	// currency). Override the badge when present and mark it high-confidence.
 	if descSal := salary.InDescription(j.Description); descSal != nil {
@@ -252,6 +263,51 @@ func hasJobPostingType(t interface{}) bool {
 		}
 	}
 	return false
+}
+
+// fetchDescriptionViaAPI fetches a job's description body from the Voyager
+// jobPostings REST API. Used as a fallback when the detail HTML page (now a
+// React Server Components SPA) ships no description in the initial HTML.
+//
+// Requires a CSRF-bearing session (authenticated calls only). The endpoint
+// returns a normalized object whose `data.description` is a Pemberly
+// AttributedText {text, attributes}; only the plain `text` is needed. Returns
+// ("", nil) when the field is absent so the caller can treat it as a soft miss.
+func (c *Client) fetchDescriptionViaAPI(id string) (string, error) {
+	if id == "" || !c.HasSession() || c.session.CSRFToken == "" {
+		return "", nil
+	}
+	url := "https://www.linkedin.com/voyager/api/jobs/jobPostings/" + id
+	hdr := http.Header{
+		"Referer":                   {"https://www.linkedin.com/jobs/view/" + id + "/"},
+		"X-Restli-Protocol-Version": {"2.0.0"},
+		"Csrf-Token":                {c.session.CSRFToken},
+	}
+	body, status, err := c.getJSON(url, true, hdr)
+	if err != nil {
+		return "", err
+	}
+	if status != 200 {
+		return "", errf("jobPostings API returned status %d for %s", status, id)
+	}
+	return descriptionFromJobPostingAPI(body), nil
+}
+
+// descriptionFromJobPostingAPI extracts the plain text from a Voyager
+// jobPostings response's data.description.text field. Returns "" on any shape
+// mismatch so the caller can fall through without erroring.
+func descriptionFromJobPostingAPI(body string) string {
+	var resp struct {
+		Data struct {
+			Description struct {
+				Text string `json:"text"`
+			} `json:"description"`
+		} `json:"data"`
+	}
+	if json.Unmarshal([]byte(body), &resp) != nil {
+		return ""
+	}
+	return strings.TrimSpace(resp.Data.Description.Text)
 }
 
 // FetchDetailsBatch fetches detail pages for multiple jobs with a politeness

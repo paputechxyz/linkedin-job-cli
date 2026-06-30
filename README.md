@@ -5,8 +5,6 @@ browser session, search the public job board, filter by salary, summarize with
 an LLM, and persist everything to a local SQLite store with offline full-text
 search.
 
-This is a Go rewrite + extension of an earlier Python tool (`linkedin-job-cli`).
-
 ## Highlights
 
 - **`recommended`** — your personalized job feed, authenticated via your own
@@ -72,7 +70,6 @@ The `csrf-token` is derived automatically from your `JSESSIONID` cookie.
 linkedin-jobs recommended                       # pull your feed
 linkedin-jobs recommended --min-salary 200k     # only ≥ $200k
 linkedin-jobs recommended --remote              # only remote-friendly
-linkedin-jobs recommended --exclude-company Tata --exclude-company Wipro
 linkedin-jobs recommended --json                # machine-readable output
 ```
 
@@ -121,8 +118,9 @@ POST endpoints guarded by a per-session CSRF token.
 ### Profile + fit scoring
 
 Paste your resume and preferences once; they drive both scoring and filtering.
-Both live as plain markdown files in your config dir (`~/.linkedin-jobs/`,
-override with `LJ_CONFIG_DIR`) so you can edit them by hand at any time:
+Both live as plain markdown files **in your project root** (the directory you
+run the CLI from; override with `LJ_CONFIG_DIR`) so they travel with this
+job-search folder and you can edit them by hand at any time:
 
 - `RESUME.md` — your resume (free text)
 - `JOB_PREFERENCE.md` — preferences (free text) plus optional YAML
@@ -132,6 +130,7 @@ override with `LJ_CONFIG_DIR`) so you can edit them by hand at any time:
   ---
   work_arrangement: remote
   min_salary: 200000
+  min_salary_currency: CAD
   locations: Remote,US
   ---
 
@@ -200,7 +199,10 @@ No key? Scoring is skipped with a clear message; all other commands still work.
 
 ### Settings
 
-Optional `~/.linkedin-jobs/settings.yaml` (override the dir with `LJ_CONFIG_DIR`):
+Optional `settings.yaml` **in your project root** (override the dir with
+`LJ_CONFIG_DIR`). This is the same project-local location as `RESUME.md` and
+`JOB_PREFERENCE.md`; secrets (`config.json`) still live globally in
+`~/.linkedin-jobs/`:
 
 ```yaml
 stats:
@@ -212,6 +214,10 @@ scoring:
 enrich:
   auto_enrich_on_save: false     # tag saved does not auto-score by default
 ```
+
+When scoring runs, the CLI prints which profile files it loaded (and from
+where), so you can tell at a glance whether scores reflect your actual
+resume/preferences or ran context-free.
 
 ## How recommended works
 
@@ -228,8 +234,8 @@ description are fetched per-job from the public detail page (JSON-LD
 
 | Variable          | Purpose                                            | Default                          |
 |-------------------|----------------------------------------------------|----------------------------------|
-| `LJ_DB_PATH`      | SQLite database path                               | `./linkedin_jobs.db`             |
-| `LJ_CONFIG_DIR`   | directory for `config.json`, `settings.yaml`, `RESUME.md`, `JOB_PREFERENCE.md` | `~/.linkedin-jobs` |
+| `LJ_DB_PATH`      | SQLite database path                               | `~/linkedin-jobs/linkedin_jobs.db` |
+| `LJ_CONFIG_DIR`   | directory for `settings.yaml`, `RESUME.md`, `JOB_PREFERENCE.md` (also `config.json` secrets) | project root (CWD); `~/.linkedin-jobs/` for `config.json` when unset |
 | `LJ_LLM_DELAY_SECONDS` | seconds to pause between successive LLM scoring calls (avoids 429s) | `2.0` |
 | `ANTHROPIC_API_KEY` | Claude provider (auto-detected by config)        | —                                |
 | `LJ_COOKIES_FILE` | path to a file with a raw `Cookie:` header          | —                                |

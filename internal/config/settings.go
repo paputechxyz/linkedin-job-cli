@@ -43,8 +43,9 @@ func DefaultSettings() Settings {
 	}
 }
 
-// ConfigDir returns the directory holding config.json and settings.yaml:
-// $LJ_CONFIG_DIR if set, otherwise ~/.linkedin-jobs.
+// ConfigDir returns the directory holding secret/sensitive config that should
+// stay global per user: $LJ_CONFIG_DIR if set, otherwise ~/.linkedin-jobs.
+// Used for config.json (LLM provider credentials).
 func ConfigDir() string {
 	if d := os.Getenv("LJ_CONFIG_DIR"); d != "" {
 		return d
@@ -56,12 +57,28 @@ func ConfigDir() string {
 	return filepath.Join(home, ".linkedin-jobs")
 }
 
-// SettingsPath returns the resolved path to settings.yaml.
-func SettingsPath() string {
-	return filepath.Join(ConfigDir(), "settings.yaml")
+// ProjectDir returns the directory holding project-local, hand-editable user
+// content (settings.yaml, RESUME.md, JOB_PREFERENCE.md): $LJ_CONFIG_DIR if
+// set, otherwise the current working directory. These files describe *this*
+// job-search project (your resume, your preferences, your tunables) and so
+// travel with the repo/folder you run the CLI from, unlike secrets in
+// ConfigDir() which stay global.
+func ProjectDir() string {
+	if d := os.Getenv("LJ_CONFIG_DIR"); d != "" {
+		return d
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		return cwd
+	}
+	return "."
 }
 
-// LoadSettings reads settings.yaml from ConfigDir, overlaying it on
+// SettingsPath returns the resolved path to settings.yaml (project-local).
+func SettingsPath() string {
+	return filepath.Join(ProjectDir(), "settings.yaml")
+}
+
+// LoadSettings reads settings.yaml from ProjectDir, overlaying it on
 // DefaultSettings. A missing file yields defaults with no error.
 func LoadSettings() (Settings, error) {
 	s := DefaultSettings()
