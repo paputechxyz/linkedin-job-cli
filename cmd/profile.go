@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"linkedin-jobs/internal/fx"
 	"linkedin-jobs/internal/models"
 	"linkedin-jobs/internal/profile"
 	"linkedin-jobs/internal/render"
@@ -16,9 +17,10 @@ import (
 )
 
 var (
-	prefWork      string
-	prefMinSalary string
-	prefLocations string
+	prefWork             string
+	prefMinSalary        string
+	prefMinSalaryCurrency string
+	prefLocations        string
 )
 
 var profileCmd = &cobra.Command{
@@ -89,6 +91,13 @@ var profilePrefsCmd = &cobra.Command{
 			}
 			p.PrefMinSalary = &v
 		}
+		if cmd.Flags().Changed("min-salary-currency") {
+			c := fx.Normalize(prefMinSalaryCurrency)
+			if c != "" && !fx.Supported(c) {
+				die("unsupported --min-salary-currency %q (e.g. USD, CAD, EUR)", prefMinSalaryCurrency)
+			}
+			p.PrefMinSalaryCurrency = c
+		}
 		if cmd.Flags().Changed("locations") {
 			p.PrefLocations = prefLocations
 		}
@@ -132,7 +141,7 @@ var profileShowCmd = &cobra.Command{
 		fmt.Println("\nHard-filter knobs:")
 		fmt.Printf("  work arrangement: %s\n", orNone(p.PrefWorkArrangement))
 		if p.PrefMinSalary != nil {
-			fmt.Printf("  min salary:        $%.0f\n", *p.PrefMinSalary)
+			fmt.Printf("  min salary:        %s%.0f\n", currencyLabel(p.PrefMinSalaryCurrency), *p.PrefMinSalary)
 		} else {
 			fmt.Println("  min salary:        (none)")
 		}
@@ -202,9 +211,26 @@ func orNone(s string) string {
 	return s
 }
 
+// currencyLabel renders a currency code as a leading symbol for display, e.g.
+// "CAD" -> "CA$" , "USD" or "" -> "$".
+func currencyLabel(code string) string {
+	switch strings.ToUpper(strings.TrimSpace(code)) {
+	case "CAD":
+		return "CA$"
+	case "USD", "":
+		return "$"
+	case "EUR":
+		return "€"
+	case "GBP":
+		return "£"
+	}
+	return strings.ToUpper(strings.TrimSpace(code)) + " "
+}
+
 func init() {
 	profilePrefsCmd.Flags().StringVar(&prefWork, "work", "", "required work arrangement for the hard filter: remote|hybrid|onsite")
 	profilePrefsCmd.Flags().StringVar(&prefMinSalary, "min-salary", "", "salary floor for the hard filter (e.g. 200k)")
+	profilePrefsCmd.Flags().StringVar(&prefMinSalaryCurrency, "min-salary-currency", "", "currency for the salary floor (ISO 4217, e.g. CAD); enables FX-aware filtering")
 	profilePrefsCmd.Flags().StringVar(&prefLocations, "locations", "", "comma-separated preferred locations for the hard filter")
 
 	profileCmd.AddCommand(profileResumeCmd, profilePrefsCmd, profileShowCmd, profileClearCmd)

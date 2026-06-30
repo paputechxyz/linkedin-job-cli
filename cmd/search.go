@@ -8,15 +8,16 @@ import (
 )
 
 var (
-	searchTop      int
-	searchMinSalary string
-	searchRemote   bool
-	searchExclude  []string
-	searchNoDetail bool
-	searchNoSummar bool
-	searchNoScore  bool
-	searchNoFilter bool
-	searchForceOW  bool
+	searchTop             int
+	searchMinSalary       string
+	searchSalaryCurrency  string
+	searchRemote          bool
+	searchExclude         []string
+	searchNoDetail        bool
+	searchNoSummar        bool
+	searchNoScore         bool
+	searchNoFilter        bool
+	searchForceOW         bool
 )
 
 var searchCmd = &cobra.Command{
@@ -29,8 +30,16 @@ the same pipeline as 'recommended'. Works without a session; no login needed.
 
 Examples:
   linkedin-jobs search "Staff Engineer" Toronto --min-salary 200k
-  linkedin-jobs search "Senior Developer" "Remote, US" --top 3`,
+  linkedin-jobs search "Senior Developer" "Remote, US" --top 3
+  linkedin-jobs search "Staff Engineer" Toronto --min-salary 160k --salary-currency CAD`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Validate the salary floor + currency up front so a typo fails before
+		// we hit LinkedIn (and before the FX-aware filter runs).
+		minSal := parseMinSalary(searchMinSalary)
+		currency := validateSalaryCurrency(searchSalaryCurrency)
+		if currency != "" && minSal == 0 {
+			die("--salary-currency requires --min-salary.")
+		}
 		keywords := args[0]
 		location := ""
 		if len(args) > 1 {
@@ -53,17 +62,18 @@ Examples:
 			jobs = jobs[:searchTop]
 		}
 		ingest(jobs, ingestOptions{
-			minSalary:        parseMinSalary(searchMinSalary),
-			excludeCompanies: searchExclude,
-			remote:           searchRemote,
-			noDetail:         searchNoDetail,
-			noSummarize:      searchNoSummar,
-			noScore:          searchNoScore,
-			noFilter:         searchNoFilter,
-			forceOverwrite:   searchForceOW,
-			detailDelay:      resolveDetailDelay(),
-			scoreDelay:       resolveLLMDelay(),
-			jsonOut:          jsonOut,
+			minSalary:         minSal,
+			minSalaryCurrency: currency,
+			excludeCompanies:  searchExclude,
+			remote:            searchRemote,
+			noDetail:          searchNoDetail,
+			noSummarize:       searchNoSummar,
+			noScore:           searchNoScore,
+			noFilter:          searchNoFilter,
+			forceOverwrite:    searchForceOW,
+			detailDelay:       resolveDetailDelay(),
+			scoreDelay:        resolveLLMDelay(),
+			jsonOut:           jsonOut,
 		})
 		return nil
 	},
@@ -72,6 +82,7 @@ Examples:
 func init() {
 	searchCmd.Flags().IntVar(&searchTop, "top", 25, "cap on number of jobs to fetch + process end-to-end")
 	searchCmd.Flags().StringVar(&searchMinSalary, "min-salary", "", "only keep jobs paying at or above this (e.g. 200k)")
+	searchCmd.Flags().StringVar(&searchSalaryCurrency, "salary-currency", "", "currency for --min-salary (ISO 4217, e.g. CAD); enables FX-aware filtering")
 	searchCmd.Flags().BoolVar(&searchRemote, "remote", false, "only keep remote-friendly jobs")
 	searchCmd.Flags().StringSliceVar(&searchExclude, "exclude-company", nil, "drop jobs whose company matches (repeatable)")
 	searchCmd.Flags().BoolVar(&searchNoDetail, "no-detail", false, "skip detail page fetching")

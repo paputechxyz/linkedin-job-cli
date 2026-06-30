@@ -357,25 +357,28 @@ func (s *Store) ExistingIDs(ids []string) (map[string]bool, error) {
 
 // Filters selects jobs from the local DB.
 type Filters struct {
-	MinSalary       float64 // 0 = no filter
-	HasSalary       bool
-	Company         string
-	Title           string
-	Location        string
-	Remote          bool
-	Status          string
-	Source          string
-	MinScore        int  // 0 = no score filter
-	IncludeFiltered bool // include status='filtered' jobs (excluded by default)
-	SortByScore     bool // order by fit_score desc instead of salary
-	Limit           int
+	MinSalary         float64 // 0 = no filter (raw numeric, applied in SQL)
+	MinSalaryCurrency string  // "" = use MinSalary as a raw SQL floor; else skip SQL floor and filter in Go (FX-aware)
+	HasSalary         bool
+	Company           string
+	Title             string
+	Location          string
+	Remote            bool
+	Status            string
+	Source            string
+	MinScore          int  // 0 = no score filter
+	IncludeFiltered   bool // include status='filtered' jobs (excluded by default)
+	SortByScore       bool // order by fit_score desc instead of salary
+	Limit             int
 }
 
 // List returns jobs matching the filters, newest salary first.
 func (s *Store) List(f Filters) ([]*models.JobPosting, error) {
 	q := jobCols + ` FROM jobs WHERE 1=1`
 	var args []interface{}
-	if f.MinSalary > 0 {
+	// When a currency is set the salary floor is FX-converted in Go (the DB
+	// can't do cross-currency math), so don't apply a raw SQL predicate here.
+	if f.MinSalary > 0 && f.MinSalaryCurrency == "" {
 		q += ` AND salary_high >= ?`
 		args = append(args, f.MinSalary)
 	}

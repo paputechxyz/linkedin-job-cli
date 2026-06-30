@@ -6,8 +6,9 @@ package models
 type Profile struct {
 	ResumeText          string   `json:"resume_text,omitempty"`
 	PreferencesText     string   `json:"preferences_text,omitempty"`
-	PrefWorkArrangement string   `json:"pref_work_arrangement,omitempty"` // remote|hybrid|onsite|""
-	PrefMinSalary       *float64 `json:"pref_min_salary,omitempty"`
-	PrefLocations       string   `json:"pref_locations,omitempty"` // comma-separated
+	PrefWorkArrangement    string   `json:"pref_work_arrangement,omitempty"`        // remote|hybrid|onsite|""
+	PrefMinSalary          *float64 `json:"pref_min_salary,omitempty"`
+	PrefMinSalaryCurrency  string   `json:"pref_min_salary_currency,omitempty"`     // ISO 4217 (e.g. CAD); "" = raw numeric compare
+	PrefLocations          string   `json:"pref_locations,omitempty"`               // comma-separated
 	UpdatedAt           string   `json:"updated_at,omitempty"`
 }

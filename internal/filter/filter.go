@@ -3,6 +3,7 @@ package filter
 import (
 	"strings"
 
+	"linkedin-jobs/internal/fx"
 	"linkedin-jobs/internal/models"
 )
 
@@ -23,8 +24,10 @@ func PassesHardFilter(job *models.JobPosting, p *models.Profile) bool {
 	}
 
 	// Salary floor: only reject when the job actually has a salary below it.
+	// When the profile declares a currency, convert the job's max salary into
+	// that currency first so a CAD floor isn't compared raw against USD pay.
 	if p.PrefMinSalary != nil && *p.PrefMinSalary > 0 && job.HasSalary() {
-		if job.SalaryMax() < *p.PrefMinSalary {
+		if !meetsSalaryFloor(job.SalaryMax(), job.SalaryCurrency, *p.PrefMinSalary, p.PrefMinSalaryCurrency) {
 			return false
 		}
 	}
@@ -50,4 +53,24 @@ func locationMatches(jobBlob, prefLocations string) bool {
 		}
 	}
 	return false
+}
+
+// meetsSalaryFloor reports whether a job's salary figure (in its own currency)
+// meets the minimum threshold (expressed in floorCurrency). When no currency is
+// set it falls back to a raw numeric compare (legacy behavior). Conversion
+// failures (unknown currency) are treated as a pass — only clear mismatches are
+// filtered, mirroring the "unknown is not a mismatch" rule.
+func meetsSalaryFloor(salary float64, jobCurrency string, floor float64, floorCurrency string) bool {
+	if floorCurrency == "" {
+		return salary >= floor
+	}
+	jobCur := strings.TrimSpace(jobCurrency)
+	if jobCur == "" {
+		jobCur = "USD"
+	}
+	conv, err := fx.Convert(salary, jobCur, floorCurrency)
+	if err != nil {
+		return salary >= floor // can't convert: fall back to raw compare, don't over-filter
+	}
+	return conv >= floor
 }
