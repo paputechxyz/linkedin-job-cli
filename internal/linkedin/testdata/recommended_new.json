@@ -1,0 +1,663 @@
+{
+  "data": {
+    "_recipeType": "com.linkedin.a22def50ce2e56eb617c5f21cb1f006b",
+    "_type": "com.linkedin.a22def50ce2e56eb617c5f21cb1f006b",
+    "jobsDashJobCardsByJobCollections": {
+      "_type": "com.linkedin.restli.common.CollectionResponse",
+      "elements": [
+        {
+          "_type": "com.linkedin.voyager.dash.jobs.JobCard",
+          "jobCard": {
+            "jobPostingCard": {
+              "entityUrn": "urn:li:fsd_jobPostingCard:(4430758087,JOB_COLLECTIONS_RECOMMENDED)",
+              "preDashNormalizedJobPostingUrn": "urn:li:fs_normalized_jobPosting:4430758087",
+              "jobPostingTitle": "Senior Software Engineer II, AI Native, Experimentation & ML",
+              "title": {
+                "textDirection": "USER_LOCALE",
+                "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                "text": "Senior Software Engineer II, AI Native, Experimentation & ML\u00a0 ",
+                "attributesV2": [
+                  {
+                    "start": 0,
+                    "length": 60,
+                    "_type": "com.linkedin.voyager.dash.common.text.TextAttribute",
+                    "detailData": {
+                      "jobPostingName": null,
+                      "hyperlink": null,
+                      "profileFamiliarName": null,
+                      "color": null,
+                      "companyName": null,
+                      "icon": null,
+                      "epoch": null,
+                      "systemImage": null,
+                      "textLink": null,
+                      "listItemStyle": null,
+                      "groupName": null,
+                      "hyperlinkOpenExternally": null,
+                      "listStyle": null,
+                      "profileFullName": null,
+                      "stringFieldReference": null,
+                      "learningCourseName": null,
+                      "profileMention": null,
+                      "style": "BOLD",
+                      "schoolName": null,
+                      "hashtag": null
+                    },
+                    "_recipeType": "com.linkedin.5eceb0bf6c3fc84063e688af833697e0"
+                  },
+                  {
+                    "start": 61,
+                    "length": 1,
+                    "_type": "com.linkedin.voyager.dash.common.text.TextAttribute",
+                    "detailData": {
+                      "jobPostingName": null,
+                      "hyperlink": null,
+                      "profileFamiliarName": null,
+                      "color": null,
+                      "companyName": null,
+                      "icon": null,
+                      "systemImage": "SYS_ICN_VERIFIED_SMALL",
+                      "epoch": null,
+                      "textLink": null,
+                      "listItemStyle": null,
+                      "groupName": null,
+                      "hyperlinkOpenExternally": null,
+                      "listStyle": null,
+                      "profileFullName": null,
+                      "stringFieldReference": null,
+                      "learningCourseName": null,
+                      "profileMention": null,
+                      "style": null,
+                      "schoolName": null,
+                      "hashtag": null
+                    },
+                    "_recipeType": "com.linkedin.5eceb0bf6c3fc84063e688af833697e0"
+                  },
+                  {
+                    "start": 61,
+                    "length": 1,
+                    "_type": "com.linkedin.voyager.dash.common.text.TextAttribute",
+                    "detailData": {
+                      "jobPostingName": null,
+                      "hyperlink": null,
+                      "profileFamiliarName": null,
+                      "color": "LOW_EMPHASIS",
+                      "companyName": null,
+                      "icon": null,
+                      "epoch": null,
+                      "systemImage": null,
+                      "textLink": null,
+                      "listItemStyle": null,
+                      "groupName": null,
+                      "hyperlinkOpenExternally": null,
+                      "listStyle": null,
+                      "profileFullName": null,
+                      "stringFieldReference": null,
+                      "learningCourseName": null,
+                      "profileMention": null,
+                      "style": null,
+                      "schoolName": null,
+                      "hashtag": null
+                    },
+                    "_recipeType": "com.linkedin.5eceb0bf6c3fc84063e688af833697e0"
+                  }
+                ],
+                "accessibilityTextAttributesV2": [],
+                "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                "accessibilityText": "Senior Software Engineer II, AI Native, Experimentation & ML with verification"
+              },
+              "primaryDescription": {
+                "textDirection": "USER_LOCALE",
+                "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                "text": "Life360",
+                "attributesV2": [],
+                "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                "accessibilityTextAttributesV2": [],
+                "accessibilityText": null
+              },
+              "secondaryDescription": {
+                "textDirection": "USER_LOCALE",
+                "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                "text": "Canada (Remote)",
+                "attributesV2": [],
+                "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                "accessibilityTextAttributesV2": [],
+                "accessibilityText": null
+              },
+              "tertiaryDescription": null,
+              "footerItems": [
+                {
+                  "_type": "com.linkedin.voyager.dash.jobs.JobPostingCardFooterItem",
+                  "text": {
+                    "textDirection": "USER_LOCALE",
+                    "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                    "text": "Promoted",
+                    "attributesV2": [],
+                    "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                    "accessibilityTextAttributesV2": [],
+                    "accessibilityText": null
+                  },
+                  "type": "PROMOTED",
+                  "_recipeType": "com.linkedin.a7075bd44648a5e593ff4cbd5c3a58b5",
+                  "timeAt": null
+                },
+                {
+                  "_type": "com.linkedin.voyager.dash.jobs.JobPostingCardFooterItem",
+                  "text": null,
+                  "type": "LISTED_DATE",
+                  "timeAt": 1781820367000,
+                  "_recipeType": "com.linkedin.a7075bd44648a5e593ff4cbd5c3a58b5"
+                }
+              ],
+              "_type": "com.linkedin.voyager.dash.jobs.JobPostingCard"
+            }
+          }
+        },
+        {
+          "_type": "com.linkedin.voyager.dash.jobs.JobCard",
+          "jobCard": {
+            "jobPostingCard": {
+              "entityUrn": "urn:li:fsd_jobPostingCard:(4349308479,JOB_COLLECTIONS_RECOMMENDED)",
+              "preDashNormalizedJobPostingUrn": "urn:li:fs_normalized_jobPosting:4349308479",
+              "jobPostingTitle": "Senior Software Developer",
+              "title": {
+                "textDirection": "USER_LOCALE",
+                "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                "text": "Senior Software Developer",
+                "attributesV2": [
+                  {
+                    "start": 0,
+                    "length": 25,
+                    "_type": "com.linkedin.voyager.dash.common.text.TextAttribute",
+                    "detailData": {
+                      "jobPostingName": null,
+                      "hyperlink": null,
+                      "profileFamiliarName": null,
+                      "color": null,
+                      "companyName": null,
+                      "icon": null,
+                      "epoch": null,
+                      "systemImage": null,
+                      "textLink": null,
+                      "listItemStyle": null,
+                      "groupName": null,
+                      "hyperlinkOpenExternally": null,
+                      "listStyle": null,
+                      "profileFullName": null,
+                      "stringFieldReference": null,
+                      "learningCourseName": null,
+                      "profileMention": null,
+                      "style": "BOLD",
+                      "schoolName": null,
+                      "hashtag": null
+                    },
+                    "_recipeType": "com.linkedin.5eceb0bf6c3fc84063e688af833697e0"
+                  }
+                ],
+                "accessibilityTextAttributesV2": [],
+                "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                "accessibilityText": "Senior Software Developer"
+              },
+              "primaryDescription": {
+                "textDirection": "USER_LOCALE",
+                "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                "text": "Blue J",
+                "attributesV2": [],
+                "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                "accessibilityTextAttributesV2": [],
+                "accessibilityText": null
+              },
+              "secondaryDescription": {
+                "textDirection": "USER_LOCALE",
+                "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                "text": "Toronto, ON (Remote)",
+                "attributesV2": [],
+                "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                "accessibilityTextAttributesV2": [],
+                "accessibilityText": null
+              },
+              "tertiaryDescription": {
+                "textDirection": "USER_LOCALE",
+                "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                "text": "CA$140K/yr - CA$180K/yr",
+                "attributesV2": [],
+                "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                "accessibilityTextAttributesV2": [],
+                "accessibilityText": null
+              },
+              "footerItems": [
+                {
+                  "_type": "com.linkedin.voyager.dash.jobs.JobPostingCardFooterItem",
+                  "text": {
+                    "textDirection": "USER_LOCALE",
+                    "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                    "text": "Promoted",
+                    "attributesV2": [],
+                    "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                    "accessibilityTextAttributesV2": [],
+                    "accessibilityText": null
+                  },
+                  "type": "PROMOTED",
+                  "_recipeType": "com.linkedin.a7075bd44648a5e593ff4cbd5c3a58b5",
+                  "timeAt": null
+                },
+                {
+                  "_type": "com.linkedin.voyager.dash.jobs.JobPostingCardFooterItem",
+                  "text": null,
+                  "type": "LISTED_DATE",
+                  "timeAt": 1781119104000,
+                  "_recipeType": "com.linkedin.a7075bd44648a5e593ff4cbd5c3a58b5"
+                }
+              ],
+              "_type": "com.linkedin.voyager.dash.jobs.JobPostingCard"
+            }
+          }
+        },
+        {
+          "_type": "com.linkedin.voyager.dash.jobs.JobCard",
+          "jobCard": {
+            "jobPostingCard": {
+              "entityUrn": "urn:li:fsd_jobPostingCard:(4405396260,JOB_COLLECTIONS_RECOMMENDED)",
+              "preDashNormalizedJobPostingUrn": "urn:li:fs_normalized_jobPosting:4405396260",
+              "jobPostingTitle": "Staff Software Engineer",
+              "title": {
+                "textDirection": "USER_LOCALE",
+                "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                "text": "Staff Software Engineer",
+                "attributesV2": [
+                  {
+                    "start": 0,
+                    "length": 23,
+                    "_type": "com.linkedin.voyager.dash.common.text.TextAttribute",
+                    "detailData": {
+                      "jobPostingName": null,
+                      "hyperlink": null,
+                      "profileFamiliarName": null,
+                      "color": null,
+                      "companyName": null,
+                      "icon": null,
+                      "epoch": null,
+                      "systemImage": null,
+                      "textLink": null,
+                      "listItemStyle": null,
+                      "groupName": null,
+                      "hyperlinkOpenExternally": null,
+                      "listStyle": null,
+                      "profileFullName": null,
+                      "stringFieldReference": null,
+                      "learningCourseName": null,
+                      "profileMention": null,
+                      "style": "BOLD",
+                      "schoolName": null,
+                      "hashtag": null
+                    },
+                    "_recipeType": "com.linkedin.5eceb0bf6c3fc84063e688af833697e0"
+                  }
+                ],
+                "accessibilityTextAttributesV2": [],
+                "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                "accessibilityText": "Staff Software Engineer"
+              },
+              "primaryDescription": {
+                "textDirection": "USER_LOCALE",
+                "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                "text": "Pebl",
+                "attributesV2": [],
+                "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                "accessibilityTextAttributesV2": [],
+                "accessibilityText": null
+              },
+              "secondaryDescription": {
+                "textDirection": "USER_LOCALE",
+                "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                "text": "Toronto, ON (Hybrid)",
+                "attributesV2": [],
+                "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                "accessibilityTextAttributesV2": [],
+                "accessibilityText": null
+              },
+              "tertiaryDescription": {
+                "textDirection": "USER_LOCALE",
+                "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                "text": "CA$173K/yr - CA$220K/yr",
+                "attributesV2": [],
+                "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                "accessibilityTextAttributesV2": [],
+                "accessibilityText": null
+              },
+              "footerItems": [
+                {
+                  "_type": "com.linkedin.voyager.dash.jobs.JobPostingCardFooterItem",
+                  "text": {
+                    "textDirection": "USER_LOCALE",
+                    "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                    "text": "Promoted",
+                    "attributesV2": [],
+                    "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                    "accessibilityTextAttributesV2": [],
+                    "accessibilityText": null
+                  },
+                  "type": "PROMOTED",
+                  "_recipeType": "com.linkedin.a7075bd44648a5e593ff4cbd5c3a58b5",
+                  "timeAt": null
+                },
+                {
+                  "_type": "com.linkedin.voyager.dash.jobs.JobPostingCardFooterItem",
+                  "text": null,
+                  "type": "LISTED_DATE",
+                  "timeAt": 1782643915000,
+                  "_recipeType": "com.linkedin.a7075bd44648a5e593ff4cbd5c3a58b5"
+                }
+              ],
+              "_type": "com.linkedin.voyager.dash.jobs.JobPostingCard"
+            }
+          }
+        },
+        {
+          "_type": "com.linkedin.voyager.dash.jobs.JobCard",
+          "jobCard": {
+            "jobPostingCard": {
+              "entityUrn": "urn:li:fsd_jobPostingCard:(4350876658,JOB_COLLECTIONS_RECOMMENDED)",
+              "preDashNormalizedJobPostingUrn": "urn:li:fs_normalized_jobPosting:4350876658",
+              "jobPostingTitle": "Senior Backend Engineer, Growth",
+              "title": {
+                "textDirection": "USER_LOCALE",
+                "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                "text": "Senior Backend Engineer, Growth\u00a0 ",
+                "attributesV2": [
+                  {
+                    "start": 0,
+                    "length": 31,
+                    "_type": "com.linkedin.voyager.dash.common.text.TextAttribute",
+                    "detailData": {
+                      "jobPostingName": null,
+                      "hyperlink": null,
+                      "profileFamiliarName": null,
+                      "color": null,
+                      "companyName": null,
+                      "icon": null,
+                      "epoch": null,
+                      "systemImage": null,
+                      "textLink": null,
+                      "listItemStyle": null,
+                      "groupName": null,
+                      "hyperlinkOpenExternally": null,
+                      "listStyle": null,
+                      "profileFullName": null,
+                      "stringFieldReference": null,
+                      "learningCourseName": null,
+                      "profileMention": null,
+                      "style": "BOLD",
+                      "schoolName": null,
+                      "hashtag": null
+                    },
+                    "_recipeType": "com.linkedin.5eceb0bf6c3fc84063e688af833697e0"
+                  },
+                  {
+                    "start": 32,
+                    "length": 1,
+                    "_type": "com.linkedin.voyager.dash.common.text.TextAttribute",
+                    "detailData": {
+                      "jobPostingName": null,
+                      "hyperlink": null,
+                      "profileFamiliarName": null,
+                      "color": null,
+                      "companyName": null,
+                      "icon": null,
+                      "systemImage": "SYS_ICN_VERIFIED_SMALL",
+                      "epoch": null,
+                      "textLink": null,
+                      "listItemStyle": null,
+                      "groupName": null,
+                      "hyperlinkOpenExternally": null,
+                      "listStyle": null,
+                      "profileFullName": null,
+                      "stringFieldReference": null,
+                      "learningCourseName": null,
+                      "profileMention": null,
+                      "style": null,
+                      "schoolName": null,
+                      "hashtag": null
+                    },
+                    "_recipeType": "com.linkedin.5eceb0bf6c3fc84063e688af833697e0"
+                  },
+                  {
+                    "start": 32,
+                    "length": 1,
+                    "_type": "com.linkedin.voyager.dash.common.text.TextAttribute",
+                    "detailData": {
+                      "jobPostingName": null,
+                      "hyperlink": null,
+                      "profileFamiliarName": null,
+                      "color": "LOW_EMPHASIS",
+                      "companyName": null,
+                      "icon": null,
+                      "epoch": null,
+                      "systemImage": null,
+                      "textLink": null,
+                      "listItemStyle": null,
+                      "groupName": null,
+                      "hyperlinkOpenExternally": null,
+                      "listStyle": null,
+                      "profileFullName": null,
+                      "stringFieldReference": null,
+                      "learningCourseName": null,
+                      "profileMention": null,
+                      "style": null,
+                      "schoolName": null,
+                      "hashtag": null
+                    },
+                    "_recipeType": "com.linkedin.5eceb0bf6c3fc84063e688af833697e0"
+                  }
+                ],
+                "accessibilityTextAttributesV2": [],
+                "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                "accessibilityText": "Senior Backend Engineer, Growth with verification"
+              },
+              "primaryDescription": {
+                "textDirection": "USER_LOCALE",
+                "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                "text": "EvenUp",
+                "attributesV2": [],
+                "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                "accessibilityTextAttributesV2": [],
+                "accessibilityText": null
+              },
+              "secondaryDescription": {
+                "textDirection": "USER_LOCALE",
+                "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                "text": "Toronto, ON (Hybrid)",
+                "attributesV2": [],
+                "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                "accessibilityTextAttributesV2": [],
+                "accessibilityText": null
+              },
+              "tertiaryDescription": {
+                "textDirection": "USER_LOCALE",
+                "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                "text": "CA$158.5K/yr - CA$214.5K/yr",
+                "attributesV2": [],
+                "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                "accessibilityTextAttributesV2": [],
+                "accessibilityText": null
+              },
+              "footerItems": [
+                {
+                  "_type": "com.linkedin.voyager.dash.jobs.JobPostingCardFooterItem",
+                  "text": {
+                    "textDirection": "USER_LOCALE",
+                    "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                    "text": "Promoted",
+                    "attributesV2": [],
+                    "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                    "accessibilityTextAttributesV2": [],
+                    "accessibilityText": null
+                  },
+                  "type": "PROMOTED",
+                  "_recipeType": "com.linkedin.a7075bd44648a5e593ff4cbd5c3a58b5",
+                  "timeAt": null
+                },
+                {
+                  "_type": "com.linkedin.voyager.dash.jobs.JobPostingCardFooterItem",
+                  "text": null,
+                  "type": "LISTED_DATE",
+                  "timeAt": 1781951393000,
+                  "_recipeType": "com.linkedin.a7075bd44648a5e593ff4cbd5c3a58b5"
+                }
+              ],
+              "_type": "com.linkedin.voyager.dash.jobs.JobPostingCard"
+            }
+          }
+        },
+        {
+          "_type": "com.linkedin.voyager.dash.jobs.JobCard",
+          "jobCard": {
+            "jobPostingCard": {
+              "entityUrn": "urn:li:fsd_jobPostingCard:(4413810900,JOB_COLLECTIONS_RECOMMENDED)",
+              "preDashNormalizedJobPostingUrn": "urn:li:fs_normalized_jobPosting:4413810900",
+              "jobPostingTitle": "Senior Backend Engineer (Python) - Content Understanding",
+              "title": {
+                "textDirection": "USER_LOCALE",
+                "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                "text": "Senior Backend Engineer (Python) - Content Understanding\u00a0 ",
+                "attributesV2": [
+                  {
+                    "start": 0,
+                    "length": 56,
+                    "_type": "com.linkedin.voyager.dash.common.text.TextAttribute",
+                    "detailData": {
+                      "jobPostingName": null,
+                      "hyperlink": null,
+                      "profileFamiliarName": null,
+                      "color": null,
+                      "companyName": null,
+                      "icon": null,
+                      "epoch": null,
+                      "systemImage": null,
+                      "textLink": null,
+                      "listItemStyle": null,
+                      "groupName": null,
+                      "hyperlinkOpenExternally": null,
+                      "listStyle": null,
+                      "profileFullName": null,
+                      "stringFieldReference": null,
+                      "learningCourseName": null,
+                      "profileMention": null,
+                      "style": "BOLD",
+                      "schoolName": null,
+                      "hashtag": null
+                    },
+                    "_recipeType": "com.linkedin.5eceb0bf6c3fc84063e688af833697e0"
+                  },
+                  {
+                    "start": 57,
+                    "length": 1,
+                    "_type": "com.linkedin.voyager.dash.common.text.TextAttribute",
+                    "detailData": {
+                      "jobPostingName": null,
+                      "hyperlink": null,
+                      "profileFamiliarName": null,
+                      "color": null,
+                      "companyName": null,
+                      "icon": null,
+                      "systemImage": "SYS_ICN_VERIFIED_SMALL",
+                      "epoch": null,
+                      "textLink": null,
+                      "listItemStyle": null,
+                      "groupName": null,
+                      "hyperlinkOpenExternally": null,
+                      "listStyle": null,
+                      "profileFullName": null,
+                      "stringFieldReference": null,
+                      "learningCourseName": null,
+                      "profileMention": null,
+                      "style": null,
+                      "schoolName": null,
+                      "hashtag": null
+                    },
+                    "_recipeType": "com.linkedin.5eceb0bf6c3fc84063e688af833697e0"
+                  },
+                  {
+                    "start": 57,
+                    "length": 1,
+                    "_type": "com.linkedin.voyager.dash.common.text.TextAttribute",
+                    "detailData": {
+                      "jobPostingName": null,
+                      "hyperlink": null,
+                      "profileFamiliarName": null,
+                      "color": "LOW_EMPHASIS",
+                      "companyName": null,
+                      "icon": null,
+                      "epoch": null,
+                      "systemImage": null,
+                      "textLink": null,
+                      "listItemStyle": null,
+                      "groupName": null,
+                      "hyperlinkOpenExternally": null,
+                      "listStyle": null,
+                      "profileFullName": null,
+                      "stringFieldReference": null,
+                      "learningCourseName": null,
+                      "profileMention": null,
+                      "style": null,
+                      "schoolName": null,
+                      "hashtag": null
+                    },
+                    "_recipeType": "com.linkedin.5eceb0bf6c3fc84063e688af833697e0"
+                  }
+                ],
+                "accessibilityTextAttributesV2": [],
+                "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                "accessibilityText": "Senior Backend Engineer (Python) - Content Understanding with verification"
+              },
+              "primaryDescription": {
+                "textDirection": "USER_LOCALE",
+                "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                "text": "Scribd, Inc.",
+                "attributesV2": [],
+                "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                "accessibilityTextAttributesV2": [],
+                "accessibilityText": null
+              },
+              "secondaryDescription": {
+                "textDirection": "USER_LOCALE",
+                "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                "text": "Toronto, ON (Hybrid)",
+                "attributesV2": [],
+                "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                "accessibilityTextAttributesV2": [],
+                "accessibilityText": null
+              },
+              "tertiaryDescription": null,
+              "footerItems": [
+                {
+                  "_type": "com.linkedin.voyager.dash.jobs.JobPostingCardFooterItem",
+                  "text": {
+                    "textDirection": "USER_LOCALE",
+                    "_type": "com.linkedin.voyager.dash.common.text.TextViewModel",
+                    "text": "Promoted",
+                    "attributesV2": [],
+                    "_recipeType": "com.linkedin.9e07dfe5e804a840a8e9b6af91358eae",
+                    "accessibilityTextAttributesV2": [],
+                    "accessibilityText": null
+                  },
+                  "type": "PROMOTED",
+                  "_recipeType": "com.linkedin.a7075bd44648a5e593ff4cbd5c3a58b5",
+                  "timeAt": null
+                },
+                {
+                  "_type": "com.linkedin.voyager.dash.jobs.JobPostingCardFooterItem",
+                  "text": null,
+                  "type": "LISTED_DATE",
+                  "timeAt": 1782291796000,
+                  "_recipeType": "com.linkedin.a7075bd44648a5e593ff4cbd5c3a58b5"
+                }
+              ],
+              "_type": "com.linkedin.voyager.dash.jobs.JobPostingCard"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
