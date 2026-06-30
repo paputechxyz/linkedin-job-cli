@@ -276,7 +276,9 @@ func readForm(q url.Values) formVals {
 
 type jobView struct {
 	ID, Title, Company, Location, URL string
-	Salary, Status, Source, Remote    string
+	Salary, SalaryClass               string
+	SalaryEstimated                   bool
+	Status, Source, Remote            string
 	Score, ScoreClass                 string
 	Industry, Seniority, EmpType      string
 	CoSize, CoStage, Years, Visa      string
@@ -310,6 +312,16 @@ func toJobView(j *models.JobPosting) jobView {
 		CompanyOverview: j.CompanyOverview,
 		FitReason:       j.FitReason,
 		Notes:           j.Notes,
+	}
+	// Salary confidence: description-sourced is authoritative (green); anything
+	// else (badge/estimated) is low-confidence (amber + "est." tag).
+	if j.HasSalary() {
+		if j.IsSalaryEstimated() {
+			v.SalaryClass = "low"
+			v.SalaryEstimated = true
+		} else {
+			v.SalaryClass = "high"
+		}
 	}
 	if j.FitScore != nil {
 		v.Score = strconv.Itoa(*j.FitScore)
@@ -788,7 +800,21 @@ const pageHTML = `<!DOCTYPE html>
   }
   .meta .sep { color: var(--ink-4); user-select: none; }
   .meta .co { font-weight: 650; color: var(--ink-1); }
-  .meta .salary { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink-2); }
+  .meta .salary { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink-2); font-weight: 600; }
+  /* Salary confidence: description-sourced is authoritative (green); badge/estimated is low-confidence (amber). */
+  .meta .salary--high { color: var(--score-high); }
+  .meta .salary--low { color: var(--score-mid); }
+  .meta .salary-tag {
+    font-family: var(--font-sans); font-weight: 700; font-size: 0.625rem;
+    text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.85;
+    padding: 1px 4px; border-radius: var(--radius-pill);
+    background: var(--score-mid-soft); color: var(--score-mid-on);
+    margin-right: 3px; vertical-align: 1px;
+  }
+  @media (prefers-color-scheme: dark) {
+    .meta .salary--high { color: var(--score-high); }
+    .meta .salary--low { color: var(--score-mid); }
+  }
   .meta .src {
     font-family: var(--font-mono); font-size: 0.6875rem;
     color: var(--ink-4); text-transform: uppercase; letter-spacing: 0.04em;
@@ -1070,7 +1096,7 @@ const pageHTML = `<!DOCTYPE html>
         <div class="meta">
           <span class="co">{{or .Company "—"}}</span>
           {{if .Location}}<span class="sep">·</span> <span>{{.Location}}</span>{{end}}
-          {{if .Salary}}<span class="sep">·</span> <span class="salary">{{.Salary}}</span>{{end}}
+          {{if .Salary}}<span class="sep">·</span> <span class="salary salary--{{.SalaryClass}}"{{if .SalaryEstimated}} title="Estimated — sourced from the page badge, not the job description"{{end}}>{{if .SalaryEstimated}}<span class="salary-tag">est.</span> {{end}}{{.Salary}}</span>{{end}}
           {{if .Remote}}<span class="sep">·</span> <span class="remote-yes">{{.Remote}}</span>{{end}}
           {{if .Status}}<span class="sep">·</span> <span class="status status--{{.Status}} js-status">{{.Status}}</span>{{end}}
           {{if .Source}}<span class="sep">·</span> <span class="src">{{.Source}}</span>{{end}}

@@ -134,6 +134,36 @@ func PassesFilter(s *Salary, min float64) bool {
 	return s.Max() >= min
 }
 
+// descriptionSalaryRE matches a compensation range stated in a job description
+// body, requiring an explicit currency signal: either a non-$ currency prefix
+// (CA$/CAD/US$/USD/EUR…) on the first amount, or a trailing ISO code. A bare
+// "$low - $high" with no currency hint is intentionally NOT matched, since that
+// is usually an ambiguous badge-style figure and we only want the authoritative
+// currency-stated data.
+var descriptionSalaryRE = regexp.MustCompile(
+	`(?i)(?:` +
+		`(?:CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥)\s?[\d,]+(?:\.\d+)?[kKmM]?\s*[-–—]\s*(?:CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥|\$)?\s?[\d,]+(?:\.\d+)?[kKmM]?(?:\s+(?:CAD|USD|EUR|GBP|AUD|INR|JPY))?` +
+		`|` +
+		`(?:CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥|\$)?\s?[\d,]+(?:\.\d+)?[kKmM]?\s*[-–—]\s*(?:CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥|\$)?\s?[\d,]+(?:\.\d+)?[kKmM]?\s+(?:CAD|USD|EUR|GBP|AUD|INR|JPY)` +
+		`)`)
+
+// InDescription scans a job description for an authoritative compensation range
+// and returns the first plausible one (low end >= 1000 to reject small
+// non-salary figures). Returns nil when no currency-stated range is present.
+func InDescription(desc string) *Salary {
+	for _, m := range descriptionSalaryRE.FindAllString(desc, -1) {
+		s := Parse(m)
+		if s == nil || s.Low == nil || s.High == nil {
+			continue
+		}
+		if *s.Low < 1000 || *s.High < 1000 {
+			continue
+		}
+		return s
+	}
+	return nil
+}
+
 // ParseShorthand parses user-friendly salary shorthand: "200k", "200000",
 // "$200k". Used for the --min-salary flag.
 func ParseShorthand(text string) (float64, error) {

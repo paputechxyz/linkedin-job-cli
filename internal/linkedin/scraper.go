@@ -116,7 +116,8 @@ func (c *Client) FetchDetail(j *models.JobPosting) error {
 		return err
 	}
 
-	// Salary
+	// 1. Salary badge (HTML). Low-confidence fallback — LinkedIn's badge is
+	// often a different/default band or a generic placeholder.
 	var salaryText string
 	doc.Find(".main-job-card__salary-info").EachWithBreak(func(_ int, s *goquery.Selection) bool {
 		t := strings.TrimSpace(s.Text())
@@ -139,38 +140,22 @@ func (c *Client) FetchDetail(j *models.JobPosting) error {
 			j.SalaryLow = parsed.Low
 			j.SalaryHigh = parsed.High
 			j.SalaryCurrency = parsed.Currency
+			j.SalarySource = "badge"
 		}
 	}
 
-	// Description via JSON-LD JobPosting
-	doc.Find(`script[type="application/ld+json"]`).EachWithBreak(func(_ int, s *goquery.Selection) bool {
-		raw := strings.TrimSpace(s.Text())
-		if raw == "" {
-			return true
-		}
-		var data map[string]interface{}
-		if json.Unmarshal([]byte(raw), &data) != nil {
-			return true
-		}
-		if t, _ := data["@type"].(string); t != "JobPosting" {
-			return true
-		}
-		if desc, ok := data["description"].(string); ok {
-			j.Description = cleanHTMLText(desc)
-			return false
-		}
-		return true
-	})
+	// 2. Description — try JSON-LD first (cleanest), then HTML fallbacks for
+	// pages where LinkedIn doesn't serve a JobPosting JSON-LD block.
+	j.Description = extractDescription(doc)
 
-	// The description body carries the authoritative, localized compensation
-	// band (usually with an explicit currency), which is more reliable than the
-	// page's salary badge (often a different/default band). Override the badge
-	// when we find such a currency-stated range in the description.
-	if descSal := descriptionSalary(j.Description); descSal != nil {
+	// 3. Description-body salary is authoritative (carries the localized band +
+	// currency). Override the badge when present and mark it high-confidence.
+	if descSal := salary.InDescription(j.Description); descSal != nil {
 		j.SalaryRaw = descSal.Raw
 		j.SalaryLow = descSal.Low
 		j.SalaryHigh = descSal.High
 		j.SalaryCurrency = descSal.Currency
+		j.SalarySource = models.SalarySourceDescription
 	}
 
 	j.RemoteType = DetectRemote(j.Location + " " + j.Description)
@@ -178,23 +163,95 @@ func (c *Client) FetchDetail(j *models.JobPosting) error {
 	return nil
 }
 
-// descriptionSalary scans a job description for an authoritative compensation
-// range and returns the first plausible one (low end >= 1000 to reject small
-// non-salary figures). Returns nil when no currency-stated range is present, in
-// which case callers keep the salary badge value.
-func descriptionSalary(desc string) *salary.Salary {
-	matches := descriptionSalaryRE.FindAllString(desc, -1)
-	for _, m := range matches {
-		s := salary.Parse(m)
-		if s == nil || s.Low == nil || s.High == nil {
-			continue
+// extractDescription pulls the job description body, trying JSON-LD first
+// (preferred — structured and clean) and falling back to rendered HTML
+// containers when the page serves no JobPosting JSON-LD. Robust to @type being
+// a string or an array, and to the JSON-LD being a single object or an array.
+func extractDescription(doc *goquery.Document) string {
+	var fromJSONLD string
+	doc.Find(`script[type="application/ld+json"]`).EachWithBreak(func(_ int, s *goquery.Selection) bool {
+		raw := strings.TrimSpace(s.Text())
+		if raw == "" {
+			return true
 		}
-		if *s.Low < 1000 || *s.High < 1000 {
-			continue
+		if desc := descriptionFromJSONLD(raw); desc != "" {
+			fromJSONLD = desc
+			return false
 		}
-		return s
+		return true
+	})
+	if fromJSONLD != "" {
+		return fromJSONLD
 	}
-	return nil
+	// HTML fallbacks: order matters; the most specific selector first.
+	for _, sel := range []string{
+		".description__text .show-more-less-html__markup",
+		".description__text",
+		".jobs-description__content",
+		".jobs-description-content",
+		".jobs-box__html-content",
+	} {
+		if t := strings.TrimSpace(doc.Find(sel).First().Text()); t != "" {
+			return cleanHTMLText(t)
+		}
+	}
+	return ""
+}
+
+// descriptionFromJSONLD extracts a JobPosting description from a raw JSON-LD
+// blob, accepting either a single object or an array of objects.
+func descriptionFromJSONLD(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if desc := jobPostingDesc([]byte(raw)); desc != "" {
+		return desc
+	}
+	if raw[0] == '[' {
+		var arr []map[string]interface{}
+		if json.Unmarshal([]byte(raw), &arr) == nil {
+			for _, o := range arr {
+				if desc := descFromMap(o); desc != "" {
+					return desc
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func jobPostingDesc(b []byte) string {
+	var o map[string]interface{}
+	if json.Unmarshal(b, &o) != nil {
+		return ""
+	}
+	return descFromMap(o)
+}
+
+func descFromMap(o map[string]interface{}) string {
+	if !hasJobPostingType(o["@type"]) {
+		return ""
+	}
+	if d, ok := o["description"].(string); ok {
+		return cleanHTMLText(d)
+	}
+	return ""
+}
+
+// hasJobPostingType reports whether the JSON-LD @type value(s) include JobPosting.
+func hasJobPostingType(t interface{}) bool {
+	switch v := t.(type) {
+	case string:
+		return v == "JobPosting"
+	case []interface{}:
+		for _, e := range v {
+			if s, ok := e.(string); ok && s == "JobPosting" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // FetchDetailsBatch fetches detail pages for multiple jobs with a politeness
