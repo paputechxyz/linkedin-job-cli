@@ -14,7 +14,11 @@ type JobPosting struct {
 	SalaryLow      *float64 `json:"salary_low,omitempty"`
 	SalaryHigh     *float64 `json:"salary_high,omitempty"`
 	SalaryCurrency string   `json:"salary_currency,omitempty"`
-	Description    string   `json:"description,omitempty"`
+	// SalarySource records where the parsed salary came from, driving display
+	// confidence: "description" (authoritative, green) vs "badge"/"estimated"
+	// (low confidence, amber). "" means unknown/pre-feature.
+	SalarySource string `json:"salary_source,omitempty"`
+	Description  string `json:"description,omitempty"`
 	Summary        string   `json:"summary,omitempty"`
 	LLMSummary     string   `json:"llm_summary,omitempty"`
 	RemoteType     string   `json:"remote_type,omitempty"`
@@ -56,6 +60,16 @@ func (j *JobPosting) IsFiltered() bool { return j.Status == "filtered" }
 // HasSalary reports whether any numeric salary was parsed.
 func (j *JobPosting) HasSalary() bool {
 	return j.SalaryHigh != nil
+}
+
+// SalarySourceDescription marks a salary parsed from the job description body —
+// the authoritative, localized band. All other origins are treated as estimates.
+const SalarySourceDescription = "description"
+
+// IsSalaryEstimated reports whether the salary is low-confidence: it came from
+// the page badge or another heuristic rather than the description body.
+func (j *JobPosting) IsSalaryEstimated() bool {
+	return j.HasSalary() && j.SalarySource != SalarySourceDescription
 }
 
 // SalaryMax returns the highest parsed salary figure, or 0 if none.

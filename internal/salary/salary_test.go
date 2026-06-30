@@ -68,3 +68,38 @@ func currencyOf(s *Salary) string {
 	}
 	return s.Currency
 }
+
+func TestInDescription_CartaCADRange(t *testing.T) {
+	desc := `Experience: We recommend 10+ years of professional software engineering experience.
+Salary
+Benefits
+Carta’s compensation package includes a market competitive salary. Our expected cash compensation range for this role is:
+$205,600 - $257,000 CAD in Toronto, Ontario, Canada
+We are hiring for multiple levels and locations.`
+
+	s := InDescription(desc)
+	if s == nil {
+		t.Fatal("expected a salary from the description body")
+	}
+	if s.Low == nil || *s.Low != 205600 {
+		t.Errorf("low = %v, want 205600", s.Low)
+	}
+	if s.High == nil || *s.High != 257000 {
+		t.Errorf("high = %v, want 257000", s.High)
+	}
+	if s.Currency != "CAD" {
+		t.Errorf("currency = %q, want CAD", s.Currency)
+	}
+}
+
+func TestInDescription_NoCurrencyReturnsNil(t *testing.T) {
+	if s := InDescription("We pay $200k - $250k depending on experience."); s != nil {
+		t.Errorf("expected nil for bare-$ range, got %+v", s)
+	}
+}
+
+func TestInDescription_RejectsSmallFigures(t *testing.T) {
+	if s := InDescription("Requires CAD 3 - 5 years of experience."); s != nil {
+		t.Errorf("expected nil for small range, got %+v", s)
+	}
+}

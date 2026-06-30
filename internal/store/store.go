@@ -3,11 +3,13 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
 
 	"linkedin-jobs/internal/models"
+	"linkedin-jobs/internal/salary"
 )
 
 const schema = `
@@ -21,6 +23,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     salary_low REAL,
     salary_high REAL,
     salary_currency TEXT,
+    salary_source TEXT,
     description TEXT,
     summary TEXT,
     llm_summary TEXT,
@@ -77,6 +80,7 @@ var addColumns = []struct {
 	{"content_hash", "TEXT"},
 	{"enriched_at", "TEXT"},
 	{"scored_at", "TEXT"},
+	{"salary_source", "TEXT"},
 }
 
 // Store is the SQLite persistence layer.
@@ -100,6 +104,10 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	if err := migrate(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := backfillSalarySource(db); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -152,6 +160,56 @@ func migrate(db *sql.DB) error {
 	return nil
 }
 
+// backfillSalarySource infers the origin of pre-existing parsed salaries so the
+// UI can show confidence (description = authoritative, else estimated). Runs
+// once per DB: only rows with an empty salary_source are considered. A salary
+// is tagged "description" when its stored low/high/currency exactly match the
+// authoritative range parsed from the stored description; otherwise it is tagged
+// "badge" (low confidence). Rows with no salary are left untouched.
+func backfillSalarySource(db *sql.DB) error {
+	rows, err := db.Query(`SELECT id, salary_low, salary_high, COALESCE(salary_currency,''), COALESCE(description,'') FROM jobs WHERE salary_source IS NULL OR salary_source=''`)
+	if err != nil {
+		return err
+	}
+	type rec struct {
+		id        string
+		low, high sql.NullFloat64
+		cur, desc string
+	}
+	var recs []rec
+	for rows.Next() {
+		var r rec
+		var cur, desc sql.NullString
+		if err := rows.Scan(&r.id, &r.low, &r.high, &cur, &desc); err != nil {
+			rows.Close()
+			return err
+		}
+		r.cur, r.desc = cur.String, desc.String
+		recs = append(recs, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, r := range recs {
+		if !r.high.Valid {
+			continue // no salary -> nothing to attribute
+		}
+		source := "badge" // default for pre-feature data: low confidence
+		if r.low.Valid {
+			if s := salary.InDescription(r.desc); s != nil && s.Low != nil && s.High != nil &&
+				*s.Low == r.low.Float64 && *s.High == r.high.Float64 &&
+				strings.EqualFold(s.Currency, r.cur) {
+				source = models.SalarySourceDescription
+			}
+		}
+		if _, err := db.Exec(`UPDATE jobs SET salary_source=? WHERE id=?`, source, r.id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Close closes the database.
 func (s *Store) Close() error { return s.db.Close() }
 
@@ -160,9 +218,9 @@ func (s *Store) Close() error { return s.db.Close() }
 func (s *Store) Upsert(j *models.JobPosting) error {
 	_, err := s.db.Exec(`
 INSERT INTO jobs (id,title,company,location,url,salary_raw,salary_low,salary_high,
-  salary_currency,description,summary,remote_type,status,notes,source,listed_at,
+  salary_currency,salary_source,description,summary,remote_type,status,notes,source,listed_at,
   searched_at,fetched_at,llm_summary,content_hash)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(id) DO UPDATE SET
   title=excluded.title,
   company=COALESCE(NULLIF(excluded.company,''), jobs.company),
@@ -172,6 +230,7 @@ ON CONFLICT(id) DO UPDATE SET
   salary_low=COALESCE(excluded.salary_low, jobs.salary_low),
   salary_high=COALESCE(excluded.salary_high, jobs.salary_high),
   salary_currency=COALESCE(NULLIF(excluded.salary_currency,''), jobs.salary_currency),
+  salary_source=COALESCE(NULLIF(excluded.salary_source,''), jobs.salary_source),
   description=COALESCE(NULLIF(excluded.description,''), jobs.description),
   remote_type=COALESCE(NULLIF(excluded.remote_type,''), jobs.remote_type),
   source=COALESCE(NULLIF(excluded.source,''), jobs.source),
@@ -180,7 +239,7 @@ ON CONFLICT(id) DO UPDATE SET
   llm_summary=COALESCE(NULLIF(excluded.llm_summary,''), jobs.llm_summary),
   content_hash=COALESCE(NULLIF(excluded.content_hash,''), jobs.content_hash)`,
 		j.ID, j.Title, j.Company, j.Location, j.URL, j.SalaryRaw,
-		nullFloat(j.SalaryLow), nullFloat(j.SalaryHigh), j.SalaryCurrency,
+		nullFloat(j.SalaryLow), nullFloat(j.SalaryHigh), j.SalaryCurrency, j.SalarySource,
 		j.Description, j.Summary, j.RemoteType, statusOrDefault(j.Status), j.Notes,
 		j.Source, j.ListedAt, j.SearchedAt, j.FetchedAt, j.LLMSummary, j.ContentHash)
 	if err != nil {
@@ -435,7 +494,7 @@ func (s *Store) List(f Filters) ([]*models.JobPosting, error) {
 // SearchFTS runs an offline full-text query over stored jobs.
 func (s *Store) SearchFTS(expr string, limit int) ([]*models.JobPosting, error) {
 	q := `SELECT j.id,j.title,j.company,j.location,j.url,j.salary_raw,j.salary_low,j.salary_high,
-  j.salary_currency,j.description,j.summary,j.llm_summary,j.remote_type,j.status,j.notes,j.source,j.listed_at,
+  j.salary_currency,j.salary_source,j.description,j.summary,j.llm_summary,j.remote_type,j.status,j.notes,j.source,j.listed_at,
   j.searched_at,j.fetched_at,j.company_overview,j.industry,j.tech_stack,j.seniority,j.employment_type,
   j.years_experience,j.company_size_band,j.company_stage,j.is_founding_role,j.visa_sponsorship,j.fit_score,
   j.fit_reason,j.content_hash,j.enriched_at,j.scored_at FROM jobs j JOIN (SELECT id, rank FROM jobs_fts WHERE jobs_fts MATCH ?`
@@ -558,7 +617,7 @@ func (s *Store) Delete(id string) error {
 // --- helpers ---
 
 const jobCols = `SELECT id,title,company,location,url,salary_raw,salary_low,salary_high,
-  salary_currency,description,summary,llm_summary,remote_type,status,notes,source,listed_at,
+  salary_currency,salary_source,description,summary,llm_summary,remote_type,status,notes,source,listed_at,
   searched_at,fetched_at,company_overview,industry,tech_stack,seniority,employment_type,
   years_experience,company_size_band,company_stage,is_founding_role,visa_sponsorship,fit_score,
   fit_reason,content_hash,enriched_at,scored_at`
@@ -570,12 +629,12 @@ type scanner interface {
 func scanJob(row scanner) (*models.JobPosting, error) {
 	j := &models.JobPosting{}
 	var sl, sh sql.NullFloat64
-	var company, location, salaryRaw, cur, desc, summary, llm, remote, status, notes, source, fetched sql.NullString
+	var company, location, salaryRaw, cur, salarySource, desc, summary, llm, remote, status, notes, source, fetched sql.NullString
 	var listed sql.NullInt64
 	var companyOverview, industry, techStack, seniority, employmentType, companySizeBand, companyStage, visaSponsorship, fitReason, contentHash, enrichedAt, scoredAt sql.NullString
 	var yearsExp, isFounding, fitScore sql.NullInt64
 	if err := row.Scan(&j.ID, &j.Title, &company, &location, &j.URL, &salaryRaw, &sl, &sh,
-		&cur, &desc, &summary, &llm, &remote, &status, &notes, &source, &listed, &j.SearchedAt, &fetched,
+		&cur, &salarySource, &desc, &summary, &llm, &remote, &status, &notes, &source, &listed, &j.SearchedAt, &fetched,
 		&companyOverview, &industry, &techStack, &seniority, &employmentType, &yearsExp,
 		&companySizeBand, &companyStage, &isFounding, &visaSponsorship, &fitScore,
 		&fitReason, &contentHash, &enrichedAt, &scoredAt); err != nil {
@@ -596,6 +655,7 @@ func scanJob(row scanner) (*models.JobPosting, error) {
 		j.SalaryHigh = &v
 	}
 	j.SalaryCurrency = cur.String
+	j.SalarySource = salarySource.String
 	j.Description = desc.String
 	j.Summary = summary.String
 	j.LLMSummary = llm.String
