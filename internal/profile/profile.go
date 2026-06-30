@@ -48,6 +48,7 @@ func PrefsPath() string { return filepath.Join(config.ConfigDir(), PrefsFile) }
 type prefsFrontmatter struct {
 	WorkArrangement string   `yaml:"work_arrangement,omitempty"`
 	MinSalary       *float64 `yaml:"min_salary,omitempty"`
+	MinSalaryCurrency string `yaml:"min_salary_currency,omitempty"`
 	Locations       string   `yaml:"locations,omitempty"`
 }
 
@@ -83,6 +84,7 @@ func Load() (*models.Profile, error) {
 		}
 		p.PrefWorkArrangement = fm.WorkArrangement
 		p.PrefMinSalary = fm.MinSalary
+		p.PrefMinSalaryCurrency = fm.MinSalaryCurrency
 		p.PrefLocations = fm.Locations
 		p.PreferencesText = strings.TrimSpace(body)
 	}
@@ -109,9 +111,10 @@ func SavePrefs(p *models.Profile) error {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 	fm := prefsFrontmatter{
-		WorkArrangement: p.PrefWorkArrangement,
-		MinSalary:       p.PrefMinSalary,
-		Locations:       p.PrefLocations,
+		WorkArrangement:   p.PrefWorkArrangement,
+		MinSalary:         p.PrefMinSalary,
+		MinSalaryCurrency: p.PrefMinSalaryCurrency,
+		Locations:         p.PrefLocations,
 	}
 	fmBytes, err := yaml.Marshal(&fm)
 	if err != nil {

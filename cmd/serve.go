@@ -16,6 +16,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"linkedin-jobs/internal/fx"
 	"linkedin-jobs/internal/models"
 	"linkedin-jobs/internal/salary"
 	"linkedin-jobs/internal/store"
@@ -212,25 +213,42 @@ func (ws *webServer) query(q url.Values) ([]*models.JobPosting, string, error) {
 		jobs, err := ws.st.SearchFTS(ftsExpr([]string{term}, nil), 0)
 		return jobs, "search", err
 	}
+	minSal := softSalary(q.Get("min_salary"))
+	currency := fx.Normalize(q.Get("salary_currency"))
+	if currency != "" && !fx.Supported(currency) {
+		// Ignore unknown codes rather than 500-ing the page.
+		currency = ""
+	}
 	f := store.Filters{
-		Company:         q.Get("company"),
-		Title:           q.Get("title"),
-		Location:        q.Get("location"),
-		Status:          q.Get("status"),
-		Source:          q.Get("source"),
-		MinSalary:       softSalary(q.Get("min_salary")),
-		MinScore:        softInt(q.Get("min_score")),
-		Remote:          q.Get("remote") == "1",
-		IncludeFiltered: q.Get("include_filtered") == "1",
-		SortByScore:     q.Get("sort") != "salary", // default: fit score
+		Company:           q.Get("company"),
+		Title:             q.Get("title"),
+		Location:          q.Get("location"),
+		Status:            q.Get("status"),
+		Source:            q.Get("source"),
+		MinSalary:         minSal,
+		MinSalaryCurrency: currency,
+		MinScore:          softInt(q.Get("min_score")),
+		Remote:            q.Get("remote") == "1",
+		IncludeFiltered:   q.Get("include_filtered") == "1",
+		SortByScore:       q.Get("sort") != "salary", // default: fit score
+	}
+	// FX-aware floor can't be done in SQL: defer it to Go.
+	if currency != "" && minSal > 0 {
+		f.MinSalary = 0
 	}
 	jobs, err := ws.st.List(f)
+	if err != nil {
+		return nil, "list", err
+	}
+	if currency != "" && minSal > 0 {
+		jobs = filterByMinSalary(jobs, minSal, currency)
+	}
 	return jobs, "list", err
 }
 
 type formVals struct {
 	Q, Company, Title, Location, Status, Source string
-	MinSalary, MinScore                         string
+	MinSalary, MinSalaryCurrency, MinScore       string
 	Sort                                        string
 	Remote, IncludeFiltered                     bool
 }
@@ -241,17 +259,18 @@ func readForm(q url.Values) formVals {
 		sort = "score"
 	}
 	return formVals{
-		Q:               q.Get("q"),
-		Company:         q.Get("company"),
-		Title:           q.Get("title"),
-		Location:        q.Get("location"),
-		Status:          q.Get("status"),
-		Source:          q.Get("source"),
-		MinSalary:       q.Get("min_salary"),
-		MinScore:        q.Get("min_score"),
-		Sort:            sort,
-		Remote:          q.Get("remote") == "1",
-		IncludeFiltered: q.Get("include_filtered") == "1",
+		Q:                 q.Get("q"),
+		Company:           q.Get("company"),
+		Title:             q.Get("title"),
+		Location:          q.Get("location"),
+		Status:            q.Get("status"),
+		Source:            q.Get("source"),
+		MinSalary:         q.Get("min_salary"),
+		MinSalaryCurrency: q.Get("salary_currency"),
+		MinScore:          q.Get("min_score"),
+		Sort:              sort,
+		Remote:            q.Get("remote") == "1",
+		IncludeFiltered:   q.Get("include_filtered") == "1",
 	}
 }
 
@@ -963,6 +982,17 @@ const pageHTML = `<!DOCTYPE html>
         <div class="field field-narrow">
           <label for="min_salary">Min salary</label>
           <input type="text" id="min_salary" name="min_salary" value="{{.F.MinSalary}}" placeholder="200k">
+        </div>
+        <div class="field field-narrow">
+          <label for="salary_currency">Currency</label>
+          <select id="salary_currency" name="salary_currency">
+            <option value="">raw (any)</option>
+            <option value="CAD"{{if eq .F.MinSalaryCurrency "CAD"}} selected{{end}}>CAD</option>
+            <option value="USD"{{if eq .F.MinSalaryCurrency "USD"}} selected{{end}}>USD</option>
+            <option value="EUR"{{if eq .F.MinSalaryCurrency "EUR"}} selected{{end}}>EUR</option>
+            <option value="GBP"{{if eq .F.MinSalaryCurrency "GBP"}} selected{{end}}>GBP</option>
+            <option value="AUD"{{if eq .F.MinSalaryCurrency "AUD"}} selected{{end}}>AUD</option>
+          </select>
         </div>
         <div class="field field-narrow">
           <label for="min_score">Min score</label>

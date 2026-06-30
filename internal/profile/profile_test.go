@@ -87,6 +87,25 @@ func TestSavePrefs_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestSavePrefs_SalaryCurrencyRoundTrip(t *testing.T) {
+	setConfigDir(t)
+	in := &models.Profile{
+		PreferencesText:    "staff roles",
+		PrefMinSalary:      ptr(160000),
+		PrefMinSalaryCurrency: "CAD",
+	}
+	if err := SavePrefs(in); err != nil {
+		t.Fatalf("SavePrefs: %v", err)
+	}
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.PrefMinSalaryCurrency != "CAD" {
+		t.Errorf("min_salary_currency = %q, want CAD", got.PrefMinSalaryCurrency)
+	}
+}
+
 func TestLoad_PrefsOnlyNoResume(t *testing.T) {
 	setConfigDir(t)
 	in := &models.Profile{

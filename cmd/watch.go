@@ -10,12 +10,13 @@ import (
 )
 
 var (
-	watchTop       int
-	watchMinSalary string
-	watchRemote    bool
-	watchExclude   []string
-	watchNoDetail  bool
-	watchForceOW   bool
+	watchTop            int
+	watchMinSalary      string
+	watchSalaryCurrency string
+	watchRemote         bool
+	watchExclude        []string
+	watchNoDetail       bool
+	watchForceOW        bool
 )
 
 var watchCmd = &cobra.Command{
@@ -27,6 +28,11 @@ brand-new job IDs (never seen) are fetched, summarized, stored, and displayed â€
 handy as a recurring "what's new" check. --top N caps how many jobs are pulled
 from LinkedIn each run.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		minSal := parseMinSalary(watchMinSalary)
+		currency := validateSalaryCurrency(watchSalaryCurrency)
+		if currency != "" && minSal == 0 {
+			die("--salary-currency requires --min-salary.")
+		}
 		keywords, location := args[0], args[1]
 		c, err := newClient(false)
 		if err != nil {
@@ -74,14 +80,15 @@ from LinkedIn each run.`,
 			target = jobs
 		}
 		ingest(target, ingestOptions{
-			minSalary:        parseMinSalary(watchMinSalary),
-			excludeCompanies: watchExclude,
-			remote:           watchRemote,
-			noDetail:         watchNoDetail,
-			forceOverwrite:   watchForceOW,
-			detailDelay:      resolveDetailDelay(),
-			scoreDelay:       resolveLLMDelay(),
-			jsonOut:          jsonOut,
+			minSalary:         minSal,
+			minSalaryCurrency: currency,
+			excludeCompanies:  watchExclude,
+			remote:            watchRemote,
+			noDetail:          watchNoDetail,
+			forceOverwrite:    watchForceOW,
+			detailDelay:       resolveDetailDelay(),
+			scoreDelay:        resolveLLMDelay(),
+			jsonOut:           jsonOut,
 		})
 		return nil
 	},
@@ -90,6 +97,7 @@ from LinkedIn each run.`,
 func init() {
 	watchCmd.Flags().IntVar(&watchTop, "top", 25, "cap on number of jobs to pull from LinkedIn each run")
 	watchCmd.Flags().StringVar(&watchMinSalary, "min-salary", "", "only keep jobs paying at or above this")
+	watchCmd.Flags().StringVar(&watchSalaryCurrency, "salary-currency", "", "currency for --min-salary (ISO 4217, e.g. CAD); enables FX-aware filtering")
 	watchCmd.Flags().BoolVar(&watchRemote, "remote", false, "only remote-friendly jobs")
 	watchCmd.Flags().StringSliceVar(&watchExclude, "exclude-company", nil, "drop jobs whose company matches")
 	watchCmd.Flags().BoolVar(&watchNoDetail, "no-detail", false, "skip detail page fetching")

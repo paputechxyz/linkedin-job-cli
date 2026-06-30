@@ -8,15 +8,16 @@ import (
 )
 
 var (
-	recLimit       int
-	recMinSalary   string
-	recRemote      bool
-	recExclude     []string
-	recNoDetail    bool
-	recNoSummarize bool
-	recNoScore     bool
-	recNoFilter    bool
-	recForceOW     bool
+	recLimit            int
+	recMinSalary        string
+	recSalaryCurrency   string
+	recRemote           bool
+	recExclude          []string
+	recNoDetail         bool
+	recNoSummarize      bool
+	recNoScore          bool
+	recNoFilter         bool
+	recForceOW          bool
 )
 
 var recommendedCmd = &cobra.Command{
@@ -27,6 +28,11 @@ captured browser session (see 'auth login'). Requires a session. Pulls up to
 --limit jobs, fetches salary + description, filters, summarizes, stores, and
 displays the results.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		minSal := parseMinSalary(recMinSalary)
+		currency := validateSalaryCurrency(recSalaryCurrency)
+		if currency != "" && minSal == 0 {
+			die("--salary-currency requires --min-salary.")
+		}
 		c, err := newClient(true)
 		if err != nil {
 			die("%v", err)
@@ -45,17 +51,18 @@ displays the results.`,
 			fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 		}
 		ingest(jobs, ingestOptions{
-			minSalary:        parseMinSalary(recMinSalary),
-			excludeCompanies: recExclude,
-			remote:           recRemote,
-			noDetail:         recNoDetail,
-			noSummarize:      recNoSummarize,
-			noScore:          recNoScore,
-			noFilter:         recNoFilter,
-			forceOverwrite:   recForceOW,
-			detailDelay:      resolveDetailDelay(),
-			scoreDelay:       resolveLLMDelay(),
-			jsonOut:          jsonOut,
+			minSalary:         minSal,
+			minSalaryCurrency: currency,
+			excludeCompanies:  recExclude,
+			remote:            recRemote,
+			noDetail:          recNoDetail,
+			noSummarize:       recNoSummarize,
+			noScore:           recNoScore,
+			noFilter:          recNoFilter,
+			forceOverwrite:    recForceOW,
+			detailDelay:       resolveDetailDelay(),
+			scoreDelay:        resolveLLMDelay(),
+			jsonOut:           jsonOut,
 		})
 		return nil
 	},
@@ -64,6 +71,7 @@ displays the results.`,
 func init() {
 	recommendedCmd.Flags().IntVar(&recLimit, "limit", 50, "max number of recommended jobs to fetch")
 	recommendedCmd.Flags().StringVar(&recMinSalary, "min-salary", "", "only keep jobs paying at or above this (e.g. 200k)")
+	recommendedCmd.Flags().StringVar(&recSalaryCurrency, "salary-currency", "", "currency for --min-salary (ISO 4217, e.g. CAD); enables FX-aware filtering")
 	recommendedCmd.Flags().BoolVar(&recRemote, "remote", false, "only keep remote-friendly jobs")
 	recommendedCmd.Flags().StringSliceVar(&recExclude, "exclude-company", nil, "drop jobs whose company matches (repeatable)")
 	recommendedCmd.Flags().BoolVar(&recNoDetail, "no-detail", false, "skip detail page fetching (faster; no salary/description)")

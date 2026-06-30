@@ -10,17 +10,18 @@ import (
 )
 
 var (
-	listMinSalary       string
-	listCompany         string
-	listTitle           string
-	listLocation        string
-	listRemote          bool
-	listStatus          string
-	listSource          string
-	listLimit           int
-	listIncludeFiltered bool
-	listMinScore        int
-	listSortScore       bool
+	listMinSalary        string
+	listSalaryCurrency   string
+	listCompany          string
+	listTitle            string
+	listLocation         string
+	listRemote           bool
+	listStatus           string
+	listSource           string
+	listLimit            int
+	listIncludeFiltered  bool
+	listMinScore         int
+	listSortScore        bool
 )
 
 var listCmd = &cobra.Command{
@@ -32,21 +33,38 @@ var listCmd = &cobra.Command{
 			die("failed to open DB: %v", err)
 		}
 		defer st.Close()
-		jobs, err := st.List(store.Filters{
-			MinSalary:       parseMinSalary(listMinSalary),
-			Company:         listCompany,
-			Title:           listTitle,
-			Location:        listLocation,
-			Remote:          listRemote,
-			Status:          listStatus,
-			Source:          listSource,
-			MinScore:        listMinScore,
-			IncludeFiltered: listIncludeFiltered,
-			SortByScore:     listSortScore,
-			Limit:           listLimit,
-		})
+		minSal := parseMinSalary(listMinSalary)
+		currency := validateSalaryCurrency(listSalaryCurrency)
+		f := store.Filters{
+			MinSalary:         minSal,
+			MinSalaryCurrency: currency,
+			Company:           listCompany,
+			Title:             listTitle,
+			Location:          listLocation,
+			Remote:            listRemote,
+			Status:            listStatus,
+			Source:            listSource,
+			MinScore:          listMinScore,
+			IncludeFiltered:   listIncludeFiltered,
+			SortByScore:       listSortScore,
+		}
+		// FX-aware salary filtering can't be expressed in SQL: fetch a broader
+		// pool (no limit) when a currency is set, then trim after the Go filter.
+		if currency != "" && minSal > 0 {
+			f.MinSalary = 0
+			f.Limit = 0
+		} else {
+			f.Limit = listLimit
+		}
+		jobs, err := st.List(f)
 		if err != nil {
 			die("query failed: %v", err)
+		}
+		if currency != "" && minSal > 0 {
+			jobs = filterByMinSalary(jobs, minSal, currency)
+			if listLimit > 0 && len(jobs) > listLimit {
+				jobs = jobs[:listLimit]
+			}
 		}
 		if jsonOut {
 			render.AsJSON(os.Stdout, jobs)
@@ -59,6 +77,7 @@ var listCmd = &cobra.Command{
 
 func init() {
 	listCmd.Flags().StringVar(&listMinSalary, "min-salary", "", "filter by minimum salary (e.g. 200k)")
+	listCmd.Flags().StringVar(&listSalaryCurrency, "salary-currency", "", "currency for --min-salary (ISO 4217, e.g. CAD); enables FX-aware filtering")
 	listCmd.Flags().StringVar(&listCompany, "company", "", "filter by company name (substring)")
 	listCmd.Flags().StringVar(&listTitle, "title", "", "filter by title (substring)")
 	listCmd.Flags().StringVar(&listLocation, "location", "", "filter by location (substring)")
