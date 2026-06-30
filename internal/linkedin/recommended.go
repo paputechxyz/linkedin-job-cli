@@ -23,6 +23,13 @@ func (c *Client) Recommended(maxJobs int) ([]*models.JobPosting, error) {
 	if !c.HasSession() {
 		return nil, ErrAuthRequired
 	}
+	// HasSession only guarantees *some* cookies are present. The Voyager
+	// GraphQL endpoint additionally requires a csrf-token header derived from
+	// the JSESSIONID cookie. If that's missing, LinkedIn returns 403
+	// "CSRF check failed" — fail early with an actionable message instead.
+	if c.session.CSRFToken == "" {
+		return nil, errf("session is missing JSESSIONID (cannot derive csrf-token); re-run `linkedin-jobs auth login`")
+	}
 	var out []*models.JobPosting
 	seen := map[string]bool{}
 	pageSize := 25
@@ -40,7 +47,14 @@ func (c *Client) Recommended(maxJobs int) ([]*models.JobPosting, error) {
 			return out, err
 		}
 		if status == 401 || status == 403 {
-			return out, errf("LinkedIn rejected the session (status %d) — re-run `linkedin-jobs auth login`", status)
+			// 403 with "CSRF check failed" means the csrf-token didn't match
+			// the JSESSIONID (or the session expired). Distinguish it so the
+			// user knows their captured session is stale, not just rejected.
+			hint := "re-run `linkedin-jobs auth login`"
+			if strings.Contains(strings.ToLower(body), "csrf") {
+				hint = "csrf-token rejected (stale/incomplete session) — re-run `linkedin-jobs auth login`"
+			}
+			return out, errf("LinkedIn rejected the session (status %d) — %s", status, hint)
 		}
 		if status != 200 {
 			return out, errf("recommended request returned status %d", status)
@@ -79,44 +93,90 @@ type graphqlResp struct {
 	Included []map[string]interface{} `json:"included"`
 }
 
-// parseRecommended extracts JobPosting cards from the normalized entity graph.
+// parseRecommended extracts JobPosting cards from the GraphQL response.
+//
+// LinkedIn has shipped two response shapes for this query; both are handled:
+//
+//  1. NEW (current, denormalized): the card entity is inlined directly.
+//     data.jobsDashJobCardsByJobCollections.elements[*].jobCard.jobPostingCard
+//     There is no top-level `included` array.
+//
+//  2. OLD (normalized entity graph, captured in testdata): the card has a
+//     "*jobPostingCard" reference string that points into a top-level
+//     `included[]` array indexed by `entityUrn`.
+//
+// The card entity's fields (jobPostingTitle, primaryDescription, etc.) are
+// identical across both shapes, so cardEntityToJob handles either once the
+// entity is located.
 func parseRecommended(body string) []*models.JobPosting {
-	var resp graphqlResp
-	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+	var raw map[string]interface{}
+	if err := json.Unmarshal([]byte(body), &raw); err != nil {
 		return nil
 	}
-	// index included entities by their reference URN
-	byURN := map[string]map[string]interface{}{}
-	for _, e := range resp.Included {
-		if t, _ := e["$type"].(string); t == jobPostingCardType {
-			if urn, _ := e["entityUrn"].(string); urn != "" {
-				byURN[urn] = e
-			}
-		}
+	data, _ := raw["data"].(map[string]interface{})
+	if data == nil {
+		return nil
 	}
 
-	// collect the referenced card URNs in result order from the elements
-	var orderedURNs []string
-	for _, el := range resp.Data.Data.Jobs.Elements {
-		if el.JobCard == nil {
-			continue
+	// Locate the jobsDashJobCardsByJobCollections node. Try NEW shape first
+	// (data.X), fall back to OLD shape (data.data.X).
+	jcbjc, _ := data["jobsDashJobCardsByJobCollections"].(map[string]interface{})
+	if jcbjc == nil {
+		if inner, _ := data["data"].(map[string]interface{}); inner != nil {
+			jcbjc, _ = inner["jobsDashJobCardsByJobCollections"].(map[string]interface{})
 		}
-		if raw, ok := el.JobCard["*jobPostingCard"]; ok {
-			var ref string
-			if json.Unmarshal(raw, &ref) == nil && ref != "" {
-				orderedURNs = append(orderedURNs, ref)
+	}
+	if jcbjc == nil {
+		return nil
+	}
+	elements, _ := jcbjc["elements"].([]interface{})
+	if len(elements) == 0 {
+		return nil
+	}
+
+	// OLD shape only: build an entityUrn -> entity index from the top-level
+	// `included` array so we can resolve "*jobPostingCard" references.
+	byURN := map[string]map[string]interface{}{}
+	if included, _ := raw["included"].([]interface{}); included != nil {
+		for _, e := range included {
+			em, _ := e.(map[string]interface{})
+			if em == nil {
+				continue
+			}
+			if t, _ := em["$type"].(string); t == jobPostingCardType {
+				if urn, _ := em["entityUrn"].(string); urn != "" {
+					byURN[urn] = em
+				}
 			}
 		}
 	}
 
 	var out []*models.JobPosting
 	added := map[string]bool{}
-	for _, urn := range orderedURNs {
-		e, ok := byURN[urn]
-		if !ok {
+	for _, el := range elements {
+		elm, _ := el.(map[string]interface{})
+		if elm == nil {
 			continue
 		}
-		j := cardEntityToJob(e)
+		jobCard, _ := elm["jobCard"].(map[string]interface{})
+		if jobCard == nil {
+			continue
+		}
+
+		// Resolve the JobPostingCard entity for this element.
+		var entity map[string]interface{}
+		if jpc, _ := jobCard["jobPostingCard"].(map[string]interface{}); jpc != nil {
+			// NEW shape: inline entity.
+			entity = jpc
+		} else if ref, _ := jobCard["*jobPostingCard"].(string); ref != "" {
+			// OLD shape: URN reference into `included`.
+			entity = byURN[ref]
+		}
+		if entity == nil {
+			continue
+		}
+
+		j := cardEntityToJob(entity)
 		if j == nil || added[j.ID] {
 			continue
 		}
