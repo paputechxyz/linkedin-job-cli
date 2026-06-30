@@ -16,15 +16,73 @@ type Session struct {
 	Source       string // "press-auth" | "env" | "file"
 }
 
+// Valid reports whether the session is structurally complete enough to make
+// authenticated Voyager API calls. LinkedIn's Voyager endpoint requires:
+//   - the li_at auth cookie (proves you're signed in), and
+//   - a csrf-token header equal to the JSESSIONID cookie value
+//
+// A session can have cookies present (HasSession returns true) but still be
+// unusable if those two critical cookies are missing — typically because the
+// capture raced the login flow. Callers that need a working session should
+// check Valid, not just HasSession.
+func (s *Session) Valid() bool {
+	if s == nil || s.CookieHeader == "" || s.CSRFToken == "" {
+		return false
+	}
+	return hasCookie(s.CookieHeader, "li_at")
+}
+
+// hasCookie reports whether the given cookie name appears in a raw "Cookie:"
+// header value (case-insensitive name match).
+func hasCookie(header, name string) bool {
+	target := strings.ToLower(name)
+	for _, part := range strings.Split(header, ";") {
+		p := strings.TrimSpace(part)
+		idx := strings.Index(p, "=")
+		if idx < 0 {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(p[:idx])) == target {
+			return true
+		}
+	}
+	return false
+}
+
 // ErrNoSession is returned when no LinkedIn session could be resolved.
 var ErrNoSession = errors.New("no LinkedIn session found: run `linkedin-jobs auth login` (installs/uses press-auth) or set LJ_COOKIES_FILE / LJ_COOKIE")
 
 // Resolve resolves a LinkedIn session in priority order:
-//  1. press-auth companion (`press-auth cookies linkedin.com`)
-//  2. LJ_COOKIE env (raw cookie header)
-//  3. LJ_COOKIES_FILE (file with a raw cookie header, one line or Netscape cookies.txt)
+//  1. LJ_COOKIE env (raw cookie header) — explicit override, wins over everything
+//  2. LJ_COOKIES_FILE (file with a raw cookie header, one line or Netscape cookies.txt) — explicit override
+//  3. press-auth companion (`press-auth cookies linkedin.com`) — automatic capture, used when no override is set
+//
+// Rationale: an explicit env var means the user opted into that source; it
+// should shadow an automatic press-auth capture (which may be stale or
+// incomplete). Without this, setting LJ_COOKIES_FILE has no effect when
+// press-auth has any prior capture on disk.
 func Resolve(cfg config.Config) (*Session, error) {
-	// 1. press-auth
+	// 1. env (raw cookie header) — highest priority
+	if cfg.CookieHeader != "" {
+		return &Session{
+			CookieHeader: cfg.CookieHeader,
+			CSRFToken:    csrfFromCookieHeader(cfg.CookieHeader),
+			Source:       "env",
+		}, nil
+	}
+
+	// 2. file
+	if cfg.CookiesFile != "" {
+		if hdr, err := readCookiesFile(cfg.CookiesFile); err == nil && hdr != "" {
+			return &Session{
+				CookieHeader: hdr,
+				CSRFToken:    csrfFromCookieHeader(hdr),
+				Source:       "file",
+			}, nil
+		}
+	}
+
+	// 3. press-auth — automatic capture, lowest priority (only when no override)
 	if path, err := exec.LookPath("press-auth"); err == nil {
 		out, err := exec.Command(path, "cookies", "linkedin.com").Output()
 		if err == nil {
@@ -36,26 +94,6 @@ func Resolve(cfg config.Config) (*Session, error) {
 					Source:       "press-auth",
 				}, nil
 			}
-		}
-	}
-
-	// 2. env
-	if cfg.CookieHeader != "" {
-		return &Session{
-			CookieHeader: cfg.CookieHeader,
-			CSRFToken:    csrfFromCookieHeader(cfg.CookieHeader),
-			Source:       "env",
-		}, nil
-	}
-
-	// 3. file
-	if cfg.CookiesFile != "" {
-		if hdr, err := readCookiesFile(cfg.CookiesFile); err == nil && hdr != "" {
-			return &Session{
-				CookieHeader: hdr,
-				CSRFToken:    csrfFromCookieHeader(hdr),
-				Source:       "file",
-			}, nil
 		}
 	}
 
