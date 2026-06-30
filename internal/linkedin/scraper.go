@@ -16,6 +16,19 @@ const guestSearchURL = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobP
 
 var jobIDRE = regexp.MustCompile(`jobPosting:(\d+)`)
 
+// descriptionSalaryRE matches a compensation range stated in the job description
+// body, requiring an explicit currency signal: either a non-$ currency prefix
+// (CA$/CAD/US$/USD/EUR…) on the first amount, or a trailing ISO code. A bare
+// "$low - $high" with no currency hint is intentionally NOT matched, since that
+// is usually the same ambiguous badge figure and we only want to override the
+// badge with authoritative, currency-stated data.
+var descriptionSalaryRE = regexp.MustCompile(
+	`(?i)(?:` +
+		`(?:CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥)\s?[\d,]+(?:\.\d+)?[kKmM]?\s*[-–—]\s*(?:CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥|\$)?\s?[\d,]+(?:\.\d+)?[kKmM]?(?:\s+(?:CAD|USD|EUR|GBP|AUD|INR|JPY))?` + // explicit-prefix first amount
+		`|` +
+		`(?:CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥|\$)?\s?[\d,]+(?:\.\d+)?[kKmM]?\s*[-–—]\s*(?:CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥|\$)?\s?[\d,]+(?:\.\d+)?[kKmM]?\s+(?:CAD|USD|EUR|GBP|AUD|INR|JPY)` + // trailing ISO code on the range
+		`)`)
+
 // Search runs an anonymous job search and returns parsed job cards (no
 // salary/description — call FetchDetail for those).
 func (c *Client) Search(keywords, location string, pages int) ([]*models.JobPosting, error) {
@@ -149,8 +162,38 @@ func (c *Client) FetchDetail(j *models.JobPosting) error {
 		return true
 	})
 
+	// The description body carries the authoritative, localized compensation
+	// band (usually with an explicit currency), which is more reliable than the
+	// page's salary badge (often a different/default band). Override the badge
+	// when we find such a currency-stated range in the description.
+	if descSal := descriptionSalary(j.Description); descSal != nil {
+		j.SalaryRaw = descSal.Raw
+		j.SalaryLow = descSal.Low
+		j.SalaryHigh = descSal.High
+		j.SalaryCurrency = descSal.Currency
+	}
+
 	j.RemoteType = DetectRemote(j.Location + " " + j.Description)
 	j.FetchedAt = store.NowISO()
+	return nil
+}
+
+// descriptionSalary scans a job description for an authoritative compensation
+// range and returns the first plausible one (low end >= 1000 to reject small
+// non-salary figures). Returns nil when no currency-stated range is present, in
+// which case callers keep the salary badge value.
+func descriptionSalary(desc string) *salary.Salary {
+	matches := descriptionSalaryRE.FindAllString(desc, -1)
+	for _, m := range matches {
+		s := salary.Parse(m)
+		if s == nil || s.Low == nil || s.High == nil {
+			continue
+		}
+		if *s.Low < 1000 || *s.High < 1000 {
+			continue
+		}
+		return s
+	}
 	return nil
 }
 

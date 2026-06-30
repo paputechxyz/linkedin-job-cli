@@ -36,11 +36,22 @@ func (s Salary) Max() float64 {
 }
 
 var (
-	amountRE = regexp.MustCompile(`(?i)(?P<cur>CA\$|C\$|CAD|US\$|USD|\$)?\s*(?P<amt>[\d,]+(?:\.\d+)?)\s*(?P<unit>[kKmM])?`)
+	// amountRE matches a single money figure with an optional currency. The
+	// prefix group (cur) covers symbols/codes BEFORE the amount; the suffix
+	// group (cur2) covers an ISO code AFTER the amount (e.g. "$257,000 CAD"),
+	// which is how many job posts state the currency for a range. Note: no
+	// whitespace is allowed between amount and the k/M unit, so that the \s+
+	// before cur2 isn't stolen by a greedy quantifier.
+	amountRE = regexp.MustCompile(`(?i)(?P<cur>CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥|₹|\$)?\s*(?P<amt>[\d,]+(?:\.\d+)?)(?P<unit>[kKmM])?(?:\s+(?P<cur2>CAD|USD|EUR|GBP|AUD|INR|JPY))?`)
 
 	currencyMap = map[string]string{
 		"ca$": "CAD", "c$": "CAD", "cad": "CAD",
 		"us$": "USD", "usd": "USD", "$": "USD",
+		"eur": "EUR", "€": "EUR",
+		"gbp": "GBP", "£": "GBP",
+		"aud": "AUD", "a$": "AUD",
+		"inr": "INR", "₹": "INR",
+		"jpy": "JPY", "¥": "JPY",
 	}
 
 	rangeSplitRE = regexp.MustCompile(`\s[-–—]\s|\s[to]\s`)
@@ -83,10 +94,7 @@ func parseAmount(raw, defaultCurrency string) (*float64, string) {
 	if m == nil {
 		return nil, defaultCurrency
 	}
-	cur := currencyMap[strings.ToLower(m[1])]
-	if cur == "" {
-		cur = defaultCurrency
-	}
+	cur := resolveCurrency(m[1], m[4], defaultCurrency)
 	amtStr := strings.ReplaceAll(m[2], ",", "")
 	f, err := strconv.ParseFloat(amtStr, 64)
 	if err != nil {
@@ -99,6 +107,22 @@ func parseAmount(raw, defaultCurrency string) (*float64, string) {
 		f *= 1_000_000
 	}
 	return &f, cur
+}
+
+// resolveCurrency picks the most specific currency signal: a trailing ISO code
+// (cur2) wins, then an explicit (non-ambiguous) prefix, then the carried
+// default. A bare "$" prefix alone never overrides the default because it is
+// ambiguous between several dollar currencies.
+func resolveCurrency(prefix, suffix, defaultCurrency string) string {
+	if c := currencyMap[strings.ToLower(suffix)]; c != "" {
+		return c
+	}
+	if p := strings.TrimSpace(prefix); p != "" && p != "$" {
+		if c := currencyMap[strings.ToLower(p)]; c != "" {
+			return c
+		}
+	}
+	return defaultCurrency
 }
 
 // PassesFilter reports whether a salary meets the minimum threshold, using the
