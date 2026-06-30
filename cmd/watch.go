@@ -15,6 +15,7 @@ var (
 	watchRemote    bool
 	watchExclude   []string
 	watchNoDetail  bool
+	watchForceOW   bool
 )
 
 var watchCmd = &cobra.Command{
@@ -66,11 +67,18 @@ from LinkedIn each run.`,
 		fmt.Fprintf(os.Stderr, "Found %d jobs, %d new since last run.\n", len(jobs), len(fresh))
 
 		// Run fresh jobs through the standard dedup -> hard-filter -> score pipeline.
-		ingest(fresh, ingestOptions{
+		// With --force-overwrite, drop the "only new IDs" pre-filter so existing
+		// jobs are re-processed (the dedup gate inside ingest is also bypassed).
+		target := fresh
+		if watchForceOW {
+			target = jobs
+		}
+		ingest(target, ingestOptions{
 			minSalary:        parseMinSalary(watchMinSalary),
 			excludeCompanies: watchExclude,
 			remote:           watchRemote,
 			noDetail:         watchNoDetail,
+			forceOverwrite:   watchForceOW,
 			detailDelay:      resolveDetailDelay(),
 			scoreDelay:       resolveLLMDelay(),
 			jsonOut:          jsonOut,
@@ -85,5 +93,6 @@ func init() {
 	watchCmd.Flags().BoolVar(&watchRemote, "remote", false, "only remote-friendly jobs")
 	watchCmd.Flags().StringSliceVar(&watchExclude, "exclude-company", nil, "drop jobs whose company matches")
 	watchCmd.Flags().BoolVar(&watchNoDetail, "no-detail", false, "skip detail page fetching")
+	watchCmd.Flags().BoolVar(&watchForceOW, "force-overwrite", false, "re-parse and re-score jobs already in the DB (bypass the new-only pre-filter and dedup; overwrites existing values)")
 	rootCmd.AddCommand(watchCmd)
 }
