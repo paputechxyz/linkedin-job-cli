@@ -42,7 +42,7 @@ Read-only — no data is written. Binds to localhost only.`,
 		}
 		defer st.Close()
 
-		tpl, err := template.New("page").Parse(pageHTML)
+		tpl, err := newPageTemplate()
 		if err != nil {
 			die("template parse: %v", err)
 		}
@@ -79,6 +79,12 @@ func init() {
 	serveCmd.Flags().StringVar(&serveAddr, "addr", "127.0.0.1", "bind address (defaults to localhost only)")
 	serveCmd.Flags().IntVar(&servePort, "port", 8080, "port to serve on")
 	rootCmd.AddCommand(serveCmd)
+}
+
+// newPageTemplate parses the embedded pageHTML template. Centralized so the
+// render path and the render-safety test share one parse entry point.
+func newPageTemplate() (*template.Template, error) {
+	return template.New("page").Parse(pageHTML)
 }
 
 // webServer holds the open store, the parsed page template, and a per-session
@@ -306,14 +312,17 @@ func toJobView(j *models.JobPosting) jobView {
 	return v
 }
 
+// scoreClass maps a fit score to its tier slug (high/mid/low). The template
+// composes the full class names (e.g. score-badge--high, job--high) and treats
+// a missing score as the "none" tier.
 func scoreClass(n int) string {
 	switch {
 	case n >= 70:
-		return "score-high"
+		return "high"
 	case n >= 40:
-		return "score-mid"
+		return "mid"
 	default:
-		return "score-low"
+		return "low"
 	}
 }
 
@@ -377,222 +386,729 @@ const pageHTML = `<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>linkedin-jobs · stored jobs</title>
 <meta name="csrf-token" content="{{.CSRF}}">
 <style>
   :root {
-    --bg:#f6f7f9; --card:#fff; --ink:#1f2328; --muted:#6e7781; --line:#d9dee3;
-    --accent:#0969da; --high:#1a7f37; --mid:#9a6700; --low:#cf222e;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, system-ui, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "IBM Plex Mono", Menlo, Consolas, monospace;
+
+    --page-bg:      oklch(98.4% 0.003 250);
+    --card-bg:      oklch(100% 0 0);
+    --card-subtle:  oklch(97.2% 0.004 250);
+    --hover-bg:     oklch(96.6% 0.005 250);
+    --inset-bg:     oklch(96.8% 0.004 250);
+
+    --ink-1: oklch(22% 0.022 258);
+    --ink-2: oklch(43% 0.016 258);
+    --ink-3: oklch(52% 0.012 258);
+    --ink-4: oklch(63% 0.008 258);
+
+    --line:        oklch(92% 0.005 258);
+    --line-strong: oklch(86% 0.009 258);
+
+    --accent:        oklch(52% 0.226 276);
+    --accent-hover:  oklch(47% 0.226 276);
+    --accent-soft:   oklch(52% 0.226 276 / 0.11);
+    --accent-on:     oklch(100% 0 0);
+
+    --score-high:      oklch(56% 0.158 156);
+    --score-high-on:   oklch(16% 0.04 156);
+    --score-high-soft: oklch(56% 0.158 156 / 0.13);
+    --score-high-tint: oklch(56% 0.158 156 / 0.045);
+
+    --score-mid:      oklch(68% 0.150 78);
+    --score-mid-on:   oklch(34% 0.085 70);
+    --score-mid-soft: oklch(68% 0.150 78 / 0.16);
+
+    --score-low:      oklch(60% 0.162 36);
+    --score-low-on:   oklch(36% 0.12 36);
+    --score-low-soft: oklch(60% 0.162 36 / 0.13);
+
+    --score-none:      oklch(60% 0.006 258);
+    --score-none-on:   oklch(48% 0.008 258);
+    --score-none-soft: oklch(60% 0.006 258 / 0.11);
+
+    --status-new:      oklch(54% 0.196 256);
+    --status-new-soft: oklch(54% 0.196 256 / 0.14);
+
+    --status-saved:      oklch(58% 0.150 52);
+    --status-saved-soft: oklch(58% 0.150 52 / 0.16);
+
+    --status-applied:      oklch(52% 0.110 235);
+    --status-applied-soft: oklch(52% 0.110 235 / 0.14);
+
+    --status-rejected:      oklch(56% 0.075 18);
+    --status-rejected-soft: oklch(56% 0.075 18 / 0.13);
+
+    --status-filtered:      oklch(52% 0.006 258);
+    --status-filtered-soft: oklch(52% 0.006 258 / 0.12);
+
+    --status-viewed:      oklch(50% 0.010 258);
+    --status-viewed-soft: oklch(50% 0.010 258 / 0.10);
+
+    --danger:      oklch(55% 0.180 24);
+    --danger-soft: oklch(55% 0.180 24 / 0.10);
+    --danger-line: oklch(55% 0.180 24 / 0.34);
+
+    --radius-card: 12px;
+    --radius-field: 8px;
+    --radius-pill: 999px;
+
+    --shadow-card: 0 1px 2px oklch(20% 0.02 258 / 0.04);
+    --shadow-high: 0 2px 10px color-mix(in oklch, var(--score-high) 35%, transparent), 0 1px 2px oklch(20% 0.02 258 / 0.05);
+
+    --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.6 6 7.6 9 4.6' fill='none' stroke='%23807c92' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   }
-  * { box-sizing:border-box; }
-  body { margin:0; font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; color:var(--ink); background:var(--bg); }
-  header { background:var(--card); border-bottom:1px solid var(--line); padding:14px 20px; }
-  header h1 { margin:0; font-size:18px; }
-  header .sub { color:var(--muted); font-size:12px; }
-  main { max-width:1100px; margin:0 auto; padding:16px 20px 60px; }
-  form.filters { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; margin-bottom:16px; display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
-  form.filters .field { display:flex; flex-direction:column; gap:3px; }
-  form.filters label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
-  input[type=text], input[type=number], select { padding:6px 8px; border:1px solid var(--line); border-radius:6px; font:inherit; background:#fff; color:var(--ink); }
-  input[type=text]#q { min-width:220px; }
-  .check { display:flex; flex-direction:row; align-items:center; gap:6px; font-size:13px; }
-  .check label { font-size:13px; color:var(--ink); text-transform:none; letter-spacing:0; }
-  .actions { display:flex; gap:8px; align-items:center; margin-left:auto; }
-  button { padding:7px 14px; border:1px solid transparent; border-radius:6px; background:var(--accent); color:#fff; font:inherit; cursor:pointer; }
-  .btnlink { padding:7px 14px; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink); font:inherit; text-decoration:none; }
-  .note { background:#fff8c5; border:1px solid #e7c365; color:#5d4a09; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px; }
-  .err { background:#ffebe9; border:1px solid #ffcecb; color:#82071e; padding:8px 12px; border-radius:6px; margin-bottom:12px; }
-  .err em { color:#82071e; }
-  .count { color:var(--muted); margin:4px 0 14px; }
-  .empty { color:var(--muted); padding:40px 0; text-align:center; }
-  article.job { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin-bottom:12px; }
-  .job-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
-  .job-head h2 { margin:0; font-size:16px; font-weight:600; }
-  .job-head h2 a { color:var(--accent); text-decoration:none; }
-  .job-head h2 a:hover { text-decoration:underline; }
-  .score { flex:none; padding:2px 9px; border-radius:999px; font-weight:600; font-size:13px; }
-  .score-high { background:#dafbe1; color:var(--high); }
-  .score-mid { background:#fff8c5; color:var(--mid); }
-  .score-low { background:#ffebe9; color:var(--low); }
-  .score-none { background:#eaeef2; color:var(--muted); }
-  .meta { margin:6px 0; font-size:13px; }
-  .meta .sep { color:var(--line); margin:0 6px; }
-  .meta .muted { color:var(--muted); }
-  .chips { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0; }
-  .chip { background:#eaeef2; color:#24292f; border-radius:999px; padding:2px 9px; font-size:12px; }
-  .chip.founding { background:#fff1cf; color:#7d4e00; }
-  .dates { color:var(--muted); font-size:12px; margin-top:6px; }
-  details { margin-top:8px; border:1px solid var(--line); border-radius:6px; padding:6px 10px; background:#fbfcfd; }
-  details summary { cursor:pointer; font-weight:500; font-size:13px; }
-  details summary em { color:var(--muted); font-weight:400; font-style:normal; }
-  .longtext { margin-top:8px; white-space:pre-wrap; word-wrap:break-word; font-size:13px; }
-  code { background:#eaeef2; padding:1px 5px; border-radius:4px; font-size:12px; }
-  .actions-row { display:flex; gap:12px; align-items:center; margin:8px 0 2px; flex-wrap:wrap; }
-  .status-field { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); text-transform:none; letter-spacing:0; }
-  .status-field select { padding:4px 8px; }
-  button.danger { background:#fff; color:var(--low); border:1px solid #ffd5d0; padding:5px 12px; font-size:13px; cursor:pointer; border-radius:6px; }
-  button.danger:hover { background:#ffebe9; }
-  footer { color:var(--muted); font-size:12px; text-align:center; padding:20px; }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page-bg:      oklch(17.5% 0.012 260);
+      --card-bg:      oklch(21.5% 0.014 260);
+      --card-subtle:  oklch(24.5% 0.016 260);
+      --hover-bg:     oklch(26.5% 0.016 260);
+      --inset-bg:     oklch(25% 0.014 260);
+
+      --ink-1: oklch(95.5% 0.004 260);
+      --ink-2: oklch(76% 0.012 260);
+      --ink-3: oklch(66% 0.012 260);
+      --ink-4: oklch(52% 0.010 260);
+
+      --line:        oklch(30% 0.014 260);
+      --line-strong: oklch(40% 0.017 260);
+
+      --accent:        oklch(70% 0.196 276);
+      --accent-hover:  oklch(76% 0.188 276);
+      --accent-soft:   oklch(70% 0.196 276 / 0.18);
+      --accent-on:     oklch(16% 0.01 260);
+
+      --score-high:      oklch(72% 0.164 156);
+      --score-high-on:   oklch(17% 0.04 156);
+      --score-high-soft: oklch(72% 0.164 156 / 0.22);
+      --score-high-tint: oklch(72% 0.164 156 / 0.085);
+
+      --score-mid:      oklch(80% 0.146 80);
+      --score-mid-on:   oklch(24% 0.06 70);
+      --score-mid-soft: oklch(80% 0.146 80 / 0.20);
+
+      --score-low:      oklch(72% 0.158 36);
+      --score-low-on:   oklch(22% 0.09 36);
+      --score-low-soft: oklch(72% 0.158 36 / 0.20);
+
+      --score-none:      oklch(62% 0.006 260);
+      --score-none-on:   oklch(80% 0.008 260);
+      --score-none-soft: oklch(62% 0.006 260 / 0.18);
+
+      --status-new:      oklch(72% 0.156 256);
+      --status-new-soft: oklch(72% 0.156 256 / 0.20);
+
+      --status-saved:      oklch(76% 0.144 58);
+      --status-saved-soft: oklch(76% 0.144 58 / 0.20);
+
+      --status-applied:      oklch(70% 0.110 235);
+      --status-applied-soft: oklch(70% 0.110 235 / 0.20);
+
+      --status-rejected:      oklch(66% 0.080 20);
+      --status-rejected-soft: oklch(66% 0.080 20 / 0.18);
+
+      --status-filtered:      oklch(56% 0.006 260);
+      --status-filtered-soft: oklch(56% 0.006 260 / 0.16);
+
+      --status-viewed:      oklch(62% 0.010 260);
+      --status-viewed-soft: oklch(62% 0.010 260 / 0.16);
+
+      --danger:      oklch(68% 0.176 22);
+      --danger-soft: oklch(68% 0.176 22 / 0.18);
+      --danger-line: oklch(68% 0.176 22 / 0.42);
+
+      --shadow-card: 0 1px 2px oklch(0% 0 0 / 0.30);
+      --shadow-high: 0 2px 14px color-mix(in oklch, var(--score-high) 40%, transparent), 0 1px 2px oklch(0% 0 0 / 0.35);
+    }
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--page-bg);
+    color: var(--ink-1);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: clamp(16px, 3vw, 32px) clamp(14px, 3vw, 28px) 48px;
+  }
+
+  /* Header */
+  header.app-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 18px;
+    margin-bottom: 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand-mark {
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    background: var(--accent);
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    box-shadow: 0 1px 3px color-mix(in oklch, var(--accent) 40%, transparent);
+  }
+  .brand-mark svg { width: 16px; height: 16px; display: block; }
+  .app-titles { min-width: 0; }
+  .app-title {
+    font-family: var(--font-mono);
+    font-size: 1.0625rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--ink-1);
+    line-height: 1.2;
+  }
+  .app-subtitle { font-size: 0.8125rem; color: var(--ink-3); line-height: 1.3; }
+
+  /* Filter bar */
+  .filters {
+    background: var(--card-bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    padding: 14px;
+    box-shadow: var(--shadow-card);
+    margin-bottom: 14px;
+  }
+  .filters-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .filters-row + .filters-row { margin-top: 10px; }
+
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field-grow { flex: 2 1 260px; }
+  .field-1 { flex: 1 1 130px; }
+  .field-narrow { flex: 0 1 108px; }
+
+  .field label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding-left: 2px;
+  }
+
+  input[type="text"], input[type="number"], input[type="search"], select {
+    font: inherit;
+    color: var(--ink-1);
+    background: var(--page-bg);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-field);
+    padding: 7px 10px;
+    width: 100%;
+    transition: border-color .12s, box-shadow .12s, background-color .12s;
+  }
+  input::placeholder { color: var(--ink-4); }
+  input[type="number"] { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+  select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: var(--select-arrow);
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 12px;
+    padding-right: 28px;
+    cursor: pointer;
+  }
+
+  input:focus, select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+    background: var(--card-bg);
+  }
+
+  .checks { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+  .check {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 0.8125rem; color: var(--ink-2); cursor: pointer; user-select: none;
+  }
+  .check input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+
+  .actions { display: flex; gap: 8px; margin-left: auto; }
+
+  .btn {
+    font: inherit; font-weight: 600; font-size: 0.8125rem;
+    border-radius: var(--radius-field);
+    padding: 8px 14px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background-color .12s, border-color .12s, color .12s;
+    white-space: nowrap;
+    display: inline-block;
+  }
+  .btn-primary { background: var(--accent); color: var(--accent-on); border-color: var(--accent); }
+  .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); text-decoration: none; }
+  .btn-ghost { background: transparent; color: var(--ink-2); border-color: var(--line-strong); }
+  .btn-ghost:hover { background: var(--hover-bg); color: var(--ink-1); text-decoration: none; }
+
+  /* Inline notices (search-mode + errors) */
+  .notice, .err {
+    padding: 8px 12px;
+    border-radius: var(--radius-field);
+    margin-bottom: 12px;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+  }
+  .notice { background: var(--status-saved-soft); border: 1px solid color-mix(in oklch, var(--status-saved) 30%, transparent); color: var(--status-saved); }
+  .err { background: var(--danger-soft); border: 1px solid var(--danger-line); color: var(--danger); }
+  .err em { color: var(--ink-3); font-style: normal; }
+
+  /* Result count */
+  .result-count {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 4px 2px 10px;
+    font-size: 0.8125rem; color: var(--ink-3);
+  }
+  .result-count strong { font-family: var(--font-mono); font-size: 0.9375rem; color: var(--ink-1); font-variant-numeric: tabular-nums; }
+  .result-count .legend {
+    margin-left: auto;
+    display: inline-flex; gap: 12px; flex-wrap: wrap;
+    font-size: 0.75rem; color: var(--ink-3);
+  }
+  .result-count .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .result-count .legend i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+
+  /* Job list */
+  .job-list { display: flex; flex-direction: column; gap: 12px; }
+
+  .job {
+    position: relative;
+    background: var(--card-bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    padding: 16px 18px 14px 20px;
+    box-shadow: var(--shadow-card);
+    transition: border-color .14s, box-shadow .14s;
+  }
+  .job:hover { border-color: var(--line-strong); }
+
+  /* HIGH tier: reserved accent treatment */
+  .job--high {
+    background-color: color-mix(in oklch, var(--card-bg) 93%, var(--score-high));
+    border-color: color-mix(in oklch, var(--line-strong) 60%, var(--score-high) 40%);
+    box-shadow: var(--shadow-high);
+  }
+  .job--high::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 4px;
+    background: var(--score-high);
+    border-radius: var(--radius-card) 0 0 var(--radius-card);
+  }
+  .job--high:hover { box-shadow: 0 4px 16px color-mix(in oklch, var(--score-high) 28%, transparent), var(--shadow-card); }
+
+  /* Filtered: de-emphasize */
+  .job--filtered { opacity: 0.62; background: var(--card-subtle); }
+  .job--filtered .job-title { color: var(--ink-2); }
+  .job--filtered .job-title:hover { color: var(--ink-2); text-decoration: none; }
+
+  /* Card head */
+  .job-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 6px; }
+  .job-head-main { min-width: 0; flex: 1 1 auto; }
+  .job-title {
+    font-size: 1.0625rem; font-weight: 650; letter-spacing: -0.005em;
+    color: var(--ink-1); line-height: 1.25; display: inline-block;
+  }
+  .job-title:hover { color: var(--accent); }
+
+  /* Fit-score badge */
+  .score-badge {
+    flex: 0 0 auto;
+    display: grid; place-items: center;
+    font-family: var(--font-mono); font-weight: 700; line-height: 1;
+    border-radius: 10px;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+  }
+  .score-badge--high {
+    width: 60px; height: 60px; font-size: 1.5rem;
+    background: var(--score-high); color: var(--score-high-on);
+    box-shadow: 0 1px 0 oklch(100% 0 0 / 0.25) inset, 0 3px 10px color-mix(in oklch, var(--score-high) 45%, transparent);
+  }
+  .score-badge--mid {
+    width: 48px; height: 48px; font-size: 1.1875rem;
+    background: var(--score-mid-soft); color: var(--score-mid-on);
+    border: 1px solid color-mix(in oklch, var(--score-mid) 45%, transparent);
+  }
+  .score-badge--low {
+    width: 42px; height: 42px; font-size: 1rem;
+    background: var(--score-low-soft); color: var(--score-low-on);
+    border: 1px solid color-mix(in oklch, var(--score-low) 38%, transparent);
+  }
+  .score-badge--none {
+    width: 42px; height: 42px; font-size: 1.0625rem; font-weight: 600;
+    background: var(--score-none-soft); color: var(--score-none-on);
+    border: 1px solid var(--line-strong);
+  }
+
+  /* Meta line */
+  .meta {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;
+    margin: 2px 0 12px;
+    font-size: 0.8125rem; color: var(--ink-2); line-height: 1.4;
+  }
+  .meta .sep { color: var(--ink-4); user-select: none; }
+  .meta .co { font-weight: 650; color: var(--ink-1); }
+  .meta .salary { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink-2); }
+  .meta .src {
+    font-family: var(--font-mono); font-size: 0.6875rem;
+    color: var(--ink-4); text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .meta .remote-yes { color: var(--score-high-on); }
+  @media (prefers-color-scheme: dark) { .meta .remote-yes { color: var(--score-high); } }
+
+  /* Status pill */
+  .status {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.02em;
+    text-transform: capitalize;
+    padding: 2px 8px 2px 7px;
+    border-radius: var(--radius-pill);
+    line-height: 1.5;
+  }
+  .status::before {
+    content: "";
+    width: 6px; height: 6px; border-radius: 50%;
+    background: currentColor; flex: 0 0 auto;
+  }
+  .status--new      { color: var(--status-new);      background: var(--status-new-soft); }
+  .status--saved    { color: var(--status-saved);    background: var(--status-saved-soft); }
+  .status--applied  { color: var(--status-applied);  background: var(--status-applied-soft); }
+  .status--rejected { color: var(--status-rejected); background: var(--status-rejected-soft); }
+  .status--filtered { color: var(--status-filtered); background: var(--status-filtered-soft); text-transform: none; }
+  .status--viewed   { color: var(--status-viewed);   background: var(--status-viewed-soft); }
+
+  /* Chips */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 0.6875rem; font-weight: 500; color: var(--ink-2);
+    background: var(--inset-bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+    padding: 3px 9px; line-height: 1.4;
+  }
+  .chip--founding {
+    background: var(--accent); color: var(--accent-on); border-color: var(--accent);
+    font-weight: 600; letter-spacing: 0.01em;
+  }
+  .chip--founding::before {
+    content: ""; width: 5px; height: 5px; border-radius: 1px;
+    background: var(--accent-on); transform: rotate(45deg);
+  }
+
+  /* Actions row */
+  .actions-row {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding-top: 10px; border-top: 1px dashed var(--line);
+  }
+  .actions-row .field { flex-direction: row; align-items: center; gap: 8px; }
+  .actions-row .field label { text-transform: none; letter-spacing: 0; font-size: 0.75rem; font-weight: 500; color: var(--ink-3); }
+  .actions-row select { width: auto; min-width: 124px; padding: 5px 28px 5px 10px; font-size: 0.8125rem; }
+  .actions-row form { margin-left: auto; }
+  .btn-delete {
+    font: inherit; font-size: 0.8125rem; font-weight: 600;
+    color: var(--danger); background: var(--danger-soft);
+    border: 1px solid var(--danger-line);
+    border-radius: var(--radius-field);
+    padding: 5px 12px; cursor: pointer;
+    transition: background-color .12s, border-color .12s;
+  }
+  .btn-delete:hover { background: color-mix(in oklch, var(--danger-soft) 60%, var(--danger) 40%); border-color: var(--danger); }
+
+  .filtered-tag {
+    margin-left: auto;
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.75rem; color: var(--ink-3); font-family: var(--font-mono);
+  }
+  .filtered-tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--status-filtered); }
+
+  /* Details */
+  .details-grid { margin-top: 10px; display: flex; flex-direction: column; gap: 0; }
+  details.job-detail { border-top: 1px solid var(--line); }
+  details.job-detail:first-child { border-top: none; }
+  details.job-detail > summary {
+    list-style: none; cursor: pointer;
+    padding: 8px 2px;
+    font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--ink-3);
+    display: flex; align-items: center; gap: 7px; user-select: none;
+  }
+  details.job-detail > summary::-webkit-details-marker { display: none; }
+  details.job-detail > summary::before {
+    content: ""; width: 0; height: 0;
+    border-left: 4px solid var(--ink-4);
+    border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+    transition: transform .14s;
+  }
+  details.job-detail[open] > summary::before { transform: rotate(90deg); }
+  details.job-detail > summary:hover { color: var(--ink-1); }
+  details.job-detail > summary em {
+    text-transform: none; letter-spacing: 0; font-weight: 400;
+    color: var(--ink-4); font-style: normal;
+  }
+  .detail-body {
+    padding: 0 2px 12px;
+    font-size: 0.8125rem; color: var(--ink-2); line-height: 1.55;
+    white-space: pre-wrap; word-wrap: break-word;
+  }
+  .fit-reason { color: var(--ink-1); }
+
+  /* Dates line */
+  .dates {
+    margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line);
+    font-family: var(--font-mono); font-size: 0.6875rem; color: var(--ink-4);
+    font-variant-numeric: tabular-nums;
+    display: flex; gap: 6px; flex-wrap: wrap;
+  }
+  .dates .sep { color: var(--line-strong); }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center; padding: 64px 20px; color: var(--ink-3);
+    border: 1px dashed var(--line-strong); border-radius: var(--radius-card);
+    background: var(--card-bg);
+  }
+  .empty-state .empty-title { font-size: 1rem; font-weight: 600; color: var(--ink-2); margin-bottom: 4px; }
+  .empty-state .empty-sub { font-size: 0.8125rem; color: var(--ink-4); }
+  .empty-state code { font-family: var(--font-mono); font-size: 0.75rem; background: var(--inset-bg); padding: 1px 5px; border-radius: 4px; color: var(--ink-3); }
+
+  /* Footer */
+  footer.app-footer {
+    margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--line);
+    font-size: 0.75rem; color: var(--ink-4);
+  }
+  footer.app-footer code {
+    font-family: var(--font-mono); font-size: 0.7rem;
+    background: var(--inset-bg); padding: 1px 5px; border-radius: 4px; color: var(--ink-3);
+  }
+
+  /* Responsive */
+  @media (max-width: 720px) {
+    .field-grow { flex: 1 1 100%; }
+    .field-1 { flex: 1 1 45%; }
+    .field-narrow { flex: 1 1 30%; }
+    .actions { margin-left: 0; width: 100%; }
+    .actions .btn { flex: 1; text-align: center; }
+    .job { padding: 14px 14px 12px 16px; }
+    .job-head { gap: 10px; }
+    .score-badge--high { width: 52px; height: 52px; font-size: 1.3125rem; }
+    .score-badge--mid { width: 44px; height: 44px; font-size: 1.0625rem; }
+    .score-badge--low, .score-badge--none { width: 40px; height: 40px; }
+    .actions-row form, .filtered-tag { margin-left: 0; }
+    .actions-row .field { flex: 1 1 100%; }
+  }
+  @media (max-width: 440px) {
+    .result-count .legend { display: none; }
+    .job-title { font-size: 1rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; }
+  }
 </style>
 </head>
 <body>
-<header>
-  <h1>linkedin-jobs · stored jobs</h1>
-  <div class="sub">local browser · status &amp; delete editable</div>
-</header>
-<main>
-  <form class="filters" method="get" action="/">
-    <div class="field">
-      <label for="q">Search (full-text)</label>
-      <input type="text" id="q" name="q" value="{{.F.Q}}" placeholder="staff engineer">
-    </div>
-    <div class="field">
-      <label for="company">Company</label>
-      <input type="text" id="company" name="company" value="{{.F.Company}}">
-    </div>
-    <div class="field">
-      <label for="location">Location</label>
-      <input type="text" id="location" name="location" value="{{.F.Location}}">
-    </div>
-    <div class="field">
-      <label for="min_salary">Min salary</label>
-      <input type="text" id="min_salary" name="min_salary" value="{{.F.MinSalary}}" placeholder="200k">
-    </div>
-    <div class="field">
-      <label for="min_score">Min score</label>
-      <input type="number" id="min_score" name="min_score" value="{{.F.MinScore}}" style="width:80px">
-    </div>
-    <div class="field">
-      <label for="status">Status</label>
-      <select id="status" name="status">
-        <option value="">any</option>
-        <option value="new"{{if eq .F.Status "new"}} selected{{end}}>new</option>
-        <option value="viewed"{{if eq .F.Status "viewed"}} selected{{end}}>viewed</option>
-        <option value="saved"{{if eq .F.Status "saved"}} selected{{end}}>saved</option>
-        <option value="applied"{{if eq .F.Status "applied"}} selected{{end}}>applied</option>
-        <option value="rejected"{{if eq .F.Status "rejected"}} selected{{end}}>rejected</option>
-        <option value="filtered"{{if eq .F.Status "filtered"}} selected{{end}}>filtered</option>
-      </select>
-    </div>
-    <div class="field">
-      <label for="source">Source</label>
-      <select id="source" name="source">
-        <option value="">any</option>
-        <option value="recommended"{{if eq .F.Source "recommended"}} selected{{end}}>recommended</option>
-        <option value="search"{{if eq .F.Source "search"}} selected{{end}}>search</option>
-      </select>
-    </div>
-    <div class="field">
-      <label for="sort">Sort</label>
-      <select id="sort" name="sort">
-        <option value="score"{{if eq .F.Sort "score"}} selected{{end}}>fit score</option>
-        <option value="salary"{{if eq .F.Sort "salary"}} selected{{end}}>salary</option>
-      </select>
-    </div>
-    <div class="check"><input type="checkbox" id="remote" name="remote" value="1"{{if .F.Remote}} checked{{end}}> <label for="remote">remote only</label></div>
-    <div class="check"><input type="checkbox" id="include_filtered" name="include_filtered" value="1"{{if .F.IncludeFiltered}} checked{{end}}> <label for="include_filtered">show filtered</label></div>
-    <div class="actions">
-      <button type="submit">Apply</button>
-      <a href="/" class="btnlink">Clear</a>
-    </div>
-  </form>
+  <div class="wrap">
 
-  {{if .Error}}<div class="err">Search error: {{.Error}}<br><em>Tip: wrap multi-word phrases in quotes, e.g. "staff engineer".</em></div>{{end}}
-  {{if eq .Mode "search"}}<div class="note">Showing full-text search results ranked by relevance. Column filters and sort are ignored while searching — clear the search box to filter and sort.</div>{{end}}
+    <header class="app-header">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none">
+          <circle cx="4" cy="4" r="1.6" fill="#fff"/>
+          <circle cx="12" cy="4" r="1.6" fill="#fff"/>
+          <circle cx="4" cy="12" r="1.6" fill="#fff"/>
+          <circle cx="12" cy="12" r="1.6" fill="#fff"/>
+        </svg>
+      </span>
+      <div class="app-titles">
+        <div class="app-title">linkedin-jobs</div>
+        <div class="app-subtitle">local browser · status &amp; delete editable</div>
+      </div>
+    </header>
 
-  <div class="count">{{.N}} job{{if ne .N 1}}s{{end}}{{if eq .Mode "search"}} matching "{{.F.Q}}"{{end}}</div>
-
-  {{if not .Jobs}}
-    <div class="empty">No jobs found.{{if not .Error}} Adjust filters or run <code>linkedin-jobs recommended</code> to fetch more.{{end}}</div>
-  {{end}}
-
-  {{range .Jobs}}
-  <article class="job" data-id="{{.ID}}" data-status="{{.Status}}">
-    <div class="job-head">
-      <h2><a href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{or .Title "(untitled)"}}</a></h2>
-      {{if .Score}}<span class="score {{.ScoreClass}}">{{.Score}}</span>{{else}}<span class="score score-none">—</span>{{end}}
-    </div>
-    <div class="meta">
-      <strong>{{or .Company "—"}}</strong>
-      {{if .Location}}<span class="sep">·</span> {{.Location}}{{end}}
-      {{if .Salary}}<span class="sep">·</span> <span class="muted">{{.Salary}}</span>{{end}}
-      {{if .Remote}}<span class="sep">·</span> <span class="muted">{{.Remote}}</span>{{end}}
-      {{if .Status}}<span class="sep">·</span> <span class="muted js-status">{{.Status}}</span>{{end}}
-      {{if .Source}}<span class="sep">·</span> <span class="muted">{{.Source}}</span>{{end}}
-    </div>
-    <div class="chips">
-      {{if .Industry}}<span class="chip">{{.Industry}}</span>{{end}}
-      {{if .Seniority}}<span class="chip">{{.Seniority}}</span>{{end}}
-      {{if .EmpType}}<span class="chip">{{.EmpType}}</span>{{end}}
-      {{if .Years}}<span class="chip">{{.Years}} yrs</span>{{end}}
-      {{if .CoSize}}<span class="chip">{{.CoSize}}</span>{{end}}
-      {{if .CoStage}}<span class="chip">{{.CoStage}}</span>{{end}}
-      {{if .Visa}}<span class="chip">visa: {{.Visa}}</span>{{end}}
-      {{if .Founding}}<span class="chip founding">{{.Founding}}</span>{{end}}
-    </div>
-    <div class="actions-row">
-      {{if eq .Status "filtered"}}
-        <span class="chip">filtered (auto)</span>
-      {{else}}
-        <label class="status-field">Status
-          <select class="js-status-select">
-            {{$s := .Status}}
-            <option value="new"{{if eq $s "new"}} selected{{end}}>new</option>
-            <option value="viewed"{{if eq $s "viewed"}} selected{{end}}>viewed</option>
-            <option value="saved"{{if eq $s "saved"}} selected{{end}}>saved</option>
-            <option value="applied"{{if eq $s "applied"}} selected{{end}}>applied</option>
-            <option value="rejected"{{if eq $s "rejected"}} selected{{end}}>rejected</option>
+    <form class="filters" method="get" action="/" aria-label="Filters">
+      <div class="filters-row">
+        <div class="field field-grow">
+          <label for="q">Search (full-text)</label>
+          <input type="search" id="q" name="q" value="{{.F.Q}}" placeholder="title, keyword, stack…">
+        </div>
+        <div class="field field-1">
+          <label for="company">Company</label>
+          <input type="text" id="company" name="company" value="{{.F.Company}}" placeholder="any">
+        </div>
+        <div class="field field-1">
+          <label for="location">Location</label>
+          <input type="text" id="location" name="location" value="{{.F.Location}}" placeholder="any">
+        </div>
+        <div class="field field-narrow">
+          <label for="min_salary">Min salary</label>
+          <input type="text" id="min_salary" name="min_salary" value="{{.F.MinSalary}}" placeholder="200k">
+        </div>
+        <div class="field field-narrow">
+          <label for="min_score">Min score</label>
+          <input type="number" id="min_score" name="min_score" value="{{.F.MinScore}}" placeholder="0–100">
+        </div>
+      </div>
+      <div class="filters-row">
+        <div class="field field-1">
+          <label for="status">Status</label>
+          <select id="status" name="status">
+            <option value="">any</option>
+            <option value="new"{{if eq .F.Status "new"}} selected{{end}}>new</option>
+            <option value="viewed"{{if eq .F.Status "viewed"}} selected{{end}}>viewed</option>
+            <option value="saved"{{if eq .F.Status "saved"}} selected{{end}}>saved</option>
+            <option value="applied"{{if eq .F.Status "applied"}} selected{{end}}>applied</option>
+            <option value="rejected"{{if eq .F.Status "rejected"}} selected{{end}}>rejected</option>
+            <option value="filtered"{{if eq .F.Status "filtered"}} selected{{end}}>filtered</option>
           </select>
-        </label>
-      {{end}}
-      <form class="js-delete-form" method="post" action="/jobs/{{.ID}}/delete">
-        <input type="hidden" name="csrf" value="{{$.CSRF}}">
-        <button type="submit" class="danger js-delete" title="Delete this job permanently">Delete</button>
-      </form>
-    </div>
-    {{if .LLMSummary}}
-    <details>
-      <summary>Summary</summary>
-      <div class="longtext">{{.LLMSummary}}</div>
-    </details>
-    {{else if .Summary}}
-    <details>
-      <summary>Summary (extractive)</summary>
-      <div class="longtext">{{.Summary}}</div>
-    </details>
-    {{end}}
-    {{if .Description}}
-    <details>
-      <summary>Description {{if .DescPreview}}<em>— {{.DescPreview}}</em>{{end}}</summary>
-      <div class="longtext">{{.Description}}</div>
-    </details>
-    {{end}}
-    {{if .CompanyOverview}}
-    <details>
-      <summary>Company overview</summary>
-      <div class="longtext">{{.CompanyOverview}}</div>
-    </details>
-    {{end}}
-    {{if .FitReason}}
-    <details>
-      <summary>Fit reason</summary>
-      <div class="longtext">{{.FitReason}}</div>
-    </details>
-    {{end}}
-    {{if .Notes}}
-    <details>
-      <summary>Notes</summary>
-      <div class="longtext">{{.Notes}}</div>
-    </details>
-    {{end}}
-    {{if or .ListedDate .FetchedDate}}
-    <div class="dates">{{if .ListedDate}}listed {{.ListedDate}}{{if .FetchedDate}} · {{end}}{{end}}{{if .FetchedDate}}fetched {{.FetchedDate}}{{end}}</div>
-    {{end}}
-  </article>
-  {{end}}
+        </div>
+        <div class="field field-1">
+          <label for="source">Source</label>
+          <select id="source" name="source">
+            <option value="">any</option>
+            <option value="recommended"{{if eq .F.Source "recommended"}} selected{{end}}>recommended</option>
+            <option value="search"{{if eq .F.Source "search"}} selected{{end}}>search</option>
+          </select>
+        </div>
+        <div class="field field-1">
+          <label for="sort">Sort</label>
+          <select id="sort" name="sort">
+            <option value="score"{{if eq .F.Sort "score"}} selected{{end}}>fit score</option>
+            <option value="salary"{{if eq .F.Sort "salary"}} selected{{end}}>salary</option>
+          </select>
+        </div>
+        <div class="checks">
+          <label class="check"><input type="checkbox" id="remote" name="remote" value="1"{{if .F.Remote}} checked{{end}}> remote only</label>
+          <label class="check"><input type="checkbox" id="include_filtered" name="include_filtered" value="1"{{if .F.IncludeFiltered}} checked{{end}}> show filtered</label>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" type="submit">Apply</button>
+          <a href="/" class="btn btn-ghost">Clear</a>
+        </div>
+      </div>
+    </form>
 
-  <footer>Status &amp; delete are editable; everything else read-only · <code>linkedin-jobs serve</code></footer>
-</main>
+    {{if .Error}}<div class="err">Search error: {{.Error}}<br><em>Tip: wrap multi-word phrases in quotes, e.g. "staff engineer".</em></div>{{end}}
+    {{if eq .Mode "search"}}<div class="notice">Showing full-text search results ranked by relevance. Column filters and sort are ignored while searching — clear the search box to filter and sort.</div>{{end}}
+
+    <div class="result-count">
+      <strong>{{.N}}</strong> job{{if ne .N 1}}s{{end}}{{if eq .Mode "search"}} matching "{{.F.Q}}"{{end}}
+      <span class="legend" aria-hidden="true">
+        <span><i style="background:var(--score-high)"></i>HIGH ≥70</span>
+        <span><i style="background:var(--score-mid)"></i>MID 40–69</span>
+        <span><i style="background:var(--score-low)"></i>LOW &lt;40</span>
+        <span><i style="background:var(--score-none)"></i>unscored</span>
+      </span>
+    </div>
+
+    {{if not .Jobs}}
+      <div class="empty-state">
+        <div class="empty-title">No jobs found.</div>
+        <div class="empty-sub">{{if not .Error}}Adjust filters or run <code>linkedin-jobs recommended</code> to fetch more.{{end}}</div>
+      </div>
+    {{end}}
+
+    <main class="job-list">
+    {{range .Jobs}}
+      <article class="job{{if eq .ScoreClass "high"}} job--high{{end}}{{if eq .Status "filtered"}} job--filtered{{end}}" data-id="{{.ID}}" data-status="{{.Status}}">
+        <div class="job-head">
+          <div class="job-head-main">
+            <a class="job-title" href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{or .Title "(untitled)"}}</a>
+          </div>
+          {{if .Score}}<div class="score-badge score-badge--{{.ScoreClass}}" aria-label="Fit score {{.Score}} of 100">{{.Score}}</div>{{else}}<div class="score-badge score-badge--none" aria-label="Unscored">—</div>{{end}}
+        </div>
+        <div class="meta">
+          <span class="co">{{or .Company "—"}}</span>
+          {{if .Location}}<span class="sep">·</span> <span>{{.Location}}</span>{{end}}
+          {{if .Salary}}<span class="sep">·</span> <span class="salary">{{.Salary}}</span>{{end}}
+          {{if .Remote}}<span class="sep">·</span> <span class="remote-yes">{{.Remote}}</span>{{end}}
+          {{if .Status}}<span class="sep">·</span> <span class="status status--{{.Status}} js-status">{{.Status}}</span>{{end}}
+          {{if .Source}}<span class="sep">·</span> <span class="src">{{.Source}}</span>{{end}}
+        </div>
+        <div class="chips">
+          {{if .Industry}}<span class="chip">{{.Industry}}</span>{{end}}
+          {{if .Seniority}}<span class="chip">{{.Seniority}}</span>{{end}}
+          {{if .EmpType}}<span class="chip">{{.EmpType}}</span>{{end}}
+          {{if .Years}}<span class="chip">{{.Years}} yrs</span>{{end}}
+          {{if .CoSize}}<span class="chip">{{.CoSize}}</span>{{end}}
+          {{if .CoStage}}<span class="chip">{{.CoStage}}</span>{{end}}
+          {{if .Visa}}<span class="chip">visa: {{.Visa}}</span>{{end}}
+          {{if .Founding}}<span class="chip chip--founding">Founding</span>{{end}}
+        </div>
+        <div class="actions-row">
+          {{if eq .Status "filtered"}}
+            <span class="filtered-tag">filtered (auto)</span>
+          {{else}}
+            <div class="field">
+              <label for="status-{{.ID}}">Status</label>
+              <select id="status-{{.ID}}" class="js-status-select">
+                {{$s := .Status}}
+                <option value="new"{{if eq $s "new"}} selected{{end}}>new</option>
+                <option value="viewed"{{if eq $s "viewed"}} selected{{end}}>viewed</option>
+                <option value="saved"{{if eq $s "saved"}} selected{{end}}>saved</option>
+                <option value="applied"{{if eq $s "applied"}} selected{{end}}>applied</option>
+                <option value="rejected"{{if eq $s "rejected"}} selected{{end}}>rejected</option>
+              </select>
+            </div>
+          {{end}}
+          <form class="js-delete-form" method="post" action="/jobs/{{.ID}}/delete">
+            <input type="hidden" name="csrf" value="{{$.CSRF}}">
+            <button type="submit" class="btn-delete js-delete" title="Delete this job permanently">Delete</button>
+          </form>
+        </div>
+        {{if or .LLMSummary .Summary .Description .CompanyOverview .FitReason .Notes}}
+        <div class="details-grid">
+          {{if .LLMSummary}}
+          <details class="job-detail"><summary>Summary</summary><div class="detail-body">{{.LLMSummary}}</div></details>
+          {{else if .Summary}}
+          <details class="job-detail"><summary>Summary (extractive)</summary><div class="detail-body">{{.Summary}}</div></details>
+          {{end}}
+          {{if .Description}}
+          <details class="job-detail"><summary>Description{{if .DescPreview}} <em>— {{.DescPreview}}</em>{{end}}</summary><div class="detail-body">{{.Description}}</div></details>
+          {{end}}
+          {{if .CompanyOverview}}
+          <details class="job-detail"><summary>Company overview</summary><div class="detail-body">{{.CompanyOverview}}</div></details>
+          {{end}}
+          {{if .FitReason}}
+          <details class="job-detail"><summary>Fit reason</summary><div class="detail-body fit-reason">{{.FitReason}}</div></details>
+          {{end}}
+          {{if .Notes}}
+          <details class="job-detail"><summary>Notes</summary><div class="detail-body">{{.Notes}}</div></details>
+          {{end}}
+        </div>
+        {{end}}
+        {{if or .ListedDate .FetchedDate}}
+        <div class="dates">{{if .ListedDate}}<span>listed {{.ListedDate}}</span>{{if .FetchedDate}}<span class="sep">·</span>{{end}}{{end}}{{if .FetchedDate}}<span>fetched {{.FetchedDate}}</span>{{end}}</div>
+        {{end}}
+      </article>
+    {{end}}
+    </main>
+
+    <footer class="app-footer">
+      Status &amp; delete editable · everything else read-only · <code>linkedin-jobs serve</code> · localhost only
+    </footer>
+
+  </div>
 <script>
 (function(){
   const meta = document.querySelector('meta[name=csrf-token]');
@@ -605,10 +1121,12 @@ const pageHTML = `<!DOCTYPE html>
     article.dataset.status = status;
     const sel = article.querySelector('select.js-status-select');
     if (sel) sel.value = status;
-    const span = article.querySelector('.js-status');
-    if (span) span.textContent = status;
+    const pill = article.querySelector('.js-status');
+    if (pill) {
+      pill.textContent = status;
+      pill.className = 'status status--' + status + ' js-status';
+    }
   }
-  // Title click: advance new -> viewed, then let the link open the posting.
   document.addEventListener('click', (e)=>{
     const a = e.target.closest('.job-head a');
     if (!a) return;
@@ -617,7 +1135,6 @@ const pageHTML = `<!DOCTYPE html>
     post('/jobs/'+encodeURIComponent(article.dataset.id)+'/view');
     setStatusUI(article, 'viewed');
   });
-  // Status select change: persist.
   document.addEventListener('change', async (e)=>{
     const sel = e.target.closest('select.js-status-select');
     if (!sel) return;
@@ -628,7 +1145,6 @@ const pageHTML = `<!DOCTYPE html>
     if (!res.ok){ sel.value = prev; alert('Could not save status.'); return; }
     setStatusUI(article, val);
   });
-  // Delete: confirm, then remove the card.
   document.addEventListener('click', async (e)=>{
     const btn = e.target.closest('button.js-delete');
     if (!btn) return;
