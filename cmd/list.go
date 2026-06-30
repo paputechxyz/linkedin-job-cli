@@ -63,7 +63,7 @@ func init() {
 	listCmd.Flags().StringVar(&listTitle, "title", "", "filter by title (substring)")
 	listCmd.Flags().StringVar(&listLocation, "location", "", "filter by location (substring)")
 	listCmd.Flags().BoolVar(&listRemote, "remote", false, "only remote-friendly jobs")
-	listCmd.Flags().StringVar(&listStatus, "status", "", "filter by status (new/saved/applied/rejected/filtered)")
+	listCmd.Flags().StringVar(&listStatus, "status", "", "filter by status (new/viewed/saved/applied/rejected/filtered)")
 	listCmd.Flags().StringVar(&listSource, "source", "", "filter by source (recommended/search)")
 	listCmd.Flags().IntVar(&listLimit, "limit", 50, "max results")
 	listCmd.Flags().BoolVar(&listIncludeFiltered, "include-filtered", false, "include jobs tagged filtered (hidden by default)")

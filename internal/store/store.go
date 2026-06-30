@@ -282,6 +282,13 @@ func (s *Store) SetFiltered(id string) error {
 	return err
 }
 
+// MarkViewed transitions a job from "new" to "viewed" only. Any other status is
+// left untouched. Used when a user opens a job's posting from the web UI.
+func (s *Store) MarkViewed(id string) error {
+	_, err := s.db.Exec(`UPDATE jobs SET status='viewed' WHERE id=? AND status='new'`, id)
+	return err
+}
+
 // SetFetchedTimes refreshes fetch metadata for a job already known (used when a
 // re-fetched job is recognized as a duplicate and we skip re-processing).
 func (s *Store) SetFetchedTimes(id, searchedAt, fetchedAt string) error {
@@ -358,9 +365,9 @@ type Filters struct {
 	Remote          bool
 	Status          string
 	Source          string
-	MinScore        int   // 0 = no score filter
-	IncludeFiltered bool  // include status='filtered' jobs (excluded by default)
-	SortByScore     bool  // order by fit_score desc instead of salary
+	MinScore        int  // 0 = no score filter
+	IncludeFiltered bool // include status='filtered' jobs (excluded by default)
+	SortByScore     bool // order by fit_score desc instead of salary
 	Limit           int
 }
 
@@ -532,6 +539,17 @@ func (s *Store) DeleteAll() (int64, error) {
 	n, _ := res.RowsAffected()
 	s.db.Exec(`DELETE FROM jobs_fts`)
 	return n, nil
+}
+
+// Delete removes a single job and its FTS entry by id.
+func (s *Store) Delete(id string) error {
+	if _, err := s.db.Exec(`DELETE FROM jobs WHERE id=?`, id); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`DELETE FROM jobs_fts WHERE id=?`, id); err != nil {
+		return err
+	}
+	return nil
 }
 
 // --- helpers ---

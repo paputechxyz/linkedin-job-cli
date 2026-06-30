@@ -1,6 +1,10 @@
 package cmd
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -42,14 +46,21 @@ Read-only — no data is written. Binds to localhost only.`,
 		if err != nil {
 			die("template parse: %v", err)
 		}
-		ws := &webServer{st: st, tpl: tpl}
+		token := make([]byte, 24)
+		if _, err := rand.Read(token); err != nil {
+			die("csrf token: %v", err)
+		}
+		ws := &webServer{st: st, tpl: tpl, csrf: hex.EncodeToString(token)}
 
 		addr := serveAddr
 		if addr == "" {
 			addr = "127.0.0.1"
 		}
 		mux := http.NewServeMux()
-		mux.HandleFunc("/", ws.handleIndex)
+		mux.HandleFunc("GET /", ws.handleIndex)
+		mux.HandleFunc("POST /jobs/{id}/status", ws.handleStatus)
+		mux.HandleFunc("POST /jobs/{id}/view", ws.handleView)
+		mux.HandleFunc("POST /jobs/{id}/delete", ws.handleDelete)
 		srv := &http.Server{
 			Addr:              fmt.Sprintf("%s:%d", addr, servePort),
 			Handler:           mux,
@@ -70,10 +81,12 @@ func init() {
 	rootCmd.AddCommand(serveCmd)
 }
 
-// webServer holds the open store and the parsed page template.
+// webServer holds the open store, the parsed page template, and a per-session
+// CSRF token required for all write endpoints.
 type webServer struct {
-	st  *store.Store
-	tpl *template.Template
+	st   *store.Store
+	tpl  *template.Template
+	csrf string
 }
 
 func (ws *webServer) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +95,7 @@ func (ws *webServer) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	pd := pageData{F: readForm(q)}
+	pd := pageData{F: readForm(q), CSRF: ws.csrf}
 	jobs, mode, qerr := ws.query(q)
 	pd.Mode = mode
 	if qerr != nil {
@@ -98,6 +111,91 @@ func (ws *webServer) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if err := ws.tpl.Execute(w, pd); err != nil {
 		fmt.Fprintln(os.Stderr, "render error:", err)
 	}
+}
+
+// handleStatus sets a job's status to one of the user-facing values. Other
+// fields (notes, score, enrichment, …) are never touched.
+func (ws *webServer) handleStatus(w http.ResponseWriter, r *http.Request) {
+	if !ws.checkCSRF(w, r) {
+		return
+	}
+	id := r.PathValue("id")
+	status := strings.TrimSpace(r.PostFormValue("status"))
+	if !validStatus(status) {
+		http.Error(w, "invalid status", http.StatusBadRequest)
+		return
+	}
+	if err := ws.st.SetTag(id, status, ""); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	ws.respond(w, r, map[string]interface{}{"ok": true, "id": id, "status": status})
+}
+
+// handleView advances a job from "new" to "viewed" only; any other status is
+// left unchanged. Fired automatically when a user opens a job's posting.
+func (ws *webServer) handleView(w http.ResponseWriter, r *http.Request) {
+	if !ws.checkCSRF(w, r) {
+		return
+	}
+	id := r.PathValue("id")
+	if err := ws.st.MarkViewed(id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	ws.respond(w, r, map[string]interface{}{"ok": true, "id": id})
+}
+
+// handleDelete hard-deletes a job and its FTS entry.
+func (ws *webServer) handleDelete(w http.ResponseWriter, r *http.Request) {
+	if !ws.checkCSRF(w, r) {
+		return
+	}
+	id := r.PathValue("id")
+	if err := ws.st.Delete(id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	ws.respond(w, r, map[string]interface{}{"ok": true, "id": id, "deleted": true})
+}
+
+// checkCSRF validates the per-session token from a form field or the
+// X-CSRF-Token header. Writes are same-origin only; the token is embedded in the
+// page and unreadable by cross-origin scripts.
+func (ws *webServer) checkCSRF(w http.ResponseWriter, r *http.Request) bool {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return false
+	}
+	tok := r.PostFormValue("csrf")
+	if tok == "" {
+		tok = r.Header.Get("X-CSRF-Token")
+	}
+	if subtle.ConstantTimeCompare([]byte(tok), []byte(ws.csrf)) != 1 {
+		http.Error(w, "invalid csrf token", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
+// respond replies as JSON for fetch callers, or redirects (PRG) for plain form
+// posts so a no-JS delete still works.
+func (ws *webServer) respond(w http.ResponseWriter, r *http.Request, data map[string]interface{}) {
+	if strings.Contains(r.Header.Get("Accept"), "application/json") {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(data)
+		return
+	}
+	http.Redirect(w, r, refererOrRoot(r), http.StatusSeeOther)
+}
+
+func refererOrRoot(r *http.Request) string {
+	if ref := r.Referer(); ref != "" {
+		if u, err := url.Parse(ref); err == nil && u.Host == r.Host {
+			return u.RequestURI()
+		}
+	}
+	return "/"
 }
 
 // query runs either an FTS5 search (when "q" is present) or a filtered List.
@@ -271,6 +369,7 @@ type pageData struct {
 	F     formVals
 	Mode  string
 	Error string
+	CSRF  string
 }
 
 const pageHTML = `<!DOCTYPE html>
@@ -279,6 +378,7 @@ const pageHTML = `<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>linkedin-jobs · stored jobs</title>
+<meta name="csrf-token" content="{{.CSRF}}">
 <style>
   :root {
     --bg:#f6f7f9; --card:#fff; --ink:#1f2328; --muted:#6e7781; --line:#d9dee3;
@@ -327,13 +427,18 @@ const pageHTML = `<!DOCTYPE html>
   details summary em { color:var(--muted); font-weight:400; font-style:normal; }
   .longtext { margin-top:8px; white-space:pre-wrap; word-wrap:break-word; font-size:13px; }
   code { background:#eaeef2; padding:1px 5px; border-radius:4px; font-size:12px; }
+  .actions-row { display:flex; gap:12px; align-items:center; margin:8px 0 2px; flex-wrap:wrap; }
+  .status-field { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); text-transform:none; letter-spacing:0; }
+  .status-field select { padding:4px 8px; }
+  button.danger { background:#fff; color:var(--low); border:1px solid #ffd5d0; padding:5px 12px; font-size:13px; cursor:pointer; border-radius:6px; }
+  button.danger:hover { background:#ffebe9; }
   footer { color:var(--muted); font-size:12px; text-align:center; padding:20px; }
 </style>
 </head>
 <body>
 <header>
   <h1>linkedin-jobs · stored jobs</h1>
-  <div class="sub">read-only local browser</div>
+  <div class="sub">local browser · status &amp; delete editable</div>
 </header>
 <main>
   <form class="filters" method="get" action="/">
@@ -362,6 +467,7 @@ const pageHTML = `<!DOCTYPE html>
       <select id="status" name="status">
         <option value="">any</option>
         <option value="new"{{if eq .F.Status "new"}} selected{{end}}>new</option>
+        <option value="viewed"{{if eq .F.Status "viewed"}} selected{{end}}>viewed</option>
         <option value="saved"{{if eq .F.Status "saved"}} selected{{end}}>saved</option>
         <option value="applied"{{if eq .F.Status "applied"}} selected{{end}}>applied</option>
         <option value="rejected"{{if eq .F.Status "rejected"}} selected{{end}}>rejected</option>
@@ -401,7 +507,7 @@ const pageHTML = `<!DOCTYPE html>
   {{end}}
 
   {{range .Jobs}}
-  <article class="job">
+  <article class="job" data-id="{{.ID}}" data-status="{{.Status}}">
     <div class="job-head">
       <h2><a href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{or .Title "(untitled)"}}</a></h2>
       {{if .Score}}<span class="score {{.ScoreClass}}">{{.Score}}</span>{{else}}<span class="score score-none">—</span>{{end}}
@@ -411,7 +517,7 @@ const pageHTML = `<!DOCTYPE html>
       {{if .Location}}<span class="sep">·</span> {{.Location}}{{end}}
       {{if .Salary}}<span class="sep">·</span> <span class="muted">{{.Salary}}</span>{{end}}
       {{if .Remote}}<span class="sep">·</span> <span class="muted">{{.Remote}}</span>{{end}}
-      {{if .Status}}<span class="sep">·</span> <span class="muted">{{.Status}}</span>{{end}}
+      {{if .Status}}<span class="sep">·</span> <span class="muted js-status">{{.Status}}</span>{{end}}
       {{if .Source}}<span class="sep">·</span> <span class="muted">{{.Source}}</span>{{end}}
     </div>
     <div class="chips">
@@ -423,6 +529,26 @@ const pageHTML = `<!DOCTYPE html>
       {{if .CoStage}}<span class="chip">{{.CoStage}}</span>{{end}}
       {{if .Visa}}<span class="chip">visa: {{.Visa}}</span>{{end}}
       {{if .Founding}}<span class="chip founding">{{.Founding}}</span>{{end}}
+    </div>
+    <div class="actions-row">
+      {{if eq .Status "filtered"}}
+        <span class="chip">filtered (auto)</span>
+      {{else}}
+        <label class="status-field">Status
+          <select class="js-status-select">
+            {{$s := .Status}}
+            <option value="new"{{if eq $s "new"}} selected{{end}}>new</option>
+            <option value="viewed"{{if eq $s "viewed"}} selected{{end}}>viewed</option>
+            <option value="saved"{{if eq $s "saved"}} selected{{end}}>saved</option>
+            <option value="applied"{{if eq $s "applied"}} selected{{end}}>applied</option>
+            <option value="rejected"{{if eq $s "rejected"}} selected{{end}}>rejected</option>
+          </select>
+        </label>
+      {{end}}
+      <form class="js-delete-form" method="post" action="/jobs/{{.ID}}/delete">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}">
+        <button type="submit" class="danger js-delete" title="Delete this job permanently">Delete</button>
+      </form>
     </div>
     {{if .LLMSummary}}
     <details>
@@ -465,7 +591,55 @@ const pageHTML = `<!DOCTYPE html>
   </article>
   {{end}}
 
-  <footer>Served read-only from SQLite · <code>linkedin-jobs serve</code></footer>
+  <footer>Status &amp; delete are editable; everything else read-only · <code>linkedin-jobs serve</code></footer>
 </main>
+<script>
+(function(){
+  const meta = document.querySelector('meta[name=csrf-token]');
+  const csrf = meta ? meta.content : '';
+  async function post(path, params){
+    const body = new URLSearchParams(Object.assign({csrf:csrf}, params||{}));
+    return fetch(path, {method:'POST', headers:{'X-CSRF-Token':csrf, 'Accept':'application/json'}, body:body});
+  }
+  function setStatusUI(article, status){
+    article.dataset.status = status;
+    const sel = article.querySelector('select.js-status-select');
+    if (sel) sel.value = status;
+    const span = article.querySelector('.js-status');
+    if (span) span.textContent = status;
+  }
+  // Title click: advance new -> viewed, then let the link open the posting.
+  document.addEventListener('click', (e)=>{
+    const a = e.target.closest('.job-head a');
+    if (!a) return;
+    const article = a.closest('article.job');
+    if (!article || article.dataset.status !== 'new') return;
+    post('/jobs/'+encodeURIComponent(article.dataset.id)+'/view');
+    setStatusUI(article, 'viewed');
+  });
+  // Status select change: persist.
+  document.addEventListener('change', async (e)=>{
+    const sel = e.target.closest('select.js-status-select');
+    if (!sel) return;
+    const article = sel.closest('article.job');
+    const prev = article.dataset.status;
+    const val = sel.value;
+    const res = await post('/jobs/'+encodeURIComponent(article.dataset.id)+'/status', {status:val});
+    if (!res.ok){ sel.value = prev; alert('Could not save status.'); return; }
+    setStatusUI(article, val);
+  });
+  // Delete: confirm, then remove the card.
+  document.addEventListener('click', async (e)=>{
+    const btn = e.target.closest('button.js-delete');
+    if (!btn) return;
+    e.preventDefault();
+    if (!confirm('Delete this job permanently? This cannot be undone.')) return;
+    const article = btn.closest('article.job');
+    const res = await post('/jobs/'+encodeURIComponent(article.dataset.id)+'/delete');
+    if (!res.ok){ alert('Could not delete.'); return; }
+    article.remove();
+  });
+})();
+</script>
 </body>
 </html>`

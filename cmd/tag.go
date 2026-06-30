@@ -49,7 +49,7 @@ var tagCmd = &cobra.Command{
 
 func validStatus(s string) bool {
 	switch s {
-	case "new", "saved", "applied", "rejected":
+	case "new", "viewed", "saved", "applied", "rejected":
 		return true
 	}
 	return false

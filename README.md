@@ -106,13 +106,17 @@ linkedin-jobs serve                      # read-only browser on http://127.0.0.1
 linkedin-jobs serve --port 9000          # custom port
 ```
 
-Serves a read-only page listing every stored job with all fields visible.
+Serves a local page listing every stored job with all fields visible.
 Long-text fields (description, summaries, company overview, fit reason, notes)
 are collapsed by default and expand on click; the job title links out to its
-LinkedIn posting. Includes full-text search (FTS5), filters (company, location,
-salary, score, status, source, remote), and sort by fit score or salary — all
-reusing the same store layer as the CLI. Binds to localhost only; no data is
-written.
+LinkedIn posting (and marks the job `new → viewed` automatically). Includes
+full-text search (FTS5), filters (company, location, salary, score, status,
+source, remote), and sort by fit score or salary — all reusing the same store
+layer as the CLI. Binds to localhost only.
+
+Editable from the browser: job **status** (`new`/`viewed`/`saved`/`applied`/
+`rejected`) and **hard delete**. Every other field stays read-only. Writes are
+POST endpoints guarded by a per-session CSRF token.
 
 ### Profile + fit scoring
 

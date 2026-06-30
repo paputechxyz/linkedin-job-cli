@@ -250,3 +250,51 @@ func TestList_ExcludesFilteredByDefault(t *testing.T) {
 		t.Errorf("IncludeFiltered should return the filtered job")
 	}
 }
+
+func TestMarkViewed(t *testing.T) {
+	st := tmpDB(t)
+	st.Upsert(sampleJob("v1")) // default status "new"
+	st.Upsert(sampleJob("v2"))
+	st.SetTag("v2", "saved", "") // non-new status
+
+	if err := st.MarkViewed("v1"); err != nil {
+		t.Fatalf("MarkViewed: %v", err)
+	}
+	if err := st.MarkViewed("v2"); err != nil {
+		t.Fatalf("MarkViewed non-new: %v", err)
+	}
+
+	g1, _ := st.Get("v1")
+	if g1.Status != "viewed" {
+		t.Errorf("v1 status=%q want viewed", g1.Status)
+	}
+	g2, _ := st.Get("v2")
+	if g2.Status != "saved" {
+		t.Errorf("v2 status=%q want saved (MarkViewed must not touch non-new)", g2.Status)
+	}
+}
+
+func TestDelete(t *testing.T) {
+	st := tmpDB(t)
+	j := sampleJob("d1")
+	j.Description = "searchable text"
+	if err := st.Upsert(j); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	if err := st.Delete("d1"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if got, _ := st.Get("d1"); got != nil {
+		t.Errorf("job still present after delete")
+	}
+	// FTS entry must be gone too.
+	hits, _ := st.SearchFTS("searchable", 10)
+	if len(hits) != 0 {
+		t.Errorf("FTS entry still present after delete: %d hits", len(hits))
+	}
+	// Deleting a missing id is not an error.
+	if err := st.Delete("missing"); err != nil {
+		t.Errorf("deleting missing id should not error: %v", err)
+	}
+}
