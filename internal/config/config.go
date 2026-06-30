@@ -32,7 +32,7 @@ type Config struct {
 // Load resolves configuration from the environment with sensible defaults.
 func Load() Config {
 	c := Config{
-		DBPath:                envOr("LJ_DB_PATH", filepath.Join(cwd(), "linkedin_jobs.db")),
+		DBPath:                envOr("LJ_DB_PATH", defaultDBPath()),
 		LLMBaseURL:            envOr("LJ_LLM_BASE_URL", envOr("OPENAI_BASE_URL", "https://api.openai.com/v1")),
 		LLMAPIKey:             envOr("LJ_LLM_API_KEY", envOr("OPENAI_API_KEY", "")),
 		LLMModel:              envOr("LJ_LLM_MODEL", "gpt-4o-mini"),
@@ -78,6 +78,20 @@ func cwd() string {
 		return "."
 	}
 	return d
+}
+
+// defaultDBPath returns the global DB location at ~/linkedin-jobs/linkedin_jobs.db,
+// creating the directory if needed so the CLI behaves the same regardless of CWD.
+func defaultDBPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(cwd(), "linkedin_jobs.db")
+	}
+	dir := filepath.Join(home, "linkedin-jobs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return filepath.Join(cwd(), "linkedin_jobs.db")
+	}
+	return filepath.Join(dir, "linkedin_jobs.db")
 }
 
 func defaultUA() string {
