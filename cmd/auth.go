@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -40,10 +41,16 @@ encrypted in the macOS Keychain, and serves them to this CLI at runtime.
 
 Install press-auth first if needed:
     go install github.com/mvanhorn/cli-printing-press/v4/cmd/press-auth@latest`,
-	RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 		if err := runShell("press-auth", "login", "linkedin.com",
 			"--login-url", "https://www.linkedin.com/login",
-			"--complete-selector", "a[href*=feed]"); err != nil {
+			// .global-nav only renders once LinkedIn considers you signed in;
+			// "a[href*=feed]" matches too early (marketing/footer links) and
+			// causes press-auth to capture cookies before li_at/JSESSIONID are set.
+			"--complete-selector", ".global-nav",
+			// --force overwrites any prior (possibly incomplete) capture without
+			// an interactive prompt, so re-running after a bad capture just works.
+			"--force"); err != nil {
 			fmt.Fprintln(os.Stderr, "press-auth login failed:", err)
 			fmt.Fprintln(os.Stderr, "Install press-auth:")
 			fmt.Fprintln(os.Stderr, "  go install github.com/mvanhorn/cli-printing-press/v4/cmd/press-auth@latest")
@@ -67,16 +74,61 @@ var authStatusCmd = &cobra.Command{
 			fmt.Println("No session. Run: linkedin-jobs auth login")
 			return nil
 		}
-		fmt.Println("Session available (recommended jobs enabled).")
+		// HasSession only checks that *some* cookies were captured. A usable
+		// Voyager session also needs the li_at cookie and a JSESSIONID-derived
+		// csrf-token; without those, `recommended` will 403 with "CSRF check
+		// failed". Surface that here so the user knows to re-login instead of
+		// discovering it at fetch time.
+		sess, _ := auth.Resolve(loadCfg())
+		if sess == nil || !sess.Valid() {
+			var why, src string
+			if sess != nil {
+				src = sess.Source
+				switch {
+				case sess.CSRFToken == "":
+					why = "no JSESSIONID cookie (cannot derive csrf-token)"
+				case !strings.Contains(strings.ToLower(sess.CookieHeader), "li_at="):
+					why = "missing li_at auth cookie"
+				default:
+					why = "incomplete cookies"
+				}
+			} else {
+				why = "session could not be resolved"
+			}
+			fmt.Printf("Session captured from %s but incomplete (%s).\n", sessionSourceLabel(src), why)
+			fmt.Println("This usually means the login capture raced — re-run: linkedin-jobs auth login")
+			// Regression net: with the current priority order, an explicit
+			// LJ_COOKIE/LJ_COOKIES_FILE always beats press-auth. If we ever
+			// regress that, this hint is the user's clue. It also helps when
+			// press-auth holds a stale capture and the user forgot they set
+			// the env var to compensate.
+			cfg := loadCfg()
+			if src == "press-auth" && (cfg.CookieHeader != "" || cfg.CookiesFile != "") {
+				fmt.Println("Note: LJ_COOKIE/LJ_COOKIES_FILE is set but press-auth is shadowing it.")
+				fmt.Println("      Run `linkedin-jobs auth logout` to forget the stale press-auth capture.")
+			}
+			return nil
+		}
+		fmt.Printf("Session available (recommended jobs enabled) [source: %s].\n", sessionSourceLabel(sess.Source))
 		return nil
 	},
+}
+
+func sessionSourceLabel(s string) string {
+	if s == "" {
+		return "unknown"
+	}
+	return s
 }
 
 var authLogoutCmd = &cobra.Command{
 	Use:   "logout",
 	Short: "Forget the captured session (press-auth)",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := runShell("press-auth", "forget", "linkedin.com"); err != nil {
+		// --yes skips press-auth's interactive confirmation prompt, which
+		// would otherwise refuse to delete state in non-TTY contexts
+		// (scripts, CI, this CLI running piped/redirected).
+		if err := runShell("press-auth", "forget", "linkedin.com", "--yes"); err != nil {
 			fmt.Fprintln(os.Stderr, "press-auth forget failed:", err)
 			os.Exit(1)
 		}

@@ -24,8 +24,8 @@ var recommendedCmd = &cobra.Command{
 	Short: "Pull your personalized LinkedIn 'Recommended for you' job feed",
 	Long: `Fetches the authenticated 'Recommended for you' job collection using your
 captured browser session (see 'auth login'). Requires a session. Pulls up to
---limit jobs, fetches salary + description, filters, summarizes, stores, and
-displays the results.`,
+--top jobs (alias: --limit), fetches salary + description, filters,
+summarizes, stores, and displays the results.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := newClient(true)
 		if err != nil {
@@ -62,7 +62,11 @@ displays the results.`,
 }
 
 func init() {
-	recommendedCmd.Flags().IntVar(&recLimit, "limit", 50, "max number of recommended jobs to fetch")
+	// --top is the primary name (matches the `search` command's convention);
+	// --limit is kept as a backward-compat alias bound to the same variable.
+	// If both are passed, the last one on the command line wins.
+	recommendedCmd.Flags().IntVar(&recLimit, "top", 50, "max number of recommended jobs to fetch")
+	recommendedCmd.Flags().IntVar(&recLimit, "limit", 50, "alias of --top")
 	recommendedCmd.Flags().StringVar(&recMinSalary, "min-salary", "", "only keep jobs paying at or above this (e.g. 200k)")
 	recommendedCmd.Flags().BoolVar(&recRemote, "remote", false, "only keep remote-friendly jobs")
 	recommendedCmd.Flags().StringSliceVar(&recExclude, "exclude-company", nil, "drop jobs whose company matches (repeatable)")
