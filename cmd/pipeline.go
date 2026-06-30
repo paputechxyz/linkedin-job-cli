@@ -26,6 +26,7 @@ type ingestOptions struct {
 	noSummarize      bool // legacy flag; treated as noScore for the combined flow
 	noScore          bool
 	noFilter         bool
+	forceOverwrite   bool // bypass dedup: re-parse + re-score + overwrite jobs already in the DB
 	detailDelay      float64
 	scoreDelay       float64 // pause between successive LLM scoring calls (avoids 429s)
 	jsonOut          bool
@@ -83,7 +84,7 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 	threshold := settings.Scoring.ReasonThreshold
 	scoredN, filteredN, dupsN := 0, 0, 0
 	for _, j := range jobs {
-		if st.IsDuplicateEnriched(j.ContentHash) {
+		if !opts.forceOverwrite && st.IsDuplicateEnriched(j.ContentHash) {
 			dupsN++
 			continue
 		}

@@ -16,6 +16,7 @@ var (
 	searchNoSummar bool
 	searchNoScore  bool
 	searchNoFilter bool
+	searchForceOW  bool
 )
 
 var searchCmd = &cobra.Command{
@@ -59,6 +60,7 @@ Examples:
 			noSummarize:      searchNoSummar,
 			noScore:          searchNoScore,
 			noFilter:         searchNoFilter,
+			forceOverwrite:   searchForceOW,
 			detailDelay:      resolveDetailDelay(),
 			scoreDelay:       resolveLLMDelay(),
 			jsonOut:          jsonOut,
@@ -76,5 +78,6 @@ func init() {
 	searchCmd.Flags().BoolVar(&searchNoSummar, "no-summarize", false, "skip LLM scoring (alias of --no-score)")
 	searchCmd.Flags().BoolVar(&searchNoScore, "no-score", false, "skip LLM enrichment+fit-scoring")
 	searchCmd.Flags().BoolVar(&searchNoFilter, "no-filter", false, "skip the hard preference filter")
+	searchCmd.Flags().BoolVar(&searchForceOW, "force-overwrite", false, "re-parse and re-score jobs already in the DB (bypass dedup; overwrites existing values)")
 	rootCmd.AddCommand(searchCmd)
 }

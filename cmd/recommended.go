@@ -16,6 +16,7 @@ var (
 	recNoSummarize bool
 	recNoScore     bool
 	recNoFilter    bool
+	recForceOW     bool
 )
 
 var recommendedCmd = &cobra.Command{
@@ -51,6 +52,7 @@ displays the results.`,
 			noSummarize:      recNoSummarize,
 			noScore:          recNoScore,
 			noFilter:         recNoFilter,
+			forceOverwrite:   recForceOW,
 			detailDelay:      resolveDetailDelay(),
 			scoreDelay:       resolveLLMDelay(),
 			jsonOut:          jsonOut,
@@ -68,5 +70,6 @@ func init() {
 	recommendedCmd.Flags().BoolVar(&recNoSummarize, "no-summarize", false, "skip LLM scoring (alias of --no-score)")
 	recommendedCmd.Flags().BoolVar(&recNoScore, "no-score", false, "skip LLM enrichment+fit-scoring")
 	recommendedCmd.Flags().BoolVar(&recNoFilter, "no-filter", false, "skip the hard preference filter")
+	recommendedCmd.Flags().BoolVar(&recForceOW, "force-overwrite", false, "re-parse and re-score jobs already in the DB (bypass dedup; overwrites existing values)")
 	rootCmd.AddCommand(recommendedCmd)
 }
