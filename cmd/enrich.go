@@ -32,7 +32,7 @@ var enrichCmd = &cobra.Command{
 			die("failed to open DB: %v", err)
 		}
 		defer st.Close()
-		p, _ := profile.Load()
+		p, _ := profile.Load(settings.Profile)
 
 		var jobs []*models.JobPosting
 		if enrichAll {

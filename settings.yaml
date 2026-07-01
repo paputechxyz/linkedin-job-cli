@@ -2,7 +2,7 @@
 # Docs: README → Settings
 
 stats:
-  top_companies_limit: 50        # `stats` command + serve UI; also `stats --top N`
+  top_companies_limit: 5        # `stats` command + serve UI; also `stats --top N`
 
 filter:
   auto_filter: true              # hard preference filter on fetch; set false to disable
@@ -11,14 +11,25 @@ scoring:
   reason_threshold: 70           # fit_reason only emitted at/above this score (0-100)
   baseline: 60                   # starting score after a job passes the hard filter
   deal_breaker_cap: 30           # hard floor when a deal-breaker tech is matched
-  deal_breakers: [".NET", "C#", "Ruby on Rails"]
+  deal_breakers: [".NET", "C#", "Ruby"]
   weights:
     salary: 6                    # tiered by how far above your floor (0/at-floor/+10%/+30%)
-    tech_overlap: 7              # count of preferred_tech items found in tech_stack
+    tech_overlap: 4              # count of preferred_tech items found in tech_stack
     startup: 5                   # company_stage seed/early + size 1-50
-    ai_intensity: 5              # core=full, mentioned=partial, none=0
-    compensation_extras: 4       # bonus + equity + retirement match (1pt each, +1 all three)
-    remote_tiebreak: 3           # full-remote=full, hybrid=partial
+    ai_intensity: 3              # core=full, mentioned=partial, none=0
+    compensation_extras: 3       # bonus + equity + retirement match (1pt each, +1 all three)
+    remote_tiebreak: 6           # full-remote=full, hybrid=partial
 
 enrich:
   auto_enrich_on_save: false     # set true to auto-score jobs when you tag them `saved`
+
+# Candidate preference knobs. Drive the deterministic hard filter (internal/filter)
+# and the rubric (internal/score): salary floor, remote requirement, location
+# match, and tech-overlap scoring. The free-text resume context lives in
+# RESUME.md; deal-breaker tech tokens are under scoring.deal_breakers above.
+profile:
+  work_arrangement: remote
+  min_salary: 200000
+  min_salary_currency: CAD
+  locations: Remote,Toronto
+  preferred_tech: [Java, Python, Elixir, Go, FastAPI, Flask, Django, NestJS, ReactJS, NextJS, Docker, Kubernetes, Postgres, BigQuery, Snowflake, AWS, GCP]

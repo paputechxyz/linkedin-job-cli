@@ -14,6 +14,19 @@ type Settings struct {
 	Filter  FilterSettings  `yaml:"filter"`
 	Scoring ScoringSettings `yaml:"scoring"`
 	Enrich  EnrichSettings  `yaml:"enrich"`
+	Profile ProfileSettings `yaml:"profile"`
+}
+
+// ProfileSettings holds the structured candidate preferences that drive the
+// deterministic hard filter + rubric (work arrangement, salary floor, locations,
+// preferred tech). These flow into models.Profile.Pref* at load time. Pointer
+// types let users express "unset" by deleting the key.
+type ProfileSettings struct {
+	WorkArrangement   string   `yaml:"work_arrangement,omitempty"`
+	MinSalary         *float64 `yaml:"min_salary,omitempty"`
+	MinSalaryCurrency string   `yaml:"min_salary_currency,omitempty"`
+	Locations         string   `yaml:"locations,omitempty"`
+	PreferredTech     []string `yaml:"preferred_tech,omitempty"`
 }
 
 type StatsSettings struct {
@@ -93,9 +106,9 @@ func ConfigDir() string {
 }
 
 // ProjectDir returns the directory holding project-local, hand-editable user
-// content (settings.yaml, RESUME.md, JOB_PREFERENCE.md): $LJ_CONFIG_DIR if
-// set, otherwise the current working directory. These files describe *this*
-// job-search project (your resume, your preferences, your tunables) and so
+// content (settings.yaml incl. the profile: knobs, RESUME.md): $LJ_CONFIG_DIR
+// if set, otherwise the current working directory. These files describe *this*
+// job-search project (your resume, your preference knobs, your tunables) and so
 // travel with the repo/folder you run the CLI from, unlike secrets in
 // ConfigDir() which stay global.
 func ProjectDir() string {

@@ -28,10 +28,13 @@ import (
 
 // Result is the output of Compute. Score is the final 0-100 number; Dimensions
 // carries the per-dimension breakdown for the machine-generated fit_reason;
-// CapReason is set when the score was capped (and explains why).
+// CapReason is the stable machine code set when the score was capped;
+// CapDetail is the human-readable sentence naming the specific offender
+// (which deal-breaker token, how far under floor, which preferred location).
 type Result struct {
 	Score      int
 	CapReason  string
+	CapDetail  string
 	Dimensions []Dimension
 }
 
@@ -106,13 +109,17 @@ func Compute(job *models.JobPosting, profile *models.Profile, w Weights) Result 
 	}
 
 	// 1. Deal-breaker check.
-	if reason := dealBreakerMatch(job.TechStack, w.DealBreakers); reason != "" {
-		return Result{Score: w.dealBreakerCapOrDefault(), CapReason: CapDealBreakerTech}
+	if token := dealBreakerMatch(job.TechStack, w.DealBreakers); token != "" {
+		return Result{
+			Score:     w.dealBreakerCapOrDefault(),
+			CapReason: CapDealBreakerTech,
+			CapDetail: fmt.Sprintf("Deal-breaker tech %q in stack", token),
+		}
 	}
 
 	// 2. Hard-filter caps.
 	if cap := hardFilterCap(job, profile); cap != nil {
-		return Result{Score: cap.score, CapReason: cap.reason}
+		return Result{Score: cap.score, CapReason: cap.reason, CapDetail: cap.detail}
 	}
 
 	// 3. Baseline + dimensions.
@@ -151,14 +158,19 @@ func Compute(job *models.JobPosting, profile *models.Profile, w Weights) Result 
 }
 
 // FitReason renders the dimension breakdown as a single-line summary. When a
-// cap fired, it is named first; otherwise the per-dimension points lead. This
-// is what the user sees in the `fit_reason` column.
+// cap fired, CapDetail names the specific offender (which deal-breaker token,
+// how far under floor, which preferred location); otherwise the per-dimension
+// points lead. This is what the user sees in the `fit_reason` column and in the
+// web UI's score caption.
 func FitReason(r Result) string {
 	if r.CapReason != CapNone {
-		return fmt.Sprintf("cap: %s (%d)", r.CapReason, r.Score)
+		if r.CapDetail != "" {
+			return fmt.Sprintf("%s → capped at %d", r.CapDetail, r.Score)
+		}
+		return fmt.Sprintf("capped at %d (%s)", r.Score, r.CapReason)
 	}
 	if len(r.Dimensions) == 0 {
-		return fmt.Sprintf("baseline %d — no positive signals", r.Score)
+		return fmt.Sprintf("no positive signals matched your profile → %d", r.Score)
 	}
 	parts := make([]string, 0, len(r.Dimensions))
 	for _, d := range r.Dimensions {
@@ -205,6 +217,7 @@ func dealBreakerMatch(techStack string, dealBreakers []string) string {
 type capResult struct {
 	score  int
 	reason string
+	detail string // human-readable sentence naming the specific offender
 }
 
 // hardFilterCap mirrors internal/filter.PassesHardFilter but returns graduated
@@ -223,10 +236,12 @@ func hardFilterCap(job *models.JobPosting, profile *models.Profile) *capResult {
 		converted := convertSalaryTo(job.SalaryMax(), job.SalaryCurrency, profile.PrefMinSalaryCurrency)
 		if converted < floor {
 			missPct := (floor - converted) / floor
+			detail := fmt.Sprintf("Salary %s is %.0f%% under your %s floor",
+				money(converted, profile.PrefMinSalaryCurrency), missPct*100, money(floor, profile.PrefMinSalaryCurrency))
 			if missPct > 0.10 {
-				fired = append(fired, capResult{capHardFilterSevere, CapSalaryUnderFloorSevere})
+				fired = append(fired, capResult{capHardFilterSevere, CapSalaryUnderFloorSevere, detail})
 			} else {
-				fired = append(fired, capResult{capHardFilterMinor, CapSalaryUnderFloor})
+				fired = append(fired, capResult{capHardFilterMinor, CapSalaryUnderFloor, detail})
 			}
 		}
 	}
@@ -234,13 +249,14 @@ func hardFilterCap(job *models.JobPosting, profile *models.Profile) *capResult {
 	// Work arrangement: remote-required preference rejects jobs with no remote signal.
 	blob := strings.ToLower(job.Location + " " + job.RemoteType)
 	if profile.PrefWorkArrangement == "remote" && !strings.Contains(blob, "remote") {
-		fired = append(fired, capResult{capNonRemote, CapNonRemote})
+		fired = append(fired, capResult{capNonRemote, CapNonRemote, "Role has no remote signal; you want fully remote"})
 	}
 
 	// Preferred locations: cap only when job location is known and matches none.
 	if profile.PrefLocations != "" && strings.TrimSpace(job.Location) != "" {
 		if !locationMatches(blob, profile.PrefLocations) {
-			fired = append(fired, capResult{capLocationMiss, CapLocationMiss})
+			detail := fmt.Sprintf("Location %q not in your preferred (%s)", job.Location, profile.PrefLocations)
+			fired = append(fired, capResult{capLocationMiss, CapLocationMiss, detail})
 		}
 	}
 

@@ -110,9 +110,8 @@ var configPathCmd = &cobra.Command{
 	Short: "Print the config/settings file locations",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Printf("provider:    %s  (LLM secrets; override with LJ_CONFIG_DIR)\n", llm.ConfigPath())
-		fmt.Printf("settings:    %s\n", config.SettingsPath())
+		fmt.Printf("settings:    %s  (includes profile: preference knobs)\n", config.SettingsPath())
 		fmt.Printf("resume:      %s\n", profile.ResumePath())
-		fmt.Printf("preferences: %s\n", profile.PrefsPath())
 		return nil
 	},
 }

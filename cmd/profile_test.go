@@ -21,21 +21,3 @@ func TestReadPasted_EmptyYieldsEmpty(t *testing.T) {
 		t.Errorf("want empty, got %q", got)
 	}
 }
-
-func TestNormalizeArrangement(t *testing.T) {
-	cases := map[string]string{
-		"Remote":   "remote",
-		"REMOTE":   "remote",
-		"ON-SITE":  "onsite",
-		"on site":  "onsite",
-		"office":   "onsite",
-		"Hybrid":   "hybrid",
-		"":         "",
-		"weird":    "weird",
-	}
-	for in, want := range cases {
-		if got := normalizeArrangement(in); got != want {
-			t.Errorf("normalizeArrangement(%q) = %q, want %q", in, got, want)
-		}
-	}
-}

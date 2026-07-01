@@ -66,6 +66,9 @@ func TestCompute_DealBreakerCapsAtDefault(t *testing.T) {
 	if r.CapReason != CapDealBreakerTech {
 		t.Errorf("CapReason=%q want %q", r.CapReason, CapDealBreakerTech)
 	}
+	if want := `Deal-breaker tech "c#" in stack`; r.CapDetail != want {
+		t.Errorf("CapDetail=%q want %q", r.CapDetail, want)
+	}
 }
 
 func TestCompute_DealBreakerCaseInsensitive(t *testing.T) {
@@ -99,6 +102,9 @@ func TestCompute_SalarySmallMissCapsAt60(t *testing.T) {
 	if r.CapReason != CapSalaryUnderFloor {
 		t.Errorf("CapReason=%q want %q", r.CapReason, CapSalaryUnderFloor)
 	}
+	if !strings.Contains(r.CapDetail, "8% under") {
+		t.Errorf("CapDetail=%q want it to mention the miss %%", r.CapDetail)
+	}
 }
 
 func TestCompute_SalarySevereMissCapsAt50(t *testing.T) {
@@ -111,6 +117,9 @@ func TestCompute_SalarySevereMissCapsAt50(t *testing.T) {
 	if r.CapReason != CapSalaryUnderFloorSevere {
 		t.Errorf("CapReason=%q want %q", r.CapReason, CapSalaryUnderFloorSevere)
 	}
+	if !strings.Contains(r.CapDetail, "50% under") {
+		t.Errorf("CapDetail=%q want it to mention the miss %%", r.CapDetail)
+	}
 }
 
 func TestCompute_NonRemoteCapsAt55(t *testing.T) {
@@ -121,6 +130,9 @@ func TestCompute_NonRemoteCapsAt55(t *testing.T) {
 	}
 	if r.CapReason != CapNonRemote {
 		t.Errorf("CapReason=%q want %q", r.CapReason, CapNonRemote)
+	}
+	if !strings.Contains(r.CapDetail, "remote") {
+		t.Errorf("CapDetail=%q want it to mention remote", r.CapDetail)
 	}
 }
 
@@ -134,6 +146,9 @@ func TestCompute_LocationMissCapsAt55(t *testing.T) {
 	}
 	if r.CapReason == CapNone {
 		t.Errorf("expected a cap; got %q", r.CapReason)
+	}
+	if r.CapDetail == "" {
+		t.Errorf("CapDetail empty; want a human sentence")
 	}
 }
 
@@ -385,10 +400,15 @@ func TestCompute_WeightsDisableSalary(t *testing.T) {
 // --- FitReason rendering ---
 
 func TestFitReason_CappedJob(t *testing.T) {
-	r := Result{Score: 30, CapReason: CapDealBreakerTech}
-	got := FitReason(r)
-	if got != "cap: deal_breaker_tech (30)" {
+	// With CapDetail: human sentence leads.
+	r := Result{Score: 30, CapReason: CapDealBreakerTech, CapDetail: `Deal-breaker tech "c#" in stack`}
+	if got := FitReason(r); got != `Deal-breaker tech "c#" in stack → capped at 30` {
 		t.Errorf("got %q", got)
+	}
+	// Without CapDetail (defensive fallback): still names the cap reason.
+	r2 := Result{Score: 50, CapReason: CapSalaryUnderFloorSevere}
+	if got := FitReason(r2); got != "capped at 50 (salary_under_floor_severe)" {
+		t.Errorf("fallback got %q", got)
 	}
 }
 

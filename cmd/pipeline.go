@@ -75,7 +75,7 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 
 	// 3. Run gates per job: dedup -> score (which internally applies caps).
 	noScore := opts.noScore || opts.noSummarize
-	profileData, _ := profile.Load()
+	profileData, _ := profile.Load(settings.Profile)
 	var provider *llm.Provider
 	if !noScore {
 		p, err := llm.Resolve(cfg)
@@ -140,13 +140,14 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 	return shown
 }
 
-// profileStatus renders a one-line summary of which profile files were loaded,
-// so scoring behavior is debuggable at a glance. Reports resume + preferences
-// character counts and the project dir the loader looked in.
+// profileStatus renders a one-line summary of what profile context scoring will
+// use: the resume body (free text, from RESUME.md) plus a count of the
+// structured preference knobs active in settings.yaml. Reports the project dir
+// the loader looked in.
 func profileStatus(p *models.Profile) string {
 	dir := profileDir()
-	if p == nil || (p.ResumeText == "" && p.PreferencesText == "") {
-		return fmt.Sprintf("Profile: no RESUME.md / JOB_PREFERENCE.md found in %s (scoring without candidate context).", dir)
+	if profile.IsEmpty(p) {
+		return fmt.Sprintf("Profile: no RESUME.md and no profile knobs in %s (scoring without candidate context).", dir)
 	}
 	parts := make([]string, 0, 2)
 	if p.ResumeText != "" {
@@ -154,12 +155,21 @@ func profileStatus(p *models.Profile) string {
 	} else {
 		parts = append(parts, "no resume")
 	}
-	if p.PreferencesText != "" {
-		parts = append(parts, fmt.Sprintf("preferences (%d chars)", len(p.PreferencesText)))
-	} else {
-		parts = append(parts, "no preferences")
+	knobs := 0
+	if p.PrefWorkArrangement != "" {
+		knobs++
 	}
-	return fmt.Sprintf("Profile: loaded %s from %s.", strings.Join(parts, ", "), dir)
+	if p.PrefMinSalary != nil {
+		knobs++
+	}
+	if p.PrefLocations != "" {
+		knobs++
+	}
+	if len(p.PrefPreferredTech) > 0 {
+		knobs++
+	}
+	parts = append(parts, fmt.Sprintf("%d preference knob(s) from settings.yaml", knobs))
+	return fmt.Sprintf("Profile: loaded %s (dir %s).", strings.Join(parts, ", "), dir)
 }
 
 // profileDir returns the directory the profile loader looked in, for display.

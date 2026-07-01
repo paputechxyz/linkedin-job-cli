@@ -22,9 +22,9 @@ search.
   resume + preferences in a single LLM call, with a fit reason for strong matches.
 - **Token-frugal** — duplicates (content-hash) and clear preference mismatches
   are detected with zero LLM calls; only genuine new candidates are scored.
-- **Profile** — paste your resume and preferences into editable markdown files
-  (`RESUME.md`, `JOB_PREFERENCE.md`); preference knobs also drive a
-  deterministic hard filter that auto-tags non-matches.
+- **Profile** — your resume is an editable markdown file (`RESUME.md`) and
+  preference knobs live under the `profile:` section of `settings.yaml`; those
+  knobs also drive a deterministic hard filter that auto-tags non-matches.
 - **Export** — JSON / CSV / Markdown.
 
 ## Install
@@ -117,31 +117,28 @@ POST endpoints guarded by a per-session CSRF token.
 
 ### Profile + fit scoring
 
-Paste your resume and preferences once; they drive both scoring and filtering.
-Both live as plain markdown files **in your project root** (the directory you
-run the CLI from; override with `LJ_CONFIG_DIR`) so they travel with this
-job-search folder and you can edit them by hand at any time:
+Paste your resume and set preference knobs once; they drive both scoring and
+filtering. Your resume is plain markdown **in your project root** (the directory
+you run the CLI from; override with `LJ_CONFIG_DIR`) so it travels with this
+job-search folder and you can edit it by hand at any time. Preference knobs live
+under the `profile:` section of `settings.yaml`:
 
-- `RESUME.md` — your resume (free text)
-- `JOB_PREFERENCE.md` — preferences (free text) plus optional YAML
-  front-matter knobs for the hard filter:
+- `RESUME.md` — your resume (free text); sent to your LLM as candidate context
+- `settings.yaml` → `profile:` — structured knobs for the hard filter + rubric:
 
-  ```markdown
-  ---
-  work_arrangement: remote
-  min_salary: 200000
-  min_salary_currency: CAD
-  locations: Remote,US
-  ---
-
-  I want staff/founding roles at startups…
+  ```yaml
+  profile:
+    work_arrangement: remote
+    min_salary: 200000
+    min_salary_currency: CAD
+    locations: Remote,Toronto
+    preferred_tech: [Java, Python, Go, Postgres, AWS]
   ```
 
 ```bash
 linkedin-jobs profile resume          # paste resume text, end with Ctrl-D
-linkedin-jobs profile prefs \         # paste preferences + hard-filter knobs
-  --work remote --min-salary 200k --locations "Remote,US"
-linkedin-jobs profile show
+linkedin-jobs profile show            # show resume + active knobs
+# edit preference knobs by hand in settings.yaml (profile: section)
 ```
 
 When you fetch jobs (`recommended` / `search` / `watch`), each job flows through
@@ -200,9 +197,8 @@ No key? Scoring is skipped with a clear message; all other commands still work.
 ### Settings
 
 Optional `settings.yaml` **in your project root** (override the dir with
-`LJ_CONFIG_DIR`). This is the same project-local location as `RESUME.md` and
-`JOB_PREFERENCE.md`; secrets (`config.json`) still live globally in
-`~/.linkedin-jobs/`:
+`LJ_CONFIG_DIR`). This is the same project-local location as `RESUME.md`;
+secrets (`config.json`) still live globally in `~/.linkedin-jobs/`:
 
 ```yaml
 stats:
@@ -213,11 +209,17 @@ scoring:
   reason_threshold: 70           # fit_reason included at/above this score
 enrich:
   auto_enrich_on_save: false     # tag saved does not auto-score by default
+profile:                         # preference knobs for the hard filter + rubric
+  work_arrangement: remote
+  min_salary: 200000
+  min_salary_currency: CAD
+  locations: Remote,Toronto
+  preferred_tech: [Java, Python, Go, Postgres, AWS]
 ```
 
-When scoring runs, the CLI prints which profile files it loaded (and from
-where), so you can tell at a glance whether scores reflect your actual
-resume/preferences or ran context-free.
+When scoring runs, the CLI prints which profile context it loaded (resume from
+`RESUME.md`, knobs from `settings.yaml`), so you can tell at a glance whether
+scores reflect your actual context or ran context-free.
 
 ## How recommended works
 
@@ -235,7 +237,7 @@ description are fetched per-job from the public detail page (JSON-LD
 | Variable          | Purpose                                            | Default                          |
 |-------------------|----------------------------------------------------|----------------------------------|
 | `LJ_DB_PATH`      | SQLite database path                               | `~/linkedin-jobs/linkedin_jobs.db` |
-| `LJ_CONFIG_DIR`   | directory for `settings.yaml`, `RESUME.md`, `JOB_PREFERENCE.md` (also `config.json` secrets) | project root (CWD); `~/.linkedin-jobs/` for `config.json` when unset |
+| `LJ_CONFIG_DIR`   | directory for `settings.yaml` (incl. `profile:` knobs) and `RESUME.md` (also `config.json` secrets) | project root (CWD); `~/.linkedin-jobs/` for `config.json` when unset |
 | `LJ_LLM_DELAY_SECONDS` | seconds to pause between successive LLM scoring calls (avoids 429s) | `2.0` |
 | `ANTHROPIC_API_KEY` | Claude provider (auto-detected by config)        | —                                |
 | `LJ_COOKIES_FILE` | path to a file with a raw `Cookie:` header          | —                                |
