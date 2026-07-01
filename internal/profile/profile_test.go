@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"linkedin-jobs/internal/config"
-	"linkedin-jobs/internal/models"
 )
 
 // setConfigDir points the profile package at a temp dir for the duration of
@@ -20,14 +19,17 @@ func setConfigDir(t *testing.T) string {
 
 func ptr(f float64) *float64 { return &f }
 
-func TestLoad_NoFilesReturnsNil(t *testing.T) {
+// TestLoad_NoResumeNoKnobs verifies the profile is empty when RESUME.md is
+// absent and no knobs are passed. Load never returns nil now — knobs come from
+// the settings argument, so emptiness is expressed via IsEmpty.
+func TestLoad_NoResumeNoKnobs(t *testing.T) {
 	setConfigDir(t)
-	got, err := Load()
+	got, err := Load(config.ProfileSettings{})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got != nil {
-		t.Errorf("want nil profile when no files exist, got %+v", got)
+	if !IsEmpty(got) {
+		t.Errorf("want empty profile, got %+v", got)
 	}
 }
 
@@ -36,45 +38,32 @@ func TestSaveResume_RoundTrip(t *testing.T) {
 	if err := SaveResume("  Go engineer, 10y exp  "); err != nil {
 		t.Fatalf("SaveResume: %v", err)
 	}
-	p, err := Load()
+	p, err := Load(config.ProfileSettings{})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
-	}
-	if p == nil {
-		t.Fatal("nil profile after save")
 	}
 	if p.ResumeText != "Go engineer, 10y exp" {
 		t.Errorf("resume = %q", p.ResumeText)
 	}
-	if p.PreferencesText != "" {
-		t.Errorf("prefs should be empty, got %q", p.PreferencesText)
-	}
 }
 
-func TestSavePrefs_RoundTrip(t *testing.T) {
-	dir := setConfigDir(t)
-	in := &models.Profile{
-		PreferencesText:     "Staff/founding, remote, startups",
-		PrefWorkArrangement: "remote",
-		PrefMinSalary:       ptr(200000),
-		PrefLocations:       "Remote,US",
+// TestLoad_KnobsFromSettings verifies the structured knobs map straight through
+// from the settings argument into the profile (the old front-matter path).
+func TestLoad_KnobsFromSettings(t *testing.T) {
+	setConfigDir(t)
+	prefs := config.ProfileSettings{
+		WorkArrangement:   "remote",
+		MinSalary:         ptr(200000),
+		MinSalaryCurrency: "CAD",
+		Locations:         "Remote,Toronto",
+		PreferredTech:     []string{"Go", "Python"},
 	}
-	if err := SavePrefs(in); err != nil {
-		t.Fatalf("SavePrefs: %v", err)
-	}
-
-	// The file should exist with a front-matter block + body.
-	raw, _ := os.ReadFile(filepath.Join(dir, PrefsFile))
-	if len(raw) == 0 {
-		t.Fatal("JOB_PREFERENCE.md not written")
-	}
-
-	got, err := Load()
+	got, err := Load(prefs)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got.PreferencesText != "Staff/founding, remote, startups" {
-		t.Errorf("prefs body = %q", got.PreferencesText)
+	if got.ResumeText != "" {
+		t.Errorf("resume should be empty, got %q", got.ResumeText)
 	}
 	if got.PrefWorkArrangement != "remote" {
 		t.Errorf("work = %q", got.PrefWorkArrangement)
@@ -82,107 +71,67 @@ func TestSavePrefs_RoundTrip(t *testing.T) {
 	if got.PrefMinSalary == nil || *got.PrefMinSalary != 200000 {
 		t.Errorf("min_salary = %+v", got.PrefMinSalary)
 	}
-	if got.PrefLocations != "Remote,US" {
+	if got.PrefMinSalaryCurrency != "CAD" {
+		t.Errorf("min_salary_currency = %q", got.PrefMinSalaryCurrency)
+	}
+	if got.PrefLocations != "Remote,Toronto" {
 		t.Errorf("locations = %q", got.PrefLocations)
 	}
-}
-
-func TestSavePrefs_SalaryCurrencyRoundTrip(t *testing.T) {
-	setConfigDir(t)
-	in := &models.Profile{
-		PreferencesText:    "staff roles",
-		PrefMinSalary:      ptr(160000),
-		PrefMinSalaryCurrency: "CAD",
+	if len(got.PrefPreferredTech) != 2 || got.PrefPreferredTech[0] != "Go" {
+		t.Errorf("preferred_tech = %+v", got.PrefPreferredTech)
 	}
-	if err := SavePrefs(in); err != nil {
-		t.Fatalf("SavePrefs: %v", err)
-	}
-	got, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if got.PrefMinSalaryCurrency != "CAD" {
-		t.Errorf("min_salary_currency = %q, want CAD", got.PrefMinSalaryCurrency)
+	if IsEmpty(got) {
+		t.Errorf("profile with knobs must not be empty")
 	}
 }
 
-func TestLoad_PrefsOnlyNoResume(t *testing.T) {
+// TestLoad_ResumePlusKnobs verifies both channels combine: RESUME.md supplies
+// the free-text body while settings supplies the knobs.
+func TestLoad_ResumePlusKnobs(t *testing.T) {
 	setConfigDir(t)
-	in := &models.Profile{
-		PreferencesText:     "body",
-		PrefWorkArrangement: "hybrid",
-		PrefMinSalary:       ptr(180000),
+	if err := SaveResume("staff backend engineer"); err != nil {
+		t.Fatalf("SaveResume: %v", err)
 	}
-	if err := SavePrefs(in); err != nil {
-		t.Fatalf("SavePrefs: %v", err)
-	}
-	got, err := Load()
+	got, err := Load(config.ProfileSettings{WorkArrangement: "hybrid", MinSalary: ptr(160000)})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got.ResumeText != "" {
-		t.Errorf("resume should be empty, got %q", got.ResumeText)
+	if got.ResumeText != "staff backend engineer" {
+		t.Errorf("resume = %q", got.ResumeText)
 	}
 	if got.PrefWorkArrangement != "hybrid" {
 		t.Errorf("work = %q", got.PrefWorkArrangement)
 	}
 }
 
-func TestLoad_BodyOnlyNoKnobs(t *testing.T) {
-	setConfigDir(t)
-	// User hand-edits the file with just body and empty front-matter.
-	if err := SavePrefs(&models.Profile{PreferencesText: "free text only"}); err != nil {
-		t.Fatalf("SavePrefs: %v", err)
-	}
-	got, _ := Load()
-	if got.PreferencesText != "free text only" {
-		t.Errorf("body = %q", got.PreferencesText)
-	}
-	if got.PrefWorkArrangement != "" || got.PrefMinSalary != nil || got.PrefLocations != "" {
-		t.Errorf("knobs should all be empty: %+v", got)
-	}
-}
-
-func TestClear(t *testing.T) {
+func TestClearResume(t *testing.T) {
 	dir := setConfigDir(t)
 	if err := SaveResume("x"); err != nil {
 		t.Fatal(err)
 	}
-	if err := SavePrefs(&models.Profile{PreferencesText: "y"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := Clear(); err != nil {
-		t.Fatalf("Clear: %v", err)
+	if err := ClearResume(); err != nil {
+		t.Fatalf("ClearResume: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, ResumeFile)); !os.IsNotExist(err) {
-		t.Errorf("RESUME.md still exists after Clear")
+		t.Errorf("RESUME.md still exists after ClearResume")
 	}
-	if _, err := os.Stat(filepath.Join(dir, PrefsFile)); !os.IsNotExist(err) {
-		t.Errorf("JOB_PREFERENCE.md still exists after Clear")
-	}
-	// Clear on missing files is not an error.
-	if err := Clear(); err != nil {
-		t.Errorf("Clear on missing files: %v", err)
+	// Clear on a missing file is not an error.
+	if err := ClearResume(); err != nil {
+		t.Errorf("ClearResume on missing file: %v", err)
 	}
 }
 
-func TestSplitFrontmatter_NoFence(t *testing.T) {
-	fm, body, err := splitFrontmatter("just body")
+func TestIsEmpty(t *testing.T) {
+	if !IsEmpty(nil) {
+		t.Error("nil profile must be empty")
+	}
+	// A profile built from zero-value settings + no resume is empty.
+	got, err := Load(config.ProfileSettings{})
 	if err != nil {
-		t.Fatalf("err: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
-	if fm != "" {
-		t.Errorf("fm should be empty, got %q", fm)
-	}
-	if body != "just body" {
-		t.Errorf("body = %q", body)
-	}
-}
-
-func TestSplitFrontmatter_MissingCloseFence(t *testing.T) {
-	_, _, err := splitFrontmatter("---\nwork: remote\n")
-	if err == nil {
-		t.Error("want error for missing close fence")
+	if !IsEmpty(got) {
+		t.Errorf("zero-value profile must be empty, got %+v", got)
 	}
 }
 

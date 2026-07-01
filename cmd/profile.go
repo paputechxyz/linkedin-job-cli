@@ -9,36 +9,24 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"linkedin-jobs/internal/fx"
-	"linkedin-jobs/internal/models"
+	"linkedin-jobs/internal/config"
 	"linkedin-jobs/internal/profile"
 	"linkedin-jobs/internal/render"
-	"linkedin-jobs/internal/salary"
-)
-
-var (
-	prefWork             string
-	prefMinSalary        string
-	prefMinSalaryCurrency string
-	prefLocations        string
 )
 
 var profileCmd = &cobra.Command{
 	Use:   "profile",
-	Short: "Manage your resume and preferences (drive fit scoring & hard filtering)",
-	Long: `Store your resume and job preferences as plain markdown files in
-` + "`" + `~/.linkedin-jobs/` + "`" + ` (override with LJ_CONFIG_DIR):
+	Short: "Manage your resume and preference knobs (drive fit scoring & hard filtering)",
+	Long: `Your candidate context lives in two places (in the project directory,
+override with LJ_CONFIG_DIR):
 
-    RESUME.md            — your resume (free text)
-    JOB_PREFERENCE.md    — preferences (free text) + YAML front-matter knobs
+    RESUME.md          — your resume (free text); sent to your LLM when scoring
+    settings.yaml      — preference knobs under the ` + "`profile:`" + ` section
 
-The resume and free-text preferences are sent to your LLM provider when scoring
-jobs for fit. The structured knobs in the front-matter (work_arrangement,
-min_salary, locations) drive the deterministic hard filter that tags clear
-mismatches without an LLM call.
-
-Edit the files by hand any time, or use the subcommands below. Paste text on
-stdin; end with Ctrl-D (macOS/Linux) or Ctrl-Z then Enter (Windows):
+The structured knobs (work_arrangement, min_salary, locations, preferred_tech)
+drive the deterministic hard filter + rubric. Edit settings.yaml by hand to
+tune them. The resume is managed via the subcommand below — paste text on stdin
+and end with Ctrl-D (macOS/Linux) or Ctrl-Z then Enter (Windows):
 
     linkedin-jobs profile resume < resume.txt
     pbpaste | linkedin-jobs profile resume
@@ -64,63 +52,14 @@ var profileResumeCmd = &cobra.Command{
 	},
 }
 
-var profilePrefsCmd = &cobra.Command{
-	Use:   "prefs",
-	Short: "Paste your preferences (free text) and set hard-filter knobs",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		text, err := readPasted(os.Stdin)
-		if err != nil {
-			die("failed to read preferences: %v", err)
-		}
-
-		// Merge onto the existing on-disk profile so unset flags are preserved.
-		p, _ := profile.Load()
-		if p == nil {
-			p = &models.Profile{}
-		}
-		if strings.TrimSpace(text) != "" {
-			p.PreferencesText = text
-		}
-		if cmd.Flags().Changed("work") {
-			p.PrefWorkArrangement = normalizeArrangement(prefWork)
-		}
-		if cmd.Flags().Changed("min-salary") {
-			v, err := salary.ParseShorthand(prefMinSalary)
-			if err != nil {
-				die("invalid --min-salary %q: use '200k' or '200000'", prefMinSalary)
-			}
-			p.PrefMinSalary = &v
-		}
-		if cmd.Flags().Changed("min-salary-currency") {
-			c := fx.Normalize(prefMinSalaryCurrency)
-			if c != "" && !fx.Supported(c) {
-				die("unsupported --min-salary-currency %q (e.g. USD, CAD, EUR)", prefMinSalaryCurrency)
-			}
-			p.PrefMinSalaryCurrency = c
-		}
-		if cmd.Flags().Changed("locations") {
-			p.PrefLocations = prefLocations
-		}
-		if err := profile.SavePrefs(p); err != nil {
-			die("failed to save preferences: %v", err)
-		}
-		fmt.Fprintf(os.Stderr, "Preferences saved to %s.\n", profile.PrefsPath())
-		return nil
-	},
-}
-
 var profileShowCmd = &cobra.Command{
 	Use:   "show",
-	Short: "Show the stored resume and preferences",
+	Short: "Show the stored resume and preference knobs",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		p, err := profile.Load()
+		settings, _ := config.LoadSettings()
+		p, err := profile.Load(settings.Profile)
 		if err != nil {
 			die("failed to read profile: %v", err)
-		}
-		if p == nil {
-			fmt.Println("No profile set. Edit these files (or run: linkedin-jobs profile resume):")
-			fmt.Printf("  %s\n  %s\n", profile.ResumePath(), profile.PrefsPath())
-			return nil
 		}
 		if jsonOut {
 			render.AsJSON(os.Stdout, p)
@@ -132,20 +71,19 @@ var profileShowCmd = &cobra.Command{
 		} else {
 			fmt.Println(indent(p.ResumeText))
 		}
-		fmt.Printf("\nPreferences (%s):\n", profile.PrefsPath())
-		if p.PreferencesText == "" {
-			fmt.Println("  (none)")
-		} else {
-			fmt.Println(indent(p.PreferencesText))
-		}
-		fmt.Println("\nHard-filter knobs:")
+		fmt.Printf("\nPreference knobs (%s → profile:):\n", config.SettingsPath())
 		fmt.Printf("  work arrangement: %s\n", orNone(p.PrefWorkArrangement))
 		if p.PrefMinSalary != nil {
-			fmt.Printf("  min salary:        %s%.0f\n", currencyLabel(p.PrefMinSalaryCurrency), *p.PrefMinSalary)
+			fmt.Printf("  min salary:        %s%.0f %s\n", currencyLabel(p.PrefMinSalaryCurrency), *p.PrefMinSalary, orNoneCurrency(p.PrefMinSalaryCurrency))
 		} else {
 			fmt.Println("  min salary:        (none)")
 		}
 		fmt.Printf("  locations:         %s\n", orNone(p.PrefLocations))
+		if len(p.PrefPreferredTech) > 0 {
+			fmt.Printf("  preferred tech:    %d — %s\n", len(p.PrefPreferredTech), strings.Join(p.PrefPreferredTech, ", "))
+		} else {
+			fmt.Println("  preferred tech:    (none)")
+		}
 		if p.UpdatedAt != "" {
 			fmt.Printf("\nLoaded at: %s\n", p.UpdatedAt)
 		}
@@ -155,12 +93,12 @@ var profileShowCmd = &cobra.Command{
 
 var profileClearCmd = &cobra.Command{
 	Use:   "clear",
-	Short: "Delete the stored resume and preferences files",
+	Short: "Delete the stored resume file",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := profile.Clear(); err != nil {
+		if err := profile.ClearResume(); err != nil {
 			die("clear failed: %v", err)
 		}
-		fmt.Println("Profile cleared (RESUME.md and JOB_PREFERENCE.md removed).")
+		fmt.Printf("Resume removed (%s).\nNote: preference knobs live in %s — edit that file by hand to clear them.\n", profile.ResumePath(), config.SettingsPath())
 		return nil
 	},
 }
@@ -182,20 +120,6 @@ func readPasted(r io.Reader) (string, error) {
 	return strings.TrimSpace(b.String()), nil
 }
 
-func normalizeArrangement(s string) string {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "remote":
-		return "remote"
-	case "hybrid":
-		return "hybrid"
-	case "onsite", "on-site", "on site", "office":
-		return "onsite"
-	case "":
-		return ""
-	}
-	return strings.ToLower(strings.TrimSpace(s))
-}
-
 func indent(s string) string {
 	var b strings.Builder
 	for _, ln := range strings.Split(s, "\n") {
@@ -209,6 +133,14 @@ func orNone(s string) string {
 		return "(none)"
 	}
 	return s
+}
+
+// orNoneCurrency hides an empty currency code in display when salary is set.
+func orNoneCurrency(code string) string {
+	if code == "" {
+		return "(raw compare)"
+	}
+	return code
 }
 
 // currencyLabel renders a currency code as a leading symbol for display, e.g.
@@ -228,11 +160,6 @@ func currencyLabel(code string) string {
 }
 
 func init() {
-	profilePrefsCmd.Flags().StringVar(&prefWork, "work", "", "required work arrangement for the hard filter: remote|hybrid|onsite")
-	profilePrefsCmd.Flags().StringVar(&prefMinSalary, "min-salary", "", "salary floor for the hard filter (e.g. 200k)")
-	profilePrefsCmd.Flags().StringVar(&prefMinSalaryCurrency, "min-salary-currency", "", "currency for the salary floor (ISO 4217, e.g. CAD); enables FX-aware filtering")
-	profilePrefsCmd.Flags().StringVar(&prefLocations, "locations", "", "comma-separated preferred locations for the hard filter")
-
-	profileCmd.AddCommand(profileResumeCmd, profilePrefsCmd, profileShowCmd, profileClearCmd)
+	profileCmd.AddCommand(profileResumeCmd, profileShowCmd, profileClearCmd)
 	rootCmd.AddCommand(profileCmd)
 }

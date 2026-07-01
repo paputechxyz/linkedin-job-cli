@@ -14,7 +14,7 @@ import (
 	"linkedin-jobs/internal/models"
 )
 
-const enrichSystem = "You are an expert technical recruiter assistant. Analyze a job posting for an engineering candidate and extract structured facts plus a fit score against the candidate's resume and preferences."
+const enrichSystem = "You are an expert technical recruiter assistant. Analyze a job posting for an engineering candidate and extract structured facts. The candidate's resume and preferences are provided as context only — do not let them distort objective facts about the posting."
 
 const enrichPromptTmpl = `Analyze this job posting and return ONLY a JSON object (no prose, no code fences) with EXACTLY these keys:
 "company_overview": 1-2 sentences on what the company does,

@@ -36,7 +36,7 @@ profile to refresh scores across the DB. (Dedup is ignored on re-score.)`,
 			die("failed to open DB: %v", err)
 		}
 		defer st.Close()
-		p, _ := profile.Load()
+		p, _ := profile.Load(settings.Profile)
 
 		jobs, err := st.List(store.Filters{}) // excludes filtered by default
 		if err != nil {

@@ -1,9 +1,12 @@
 package models
 
-// Profile is the single-row user profile: resume + preferences. The free-text
-// fields feed LLM fit scoring; the structured preference fields drive the
-// deterministic hard filter (work arrangement, salary floor, locations) and
-// the rubric scorer (preferred_tech).
+// Profile is the in-memory candidate context assembled at load time: the resume
+// body (from RESUME.md) plus the structured preference knobs (from the
+// settings.yaml profile: section). ResumeText feeds the LLM enrich call as
+// candidate context; the structured Pref* fields drive the deterministic hard
+// filter (work arrangement, salary floor, locations) and the rubric scorer
+// (preferred_tech). PreferencesText is vestigial (always empty since the
+// JOB_PREFERENCE.md prose body was retired) and kept only for JSON compat.
 type Profile struct {
 	ResumeText          string   `json:"resume_text,omitempty"`
 	PreferencesText     string   `json:"preferences_text,omitempty"`
