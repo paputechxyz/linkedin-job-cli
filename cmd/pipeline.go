@@ -169,7 +169,7 @@ func profileStatus(p *models.Profile) string {
 		knobs++
 	}
 	parts = append(parts, fmt.Sprintf("%d preference knob(s) from settings.yaml", knobs))
-	return fmt.Sprintf("Profile: loaded %s (dir %s).", strings.Join(parts, ", "), dir)
+	return fmt.Sprintf("Profile: loaded %s", strings.Join(parts, ", "))
 }
 
 // profileDir returns the directory the profile loader looked in, for display.
