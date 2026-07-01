@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bytes"
+	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -173,4 +175,73 @@ func TestRenderEmptyAndErrorStates(t *testing.T) {
 			t.Error("error state missing the rendered error text")
 		}
 	})
+}
+
+func TestHasFilterParams(t *testing.T) {
+	if hasFilterParams(url.Values{}) {
+		t.Error("empty query should not count as a filter submit")
+	}
+	if hasFilterParams(url.Values{"clear": {"1"}}) {
+		t.Error(`?clear=1 alone must not be treated as an Apply (it's a reset)`)
+	}
+	for _, k := range filterParamKeys {
+		if !hasFilterParams(url.Values{k: {"x"}}) {
+			t.Errorf("param %q should count as a filter submit", k)
+		}
+	}
+}
+
+func TestFormValsRoundTrip(t *testing.T) {
+	original := formVals{
+		Q: "staff", Company: "Acme", Title: "eng", Location: "Toronto",
+		Status: "saved", Source: "recommended",
+		MinSalary: "200k", MinSalaryCurrency: "CAD", MinScore: "60",
+		Sort: "salary", Remote: true, Hybrid: true, IncludeFiltered: true,
+	}
+	q := original.toQueryValues()
+	// Empty-default and Clear-button use defaultFormVals(); verify that path
+	// round-trips too.
+	if got := defaultFormVals().toQueryValues().Get("sort"); got != "score" {
+		t.Errorf("defaultFormVals sort = %q, want %q", got, "score")
+	}
+	restored := readForm(q)
+	if restored != original {
+		t.Errorf("round-trip mismatch:\n got  %+v\n want %+v", restored, original)
+	}
+}
+
+func TestFiltersFilePath(t *testing.T) {
+	if got := filtersFilePath(""); got != "" {
+		t.Errorf(`filtersFilePath("") = %q, want ""`, got)
+	}
+	got := filtersFilePath(filepath.Join("home", "me", "linkedin-jobs", "linkedin_jobs.db"))
+	want := filepath.Join("home", "me", "linkedin-jobs", "web_filters.json")
+	if got != want {
+		t.Errorf("filtersFilePath = %q, want %q", got, want)
+	}
+}
+
+func TestSavedFiltersPersistAcrossInstances(t *testing.T) {
+	dir := t.TempDir()
+	ws1 := &webServer{filtersPath: filepath.Join(dir, "web_filters.json")}
+	// Nothing saved yet → defaults.
+	if got := ws1.loadSavedFilters(); got != defaultFormVals() {
+		t.Errorf("expected default vals before any save, got %+v", got)
+	}
+	saved := formVals{
+		Q: "founder", Company: "Globex", Sort: "salary",
+		Remote: true, MinSalaryCurrency: "USD",
+	}
+	ws1.saveFilters(saved)
+	// A brand-new server instance pointing at the same file must restore the
+	// saved state — this is the "survives restart" guarantee.
+	ws2 := &webServer{filtersPath: ws1.filtersPath}
+	if got := ws2.loadSavedFilters(); got != saved {
+		t.Errorf("restored vals mismatch:\n got  %+v\n want %+v", got, saved)
+	}
+	// Clearing drops back to defaults.
+	ws2.clearSavedFilters()
+	if got := ws2.loadSavedFilters(); got != defaultFormVals() {
+		t.Errorf("expected defaults after clear, got %+v", got)
+	}
 }
