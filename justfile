@@ -7,4 +7,4 @@ serve:
     linkedin-jobs serve
 
 score-all:
-    linkedin-jobs score --all
+    linkedin-jobs score --all --local
