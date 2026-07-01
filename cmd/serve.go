@@ -933,6 +933,18 @@ const pageHTML = `<!DOCTYPE html>
     text-transform: none; letter-spacing: 0; font-weight: 400;
     color: var(--ink-4); font-style: normal;
   }
+  .btn-copy {
+    margin-left: auto;
+    font: inherit; font-size: 0.6875rem; font-weight: 600;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--ink-3); background: transparent;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-field);
+    padding: 2px 10px; cursor: pointer;
+    transition: background-color .12s, border-color .12s, color .12s;
+  }
+  .btn-copy:hover { color: var(--ink-1); border-color: var(--ink-4); background: var(--hover-bg); }
+  .btn-copy.is-copied { color: var(--accent); border-color: var(--accent); }
   .detail-body {
     padding: 0 2px 12px;
     font-size: 0.8125rem; color: var(--ink-2); line-height: 1.55;
@@ -1165,7 +1177,7 @@ const pageHTML = `<!DOCTYPE html>
           <details class="job-detail"><summary>Summary (extractive)</summary><div class="detail-body">{{.Summary}}</div></details>
           {{end}}
           {{if .Description}}
-          <details class="job-detail"><summary>Description{{if .DescPreview}} <em>— {{.DescPreview}}</em>{{end}}</summary><div class="detail-body">{{.Description}}</div></details>
+          <details class="job-detail"><summary>Description{{if .DescPreview}} <em>— {{.DescPreview}}</em>{{end}} <button type="button" class="btn-copy js-copy" title="Copy full description">Copy</button></summary><div class="detail-body">{{.Description}}</div></details>
           {{end}}
           {{if .CompanyOverview}}
           <details class="job-detail"><summary>Company overview</summary><div class="detail-body">{{.CompanyOverview}}</div></details>
@@ -1225,6 +1237,25 @@ const pageHTML = `<!DOCTYPE html>
     const res = await post('/jobs/'+encodeURIComponent(article.dataset.id)+'/status', {status:val});
     if (!res.ok){ sel.value = prev; alert('Could not save status.'); return; }
     setStatusUI(article, val);
+  });
+  document.addEventListener('click', async (e)=>{
+    const btn = e.target.closest('button.js-copy');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const details = btn.closest('details');
+    const body = details && details.querySelector('.detail-body');
+    if (!body) return;
+    const text = body.textContent.trim();
+    const prev = btn.textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.textContent = 'Copied!';
+      btn.classList.add('is-copied');
+    } catch (err) {
+      btn.textContent = 'Failed';
+    }
+    setTimeout(()=>{ btn.textContent = prev; btn.classList.remove('is-copied'); }, 1400);
   });
   document.addEventListener('click', async (e)=>{
     const btn = e.target.closest('button.js-delete');
