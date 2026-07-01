@@ -94,3 +94,10 @@ func init() {
 	enrichCmd.Flags().BoolVar(&enrichAll, "all", false, "enrich all jobs that lack enrichment")
 	rootCmd.AddCommand(enrichCmd)
 }
+
+func orNA2(s string) string {
+	if s == "" {
+		return "N/A"
+	}
+	return s
+}

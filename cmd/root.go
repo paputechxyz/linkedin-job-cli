@@ -21,14 +21,14 @@ type dbFlag struct{ path string }
 
 var rootCmd = &cobra.Command{
 	Use:   "linkedin-jobs",
-	Short: "LinkedIn jobs CLI — recommended jobs from your session, search, filter, summarize, store.",
+	Short: "LinkedIn jobs CLI — recommended jobs from your session, search, filter, score, store.",
 	Long: `linkedin-jobs pulls your personalized "Recommended for you" job feed from your
-LinkedIn session, searches the public job board, parses salaries, summarizes
-postings with an LLM, and persists everything to a local SQLite store with
-offline full-text search.
+LinkedIn session, searches the public job board, parses salaries, enriches and
+fit-scores postings with an LLM, and persists everything to a local SQLite
+store with offline full-text search.
 
-Recommended jobs (the headline command) require a logged-in session:
-    linkedin-jobs auth login       # capture your session via press-auth
+Recommended jobs (the headline command) need a logged-in session — export your
+LinkedIn cookies to LJ_COOKIE or LJ_COOKIES_FILE:
     linkedin-jobs recommended      # pull your personalized feed
 
 Anonymous search works without a session:

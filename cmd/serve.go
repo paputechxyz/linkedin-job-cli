@@ -261,7 +261,6 @@ func (ws *webServer) query(q url.Values) ([]*models.JobPosting, string, error) {
 		MinScore:          softInt(q.Get("min_score")),
 		Remote:            q.Get("remote") == "1",
 		Hybrid:            q.Get("hybrid") == "1",
-		IncludeFiltered:   q.Get("include_filtered") == "1",
 		SortByScore:       q.Get("sort") != "salary", // default: fit score
 	}
 	// FX-aware floor can't be done in SQL: defer it to Go.
@@ -280,9 +279,9 @@ func (ws *webServer) query(q url.Values) ([]*models.JobPosting, string, error) {
 
 type formVals struct {
 	Q, Company, Title, Location, Status, Source string
-	MinSalary, MinSalaryCurrency, MinScore       string
+	MinSalary, MinSalaryCurrency, MinScore      string
 	Sort                                        string
-	Remote, Hybrid, IncludeFiltered             bool
+	Remote, Hybrid                              bool
 }
 
 func readForm(q url.Values) formVals {
@@ -302,7 +301,6 @@ func readForm(q url.Values) formVals {
 		MinScore:          q.Get("min_score"),
 		Sort:              sort,
 		Remote:            q.Get("remote") == "1",
-		IncludeFiltered:   q.Get("include_filtered") == "1",
 		Hybrid:            q.Get("hybrid") == "1",
 	}
 }
@@ -328,9 +326,6 @@ func (f formVals) toQueryValues() url.Values {
 	if f.Hybrid {
 		v.Set("hybrid", "1")
 	}
-	if f.IncludeFiltered {
-		v.Set("include_filtered", "1")
-	}
 	return v
 }
 
@@ -339,7 +334,7 @@ func (f formVals) toQueryValues() url.Values {
 var filterParamKeys = []string{
 	"q", "company", "title", "location", "status", "source",
 	"min_salary", "salary_currency", "min_score", "sort",
-	"remote", "hybrid", "include_filtered",
+	"remote", "hybrid",
 }
 
 // hasFilterParams reports whether the URL carries any filter form params.
@@ -1235,7 +1230,6 @@ const pageHTML = `<!DOCTYPE html>
         <div class="checks">
           <label class="check"><input type="checkbox" id="remote" name="remote" value="1"{{if .F.Remote}} checked{{end}}> remote</label>
           <label class="check"><input type="checkbox" id="hybrid" name="hybrid" value="1"{{if .F.Hybrid}} checked{{end}}> hybrid</label>
-          <label class="check"><input type="checkbox" id="include_filtered" name="include_filtered" value="1"{{if .F.IncludeFiltered}} checked{{end}}> show filtered</label>
         </div>
         <div class="actions">
           <button class="btn btn-primary" type="submit">Apply</button>

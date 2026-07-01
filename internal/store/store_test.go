@@ -11,7 +11,6 @@ import (
 )
 
 func fptr(f float64) *float64 { return &f }
-func iptr(i int) *int         { return &i }
 
 func tmpDB(t *testing.T) *Store {
 	t.Helper()
@@ -111,9 +110,12 @@ func TestSearchFTS_Parity(t *testing.T) {
 	yp := 8
 	if err := st.SetEnrichmentAndScore("fts1", models.Enrichment{
 		CompanyOverview: "Makes widgets", TechStack: "Go,K8s", Seniority: "staff",
-		YearsExperience: &yp, FitScore: iptr(82), FitReason: "Strong Go fit",
+		YearsExperience: &yp,
 	}); err != nil {
 		t.Fatalf("SetEnrichmentAndScore: %v", err)
+	}
+	if err := st.SetScore("fts1", 82, "Strong Go fit", ""); err != nil {
+		t.Fatalf("SetScore: %v", err)
 	}
 	got, err := st.SearchFTS("Go", 10)
 	if err != nil {
@@ -136,7 +138,7 @@ func TestSetEnrichmentAndScore(t *testing.T) {
 	yp := 7
 	st.SetEnrichmentAndScore("e1", models.Enrichment{
 		Industry: "Fintech", Seniority: "senior", YearsExperience: &yp,
-		WorkArrangement: "remote", FitScore: iptr(90), FitReason: "great",
+		WorkArrangement: "remote",
 	})
 	got, _ := st.Get("e1")
 	if got.Industry != "Fintech" || got.Seniority != "senior" {
@@ -158,7 +160,7 @@ func TestUpsert_PreservesEnrichment(t *testing.T) {
 	j := sampleJob("p1")
 	j.RemoteType = "remote"
 	st.Upsert(j)
-	st.SetEnrichmentAndScore("p1", models.Enrichment{Industry: "AI", FitScore: iptr(70)})
+	st.SetEnrichmentAndScore("p1", models.Enrichment{Industry: "AI"})
 	// Re-fetch the same job with empty enrichment fields.
 	refetch := sampleJob("p1")
 	refetch.RemoteType = ""
@@ -171,24 +173,6 @@ func TestUpsert_PreservesEnrichment(t *testing.T) {
 	}
 	if got.RemoteType != "remote" {
 		t.Errorf("remote_type lost on re-Upsert: %q", got.RemoteType)
-	}
-	if got.FitScore == nil || *got.FitScore != 70 {
-		t.Errorf("fit_score lost on re-Upsert: %+v", got.FitScore)
-	}
-}
-
-func TestSetFiltered(t *testing.T) {
-	st := tmpDB(t)
-	st.Upsert(sampleJob("f1"))
-	if err := st.SetFiltered("f1"); err != nil {
-		t.Fatalf("SetFiltered: %v", err)
-	}
-	got, _ := st.Get("f1")
-	if !got.IsFiltered() {
-		t.Errorf("status=%q, want filtered", got.Status)
-	}
-	if got.FitScore == nil || *got.FitScore != 0 {
-		t.Errorf("fit_score=%+v, want 0", got.FitScore)
 	}
 }
 
@@ -207,47 +191,6 @@ func TestFindByContentHash(t *testing.T) {
 	miss, _ := st.FindByContentHash("nope")
 	if miss != nil {
 		t.Errorf("missing hash should return nil")
-	}
-}
-
-func TestList_ExcludesFilteredByDefault(t *testing.T) {
-	st := tmpDB(t)
-	st.Upsert(sampleJob("keep"))
-	st.Upsert(sampleJob("hid"))
-	st.SetFiltered("hid")
-
-	got, err := st.List(Filters{})
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	for _, j := range got {
-		if j.ID == "hid" {
-			t.Errorf("filtered job should be hidden by default")
-		}
-	}
-
-	// Explicit status=filtered returns it.
-	got, _ = st.List(Filters{Status: "filtered"})
-	found := false
-	for _, j := range got {
-		if j.ID == "hid" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("status=filtered should return the filtered job")
-	}
-
-	// IncludeFiltered flag returns it alongside others.
-	got, _ = st.List(Filters{IncludeFiltered: true})
-	found = false
-	for _, j := range got {
-		if j.ID == "hid" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("IncludeFiltered should return the filtered job")
 	}
 }
 

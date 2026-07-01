@@ -72,10 +72,11 @@ func Enrich(j *models.JobPosting, p *models.Profile, provider *Provider) (models
 	return parseEnrichment(content), nil
 }
 
-// Score is a legacy alias for Enrich kept to minimize call-site churn during
-// the rubric-scorer migration. Prefer Enrich for new code. Deprecated.
-func Score(j *models.JobPosting, p *models.Profile, provider *Provider, _ int) (models.Enrichment, error) {
-	return Enrich(j, p, provider)
+func orNA(s string) string {
+	if s == "" {
+		return "N/A"
+	}
+	return s
 }
 
 func enrichPrompt(j *models.JobPosting, p *models.Profile) string {

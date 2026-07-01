@@ -26,7 +26,7 @@ var exportCmd = &cobra.Command{
 			die("failed to open DB: %v", err)
 		}
 		defer st.Close()
-		jobs, err := st.List(store.Filters{Limit: 100000, IncludeFiltered: true})
+		jobs, err := st.List(store.Filters{Limit: 100000})
 		if err != nil {
 			die("query failed: %v", err)
 		}
