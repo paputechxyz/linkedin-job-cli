@@ -14,3 +14,6 @@ rec:
 
 url target_url:
     linkedin-jobs url '{{target_url}}' --remote --hybrid --top 25 --min-salary 200000 --salary-currency CAD
+
+score-job job_id:
+    linkedin-jobs score-job {{job_id}}
