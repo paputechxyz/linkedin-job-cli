@@ -34,3 +34,4 @@ profile:
   min_salary_currency: CAD
   locations: [Remote, Toronto]
   preferred_tech: [Java, Python, Elixir, Go, FastAPI, Flask, Django, NestJS, ReactJS, NextJS, Docker, Kubernetes, Postgres, BigQuery, Snowflake, AWS, GCP]
+  avoided_tech: [C#, .Net, Ruby]

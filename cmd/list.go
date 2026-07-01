@@ -16,6 +16,7 @@ var (
 	listTitle            string
 	listLocation         string
 	listRemote           bool
+	listHybrid           bool
 	listStatus           string
 	listSource           string
 	listLimit            int
@@ -42,6 +43,7 @@ var listCmd = &cobra.Command{
 			Title:             listTitle,
 			Location:          listLocation,
 			Remote:            listRemote,
+			Hybrid:            listHybrid,
 			Status:            listStatus,
 			Source:            listSource,
 			MinScore:          listMinScore,
@@ -82,6 +84,7 @@ func init() {
 	listCmd.Flags().StringVar(&listTitle, "title", "", "filter by title (substring)")
 	listCmd.Flags().StringVar(&listLocation, "location", "", "filter by location (substring)")
 	listCmd.Flags().BoolVar(&listRemote, "remote", false, "only remote-friendly jobs")
+	listCmd.Flags().BoolVar(&listHybrid, "hybrid", false, "only hybrid-friendly jobs (combine with --remote for OR)")
 	listCmd.Flags().StringVar(&listStatus, "status", "", "filter by status (new/viewed/saved/applied/rejected/filtered)")
 	listCmd.Flags().StringVar(&listSource, "source", "", "filter by source (recommended/search)")
 	listCmd.Flags().IntVar(&listLimit, "limit", 50, "max results")

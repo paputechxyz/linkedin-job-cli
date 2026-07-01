@@ -12,6 +12,7 @@ var (
 	recMinSalary        string
 	recSalaryCurrency   string
 	recRemote           bool
+	recHybrid           bool
 	recExclude          []string
 	recNoDetail         bool
 	recNoSummarize      bool
@@ -25,8 +26,10 @@ var recommendedCmd = &cobra.Command{
 	Short: "Pull your personalized LinkedIn 'Recommended for you' job feed",
 	Long: `Fetches the authenticated 'Recommended for you' job collection using your
 captured browser session (see 'auth login'). Requires a session. Pulls up to
---top jobs (alias: --limit), fetches salary + description, filters,
-summarizes, stores, and displays the results.`,
+--top jobs (alias: --limit), fetches salary + description, applies the user
+gates (--remote/--hybrid/--min-salary; jobs failing any active gate are dropped
+in-memory and never stored or scored), summarizes, stores, and displays the
+survivors.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		minSal := parseMinSalary(recMinSalary)
 		currency := validateSalaryCurrency(recSalaryCurrency)
@@ -55,6 +58,7 @@ summarizes, stores, and displays the results.`,
 			minSalaryCurrency: currency,
 			excludeCompanies:  recExclude,
 			remote:            recRemote,
+			hybrid:            recHybrid,
 			noDetail:          recNoDetail,
 			noSummarize:       recNoSummarize,
 			noScore:           recNoScore,
@@ -77,6 +81,7 @@ func init() {
 	recommendedCmd.Flags().StringVar(&recMinSalary, "min-salary", "", "only keep jobs paying at or above this (e.g. 200k)")
 	recommendedCmd.Flags().StringVar(&recSalaryCurrency, "salary-currency", "", "currency for --min-salary (ISO 4217, e.g. CAD); enables FX-aware filtering")
 	recommendedCmd.Flags().BoolVar(&recRemote, "remote", false, "only keep remote-friendly jobs")
+	recommendedCmd.Flags().BoolVar(&recHybrid, "hybrid", false, "only keep hybrid-friendly jobs (combine with --remote for OR)")
 	recommendedCmd.Flags().StringSliceVar(&recExclude, "exclude-company", nil, "drop jobs whose company matches (repeatable)")
 	recommendedCmd.Flags().BoolVar(&recNoDetail, "no-detail", false, "skip detail page fetching (faster; no salary/description)")
 	recommendedCmd.Flags().BoolVar(&recNoSummarize, "no-summarize", false, "skip LLM scoring (alias of --no-score)")

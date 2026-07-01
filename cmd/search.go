@@ -12,6 +12,7 @@ var (
 	searchMinSalary       string
 	searchSalaryCurrency  string
 	searchRemote          bool
+	searchHybrid          bool
 	searchExclude         []string
 	searchNoDetail        bool
 	searchNoSummar        bool
@@ -27,6 +28,8 @@ var searchCmd = &cobra.Command{
 	Long: `Searches LinkedIn's public (logged-out) job board and ingests results through
 the same pipeline as 'recommended'. Works without a session; no login needed.
 --top N caps the number of jobs processed end-to-end (detail fetch + LLM score).
+Jobs failing any active user gate (--remote/--hybrid/--min-salary) are dropped
+in-memory after the detail fetch and never stored or scored.
 
 Examples:
   linkedin-jobs search "Staff Engineer" Toronto --min-salary 200k
@@ -66,6 +69,7 @@ Examples:
 			minSalaryCurrency: currency,
 			excludeCompanies:  searchExclude,
 			remote:            searchRemote,
+			hybrid:            searchHybrid,
 			noDetail:          searchNoDetail,
 			noSummarize:       searchNoSummar,
 			noScore:           searchNoScore,
@@ -84,6 +88,7 @@ func init() {
 	searchCmd.Flags().StringVar(&searchMinSalary, "min-salary", "", "only keep jobs paying at or above this (e.g. 200k)")
 	searchCmd.Flags().StringVar(&searchSalaryCurrency, "salary-currency", "", "currency for --min-salary (ISO 4217, e.g. CAD); enables FX-aware filtering")
 	searchCmd.Flags().BoolVar(&searchRemote, "remote", false, "only keep remote-friendly jobs")
+	searchCmd.Flags().BoolVar(&searchHybrid, "hybrid", false, "only keep hybrid-friendly jobs (combine with --remote for OR)")
 	searchCmd.Flags().StringSliceVar(&searchExclude, "exclude-company", nil, "drop jobs whose company matches (repeatable)")
 	searchCmd.Flags().BoolVar(&searchNoDetail, "no-detail", false, "skip detail page fetching")
 	searchCmd.Flags().BoolVar(&searchNoSummar, "no-summarize", false, "skip LLM scoring (alias of --no-score)")

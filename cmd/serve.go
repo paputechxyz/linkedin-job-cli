@@ -229,6 +229,7 @@ func (ws *webServer) query(q url.Values) ([]*models.JobPosting, string, error) {
 		MinSalaryCurrency: currency,
 		MinScore:          softInt(q.Get("min_score")),
 		Remote:            q.Get("remote") == "1",
+		Hybrid:            q.Get("hybrid") == "1",
 		IncludeFiltered:   q.Get("include_filtered") == "1",
 		SortByScore:       q.Get("sort") != "salary", // default: fit score
 	}
@@ -250,7 +251,7 @@ type formVals struct {
 	Q, Company, Title, Location, Status, Source string
 	MinSalary, MinSalaryCurrency, MinScore       string
 	Sort                                        string
-	Remote, IncludeFiltered                     bool
+	Remote, Hybrid, IncludeFiltered             bool
 }
 
 func readForm(q url.Values) formVals {
@@ -271,6 +272,7 @@ func readForm(q url.Values) formVals {
 		Sort:              sort,
 		Remote:            q.Get("remote") == "1",
 		IncludeFiltered:   q.Get("include_filtered") == "1",
+		Hybrid:            q.Get("hybrid") == "1",
 	}
 }
 
@@ -1088,7 +1090,8 @@ const pageHTML = `<!DOCTYPE html>
           </select>
         </div>
         <div class="checks">
-          <label class="check"><input type="checkbox" id="remote" name="remote" value="1"{{if .F.Remote}} checked{{end}}> remote only</label>
+          <label class="check"><input type="checkbox" id="remote" name="remote" value="1"{{if .F.Remote}} checked{{end}}> remote</label>
+          <label class="check"><input type="checkbox" id="hybrid" name="hybrid" value="1"{{if .F.Hybrid}} checked{{end}}> hybrid</label>
           <label class="check"><input type="checkbox" id="include_filtered" name="include_filtered" value="1"{{if .F.IncludeFiltered}} checked{{end}}> show filtered</label>
         </div>
         <div class="actions">
