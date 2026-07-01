@@ -1,6 +1,7 @@
 package linkedin
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 
@@ -179,6 +180,35 @@ func TestExtractJobMeta_NoJobPosting(t *testing.T) {
 	m := extractJobMeta(docFromJSONLD(t, html))
 	if m != (jobMeta{}) {
 		t.Errorf("expected zero-value jobMeta, got %+v", m)
+	}
+}
+
+// TestSearchURL_StripsBackslashes confirms the entry point tolerates the
+// common "over-escaped inside single quotes" paste: 'https://…/\?a\=1\&b\=2'.
+// Inside single quotes shells preserve `\?` `\=` `\&` literally, so without
+// stripping, query keys end up with trailing backslashes and nothing matches.
+// We verify the strip + parse makes the keywords param and the
+// originToLandingJobPostings IDs detectable again.
+func TestSearchURL_StripsBackslashes(t *testing.T) {
+	overEscaped := `https://www.linkedin.com/jobs/search/\?currentJobId\=4259936348\&keywords\=Staff%20Engineer\&geoId\=100025096\&originToLandingJobPostings\=4259936348%2C4415889466`
+
+	// Sanity: WITHOUT stripping, nothing matches (the bug we're guarding against).
+	rawU, _ := url.Parse(overEscaped)
+	if rawU.Query().Has("keywords") {
+		t.Errorf("un-stripped URL unexpectedly matched keywords: raw query=%q", rawU.RawQuery)
+	}
+
+	// WITH stripping (what SearchURL does internally), both branches work.
+	cleaned := strings.ReplaceAll(overEscaped, "\\", "")
+	u, err := url.Parse(cleaned)
+	if err != nil {
+		t.Fatalf("cleaned URL failed to parse: %v", err)
+	}
+	if !u.Query().Has("keywords") {
+		t.Errorf("after strip, keywords param missing: raw query=%q", u.RawQuery)
+	}
+	if ids := jobIDsFromURL(cleaned); len(ids) != 2 {
+		t.Errorf("after strip, expected 2 IDs from originToLandingJobPostings, got %v", ids)
 	}
 }
 

@@ -87,7 +87,14 @@ func (c *Client) Search(keywords, location string, pages int) ([]*models.JobPost
 //
 // Cards returned here carry only id/title/company/location (cases 1 and 3) or
 // just id with title "Unknown Title" (case 2); FetchDetail fills the rest.
+//
+// Stray backslashes are stripped first: inside single quotes shells preserve
+// `\?` `\=` `\&` literally (no escaping happens), so an over-escaped paste
+// ('https://…/\?a\=1\&b\=2') would otherwise leave query keys with trailing
+// backslashes and silently match nothing. LinkedIn URLs never contain a
+// literal backslash, so the strip is always safe.
 func (c *Client) SearchURL(rawURL string, top int) ([]*models.JobPosting, error) {
+	rawURL = strings.ReplaceAll(rawURL, "\\", "")
 	if u, err := url.Parse(rawURL); err == nil && u.Query().Has("keywords") {
 		return c.jobsFromSearchURL(rawURL, top)
 	}
