@@ -15,7 +15,6 @@ var (
 	watchSalaryCurrency string
 	watchRemote         bool
 	watchHybrid         bool
-	watchExclude        []string
 	watchNoDetail       bool
 	watchForceOW        bool
 )
@@ -85,7 +84,6 @@ scored.`,
 		ingest(target, ingestOptions{
 			minSalary:         minSal,
 			minSalaryCurrency: currency,
-			excludeCompanies:  watchExclude,
 			remote:            watchRemote,
 			hybrid:            watchHybrid,
 			noDetail:          watchNoDetail,
@@ -104,7 +102,6 @@ func init() {
 	watchCmd.Flags().StringVar(&watchSalaryCurrency, "salary-currency", "", "currency for --min-salary (ISO 4217, e.g. CAD); enables FX-aware filtering")
 	watchCmd.Flags().BoolVar(&watchRemote, "remote", false, "only remote-friendly jobs")
 	watchCmd.Flags().BoolVar(&watchHybrid, "hybrid", false, "only hybrid-friendly jobs (combine with --remote for OR)")
-	watchCmd.Flags().StringSliceVar(&watchExclude, "exclude-company", nil, "drop jobs whose company matches")
 	watchCmd.Flags().BoolVar(&watchNoDetail, "no-detail", false, "skip detail page fetching")
 	watchCmd.Flags().BoolVar(&watchForceOW, "force-overwrite", false, "re-parse and re-score jobs already in the DB (bypass the new-only pre-filter and dedup; overwrites existing values)")
 	rootCmd.AddCommand(watchCmd)

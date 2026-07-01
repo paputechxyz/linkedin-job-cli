@@ -27,7 +27,6 @@ import (
 type ingestOptions struct {
 	minSalary         float64
 	minSalaryCurrency string // "" = legacy raw numeric compare; else ISO 4217 (e.g. CAD) for FX-aware filtering
-	excludeCompanies  []string
 	remote            bool
 	hybrid            bool
 	noDetail          bool
@@ -257,16 +256,6 @@ func applyGates(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPost
 			if !((opts.remote && matchRemote) || (opts.hybrid && matchHybrid)) {
 				continue
 			}
-		}
-		excluded := false
-		for _, ex := range opts.excludeCompanies {
-			if ex != "" && strings.Contains(strings.ToLower(j.Company), strings.ToLower(ex)) {
-				excluded = true
-				break
-			}
-		}
-		if excluded {
-			continue
 		}
 		out = append(out, j)
 	}
