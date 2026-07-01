@@ -57,6 +57,7 @@ func TestLoad_KnobsFromSettings(t *testing.T) {
 		MinSalaryCurrency: "CAD",
 		Locations:         []string{"Remote", "Toronto"},
 		PreferredTech:     []string{"Go", "Python"},
+		AvoidedTech:       []string{"C#", ".NET"},
 	}
 	got, err := Load(prefs)
 	if err != nil {
@@ -79,6 +80,9 @@ func TestLoad_KnobsFromSettings(t *testing.T) {
 	}
 	if len(got.PrefPreferredTech) != 2 || got.PrefPreferredTech[0] != "Go" {
 		t.Errorf("preferred_tech = %+v", got.PrefPreferredTech)
+	}
+	if len(got.PrefAvoidedTech) != 2 || got.PrefAvoidedTech[0] != "C#" || got.PrefAvoidedTech[1] != ".NET" {
+		t.Errorf("avoided_tech = %+v", got.PrefAvoidedTech)
 	}
 	if IsEmpty(got) {
 		t.Errorf("profile with knobs must not be empty")
