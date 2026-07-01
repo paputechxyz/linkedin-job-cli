@@ -13,7 +13,6 @@ var (
 	searchSalaryCurrency  string
 	searchRemote          bool
 	searchHybrid          bool
-	searchExclude         []string
 	searchNoDetail        bool
 	searchNoSummar        bool
 	searchNoScore         bool
@@ -67,7 +66,6 @@ Examples:
 		ingest(jobs, ingestOptions{
 			minSalary:         minSal,
 			minSalaryCurrency: currency,
-			excludeCompanies:  searchExclude,
 			remote:            searchRemote,
 			hybrid:            searchHybrid,
 			noDetail:          searchNoDetail,
@@ -89,7 +87,6 @@ func init() {
 	searchCmd.Flags().StringVar(&searchSalaryCurrency, "salary-currency", "", "currency for --min-salary (ISO 4217, e.g. CAD); enables FX-aware filtering")
 	searchCmd.Flags().BoolVar(&searchRemote, "remote", false, "only keep remote-friendly jobs")
 	searchCmd.Flags().BoolVar(&searchHybrid, "hybrid", false, "only keep hybrid-friendly jobs (combine with --remote for OR)")
-	searchCmd.Flags().StringSliceVar(&searchExclude, "exclude-company", nil, "drop jobs whose company matches (repeatable)")
 	searchCmd.Flags().BoolVar(&searchNoDetail, "no-detail", false, "skip detail page fetching")
 	searchCmd.Flags().BoolVar(&searchNoSummar, "no-summarize", false, "skip LLM scoring (alias of --no-score)")
 	searchCmd.Flags().BoolVar(&searchNoScore, "no-score", false, "skip LLM enrichment+fit-scoring")

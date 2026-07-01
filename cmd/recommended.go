@@ -13,7 +13,6 @@ var (
 	recSalaryCurrency   string
 	recRemote           bool
 	recHybrid           bool
-	recExclude          []string
 	recNoDetail         bool
 	recNoSummarize      bool
 	recNoScore          bool
@@ -56,7 +55,6 @@ survivors.`,
 		ingest(jobs, ingestOptions{
 			minSalary:         minSal,
 			minSalaryCurrency: currency,
-			excludeCompanies:  recExclude,
 			remote:            recRemote,
 			hybrid:            recHybrid,
 			noDetail:          recNoDetail,
@@ -82,7 +80,6 @@ func init() {
 	recommendedCmd.Flags().StringVar(&recSalaryCurrency, "salary-currency", "", "currency for --min-salary (ISO 4217, e.g. CAD); enables FX-aware filtering")
 	recommendedCmd.Flags().BoolVar(&recRemote, "remote", false, "only keep remote-friendly jobs")
 	recommendedCmd.Flags().BoolVar(&recHybrid, "hybrid", false, "only keep hybrid-friendly jobs (combine with --remote for OR)")
-	recommendedCmd.Flags().StringSliceVar(&recExclude, "exclude-company", nil, "drop jobs whose company matches (repeatable)")
 	recommendedCmd.Flags().BoolVar(&recNoDetail, "no-detail", false, "skip detail page fetching (faster; no salary/description)")
 	recommendedCmd.Flags().BoolVar(&recNoSummarize, "no-summarize", false, "skip LLM scoring (alias of --no-score)")
 	recommendedCmd.Flags().BoolVar(&recNoScore, "no-score", false, "skip LLM enrichment+fit-scoring")
