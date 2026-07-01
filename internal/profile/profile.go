@@ -62,9 +62,9 @@ func IsEmpty(p *models.Profile) bool {
 		return true
 	}
 	return p.ResumeText == "" &&
-		p.PrefWorkArrangement == "" &&
+		len(p.PrefWorkArrangement) == 0 &&
 		p.PrefMinSalary == nil &&
-		p.PrefLocations == "" &&
+		len(p.PrefLocations) == 0 &&
 		len(p.PrefPreferredTech) == 0
 }
 

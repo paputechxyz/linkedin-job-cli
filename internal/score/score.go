@@ -246,16 +246,18 @@ func hardFilterCap(job *models.JobPosting, profile *models.Profile) *capResult {
 		}
 	}
 
-	// Work arrangement: remote-required preference rejects jobs with no remote signal.
+	// Work arrangement: cap when the job matches none of the preferred
+	// arrangements (e.g. remote-required and no remote/hybrid signal).
 	blob := strings.ToLower(job.Location + " " + job.RemoteType)
-	if profile.PrefWorkArrangement == "remote" && !strings.Contains(blob, "remote") {
-		fired = append(fired, capResult{capNonRemote, CapNonRemote, "Role has no remote signal; you want fully remote"})
+	if len(profile.PrefWorkArrangement) > 0 && !arrangementMatches(blob, profile.PrefWorkArrangement) {
+		detail := fmt.Sprintf("Role has no signal matching your preferred work arrangement (%s)", strings.Join(profile.PrefWorkArrangement, ", "))
+		fired = append(fired, capResult{capNonRemote, CapNonRemote, detail})
 	}
 
 	// Preferred locations: cap only when job location is known and matches none.
-	if profile.PrefLocations != "" && strings.TrimSpace(job.Location) != "" {
+	if len(profile.PrefLocations) > 0 && strings.TrimSpace(job.Location) != "" {
 		if !locationMatches(blob, profile.PrefLocations) {
-			detail := fmt.Sprintf("Location %q not in your preferred (%s)", job.Location, profile.PrefLocations)
+			detail := fmt.Sprintf("Location %q not in your preferred (%s)", job.Location, strings.Join(profile.PrefLocations, ", "))
 			fired = append(fired, capResult{capLocationMiss, CapLocationMiss, detail})
 		}
 	}
@@ -291,8 +293,31 @@ func convertSalaryTo(amount float64, fromCur, toCur string) float64 {
 	return conv
 }
 
-func locationMatches(jobBlob, prefLocations string) bool {
-	for _, tok := range strings.Split(prefLocations, ",") {
+func arrangementMatches(jobBlob string, prefs []string) bool {
+	for _, pref := range prefs {
+		t := strings.ToLower(strings.TrimSpace(pref))
+		if t == "" {
+			continue
+		}
+		if strings.Contains(jobBlob, t) {
+			return true
+		}
+	}
+	return false
+}
+
+// sliceContains reports whether ss contains s (case-insensitive).
+func sliceContains(ss []string, s string) bool {
+	for _, v := range ss {
+		if strings.EqualFold(strings.TrimSpace(v), s) {
+			return true
+		}
+	}
+	return false
+}
+
+func locationMatches(jobBlob string, prefLocations []string) bool {
+	for _, tok := range prefLocations {
 		t := strings.TrimSpace(tok)
 		if t == "" {
 			continue
@@ -492,7 +517,7 @@ func remoteTiebreakDimension(job *models.JobPosting, profile *models.Profile, w 
 		return Dimension{Name: "remote"}
 	}
 	// User must have expressed a remote preference to be rewarded for it.
-	if profile.PrefWorkArrangement != "remote" {
+	if !sliceContains(profile.PrefWorkArrangement, "remote") {
 		return Dimension{Name: "remote"}
 	}
 	blob := strings.ToLower(job.Location + " " + job.RemoteType)

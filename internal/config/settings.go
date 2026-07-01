@@ -22,10 +22,10 @@ type Settings struct {
 // preferred tech). These flow into models.Profile.Pref* at load time. Pointer
 // types let users express "unset" by deleting the key.
 type ProfileSettings struct {
-	WorkArrangement   string   `yaml:"work_arrangement,omitempty"`
+	WorkArrangement   []string `yaml:"work_arrangement,omitempty"`
 	MinSalary         *float64 `yaml:"min_salary,omitempty"`
 	MinSalaryCurrency string   `yaml:"min_salary_currency,omitempty"`
-	Locations         string   `yaml:"locations,omitempty"`
+	Locations         []string `yaml:"locations,omitempty"`
 	PreferredTech     []string `yaml:"preferred_tech,omitempty"`
 }
 
