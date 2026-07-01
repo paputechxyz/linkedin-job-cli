@@ -10,4 +10,7 @@ score-all:
     linkedin-jobs score --all --local
 
 rec:
-    linkedin-jobs recommended --remote --hybrid --top 25 --min-salary 200000 --salary-currency CAD
+    linkedin-jobs recommended --remote --hybrid --top 10 --min-salary 200000 --salary-currency CAD
+
+url target_url:
+    linkedin-jobs url '{{target_url}}' --remote --hybrid --top 10 --min-salary 200000
