@@ -177,6 +177,9 @@ func profileStatus(p *models.Profile) string {
 	if len(p.PrefPreferredTech) > 0 {
 		knobs++
 	}
+	if len(p.PrefAvoidedTech) > 0 {
+		knobs++
+	}
 	parts = append(parts, fmt.Sprintf("%d preference knob(s) from settings.yaml", knobs))
 	return fmt.Sprintf("Profile: loaded %s", strings.Join(parts, ", "))
 }
