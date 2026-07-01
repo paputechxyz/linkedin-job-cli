@@ -1,21 +1,21 @@
 # linkedin-jobs
 
 Pull your personalized **LinkedIn "Recommended for you"** feed from your own
-browser session, search the public job board, filter by salary, summarize with
-an LLM, and persist everything to a local SQLite store with offline full-text
-search.
+browser session, search the public job board, filter by salary, enrich and
+fit-score with an LLM, and persist everything to a local SQLite store with
+offline full-text search.
 
 ## Highlights
 
 - **`recommended`** — your personalized job feed, authenticated via your own
-  LinkedIn browser session (piggybacks on your login; no password stored).
+  LinkedIn browser session (your cookie; no password stored).
 - **`search`** — anonymous public job-board search (no login required).
 - **`url`** — paste any LinkedIn search/collection URL (job-alert email link,
   saved search, browser URL) and score every job on that page.
 - **Salary parsing** — handles `CA$173,000.00 - CA$220,000.00`, `$212,500/yr`,
   `$120k`, USD/CAD.
-- **LLM summaries** — OpenAI-compatible API, with a rule-based extractive
-  fallback when no key is set.
+- **LLM enrichment + fit scoring** — OpenAI-compatible API extracts structured
+  facts and scores each job 0-100 against your resume + preferences.
 - **SQLite + FTS5** — every fetched job is stored and instantly searchable
   offline across title, company, and description.
 - **Agent-native** — every read command supports `--json`.
@@ -43,19 +43,8 @@ go install .
 
 `recommended` needs your LinkedIn session. `search` works without it.
 
-**Option A — press-auth (recommended).** Capture your session once via a
-controlled Chrome window (not your daily profile). The session is stored
-encrypted in the macOS Keychain.
-
-```bash
-go install github.com/mvanhorn/cli-printing-press/v4/cmd/press-auth@latest
-linkedin-jobs auth login     # sign in once in the window that opens
-linkedin-jobs auth status    # verify
-```
-
-**Option B — manual cookie header.** If you can't use press-auth, export your
-LinkedIn cookies (e.g. a browser cookie-exporter extension, or DevTools →
-Network → the request `Cookie` header) and point the CLI at them:
+Export your LinkedIn cookies (e.g. a browser cookie-exporter extension, or
+DevTools → Network → the request `Cookie` header) and point the CLI at them:
 
 ```bash
 export LJ_COOKIES_FILE=/path/to/cookies.txt   # raw "name=val; name=val" header
@@ -63,6 +52,12 @@ export LJ_COOKIES_FILE=/path/to/cookies.txt   # raw "name=val; name=val" header
 ```
 
 The `csrf-token` is derived automatically from your `JSESSIONID` cookie.
+
+Verify your session is usable (checks `li_at` + `JSESSIONID` are present):
+
+```bash
+linkedin-jobs auth status
+```
 
 ## Usage
 
@@ -110,7 +105,6 @@ linkedin-jobs list --sort-score --min-score 70      # your best-fit shortlist
 linkedin-jobs show 4430749190
 linkedin-jobs query "staff backend"            # offline FTS5 search
 linkedin-jobs query "engineer" --exclude amazon
-linkedin-jobs summarize                         # backfill legacy LLM summaries
 linkedin-jobs stats --top 25
 linkedin-jobs tag 4430749190 applied --note "referred by Sam"
 linkedin-jobs export --format csv -o jobs.csv
@@ -171,8 +165,8 @@ five gates — only the last costs an LLM token:
 2. **Dedup** — a content-hash of company + title + full description. Re-fetched
    or cross-source duplicates skip scoring entirely (zero tokens).
 3. **Hard filter** — a deterministic check using only pre-LLM fields (work
-   arrangement, salary floor, preferred locations). Clear mismatches are tagged
-   `filtered` / score 0 and hidden from `list` (use `--include-filtered`).
+   arrangement, salary floor, preferred locations). Clear mismatches are
+   score-capped (visible, but ranked low) with a recorded cap reason.
 4. **Enrich + score** — one OpenAI-compatible call per genuine new candidate
    fills structured fields (company overview, industry, tech stack, seniority,
    employment type, years, company size/stage, founding role, visa, work
@@ -276,11 +270,11 @@ description are fetched per-job from the public detail page (JSON-LD
 main.go
 cmd/                       cobra commands (recommended, search, list, enrich, score, profile, config, …)
 internal/
-  auth/                    session resolution (press-auth → env → file) + csrf
+  auth/                    session resolution (cookie env/file) + csrf
   config/                  env-based config + YAML settings
   filter/                  deterministic hard preference filter
   linkedin/                HTTP client, anonymous scraper, recommended graphql
-  llm/                     OpenAI-compatible provider resolution + enrich/score + legacy summarizer
+  llm/                     OpenAI-compatible provider resolution + enrich/score
   models/                  JobPosting, Profile, Enrichment
   profile/                resume + preferences as editable markdown files
   render/                  table / detail / JSON / stats output

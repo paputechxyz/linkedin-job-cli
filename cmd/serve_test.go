@@ -196,7 +196,7 @@ func TestFormValsRoundTrip(t *testing.T) {
 		Q: "staff", Company: "Acme", Title: "eng", Location: "Toronto",
 		Status: "saved", Source: "recommended",
 		MinSalary: "200k", MinSalaryCurrency: "CAD", MinScore: "60",
-		Sort: "salary", Remote: true, Hybrid: true, IncludeFiltered: true,
+		Sort: "salary", Remote: true, Hybrid: true,
 	}
 	q := original.toQueryValues()
 	// Empty-default and Clear-button use defaultFormVals(); verify that path

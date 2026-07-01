@@ -3,7 +3,6 @@ package auth
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"strings"
 
 	"linkedin-jobs/internal/config"
@@ -13,7 +12,7 @@ import (
 type Session struct {
 	CookieHeader string
 	CSRFToken    string // value for the csrf-token request header
-	Source       string // "press-auth" | "env" | "file"
+	Source       string // "env" | "file"
 }
 
 // Valid reports whether the session is structurally complete enough to make
@@ -50,17 +49,11 @@ func hasCookie(header, name string) bool {
 }
 
 // ErrNoSession is returned when no LinkedIn session could be resolved.
-var ErrNoSession = errors.New("no LinkedIn session found: run `linkedin-jobs auth login` (installs/uses press-auth) or set LJ_COOKIES_FILE / LJ_COOKIE")
+var ErrNoSession = errors.New("no LinkedIn session found: set LJ_COOKIES_FILE / LJ_COOKIE to a raw Cookie header")
 
 // Resolve resolves a LinkedIn session in priority order:
 //  1. LJ_COOKIE env (raw cookie header) — explicit override, wins over everything
-//  2. LJ_COOKIES_FILE (file with a raw cookie header, one line or Netscape cookies.txt) — explicit override
-//  3. press-auth companion (`press-auth cookies linkedin.com`) — automatic capture, used when no override is set
-//
-// Rationale: an explicit env var means the user opted into that source; it
-// should shadow an automatic press-auth capture (which may be stale or
-// incomplete). Without this, setting LJ_COOKIES_FILE has no effect when
-// press-auth has any prior capture on disk.
+//  2. LJ_COOKIES_FILE (file with a raw cookie header, one line or Netscape cookies.txt)
 func Resolve(cfg config.Config) (*Session, error) {
 	// 1. env (raw cookie header) — highest priority
 	if cfg.CookieHeader != "" {
@@ -79,21 +72,6 @@ func Resolve(cfg config.Config) (*Session, error) {
 				CSRFToken:    csrfFromCookieHeader(hdr),
 				Source:       "file",
 			}, nil
-		}
-	}
-
-	// 3. press-auth — automatic capture, lowest priority (only when no override)
-	if path, err := exec.LookPath("press-auth"); err == nil {
-		out, err := exec.Command(path, "cookies", "linkedin.com").Output()
-		if err == nil {
-			hdr := strings.TrimSpace(string(out))
-			if hdr != "" {
-				return &Session{
-					CookieHeader: hdr,
-					CSRFToken:    csrfFromCookieHeader(hdr),
-					Source:       "press-auth",
-				}, nil
-			}
 		}
 	}
 

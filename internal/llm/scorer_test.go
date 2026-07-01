@@ -37,13 +37,13 @@ func fakeCompletions(t *testing.T, content string, status int, calls *int) (*htt
 	return srv, &Provider{BaseURL: srv.URL, APIKey: "k", Model: "m"}
 }
 
-func TestScore_HappyPathJSON(t *testing.T) {
+func TestEnrich_HappyPathJSON(t *testing.T) {
 	content := `{"company_overview":"Makes dev tools","industry":"DevTools","tech_stack":"Go,K8s","seniority":"staff","employment_type":"full-time","years_experience":7,"company_size_band":"11-50","company_stage":"early","is_founding_role":true,"visa_sponsorship":"yes","work_arrangement":"remote","has_bonus":true,"has_equity":true,"has_retirement_match":false,"ai_intensity":"core"}`
 	calls := 0
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Title: "Staff Eng", Description: "build stuff"}
-	e, err := Score(j, nil, p, 70)
+	e, err := Enrich(j, nil, p)
 	if err != nil {
 		t.Fatalf("Score: %v", err)
 	}
@@ -74,19 +74,15 @@ func TestScore_HappyPathJSON(t *testing.T) {
 	if e.AIIntensity != "core" {
 		t.Errorf("ai_intensity=%q want core", e.AIIntensity)
 	}
-	// FitScore/fit_reason are now computed by internal/score, not the LLM.
-	if e.FitScore != nil {
-		t.Errorf("FitScore should be nil from enrichment; got %+v", e.FitScore)
-	}
 }
 
-func TestScore_JSONWrappedInFence(t *testing.T) {
+func TestEnrich_JSONWrappedInFence(t *testing.T) {
 	content := "```json\n{\"industry\":\"AI\",\"ai_intensity\":\"mentioned\"}\n```"
 	calls := 0
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "d"}
-	e, err := Score(j, nil, p, 70)
+	e, err := Enrich(j, nil, p)
 	if err != nil {
 		t.Fatalf("Score: %v", err)
 	}
@@ -98,13 +94,13 @@ func TestScore_JSONWrappedInFence(t *testing.T) {
 	}
 }
 
-func TestScore_DelimiterFallback(t *testing.T) {
+func TestEnrich_DelimiterFallback(t *testing.T) {
 	content := "Company: Acme || Stack: Go,React || Bonus: true || Equity: false || AI: core || Remote: onsite"
 	calls := 0
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "d"}
-	e, err := Score(j, nil, p, 70)
+	e, err := Enrich(j, nil, p)
 	if err != nil {
 		t.Fatalf("Score: %v", err)
 	}
@@ -126,36 +122,26 @@ func TestScore_DelimiterFallback(t *testing.T) {
 	if e.AIIntensity != "core" {
 		t.Errorf("ai_intensity=%q want core", e.AIIntensity)
 	}
-	// FitScore/fit_reason no longer flow through the LLM enrich path.
-	if e.FitScore != nil {
-		t.Errorf("FitScore should be nil from enrichment; got %+v", e.FitScore)
-	}
-	if e.FitReason != "" {
-		t.Errorf("FitReason should be empty from enrichment, got %q", e.FitReason)
-	}
 }
 
-func TestScore_UnparseableYieldsPartialWithoutError(t *testing.T) {
+func TestEnrich_UnparseableYieldsPartialWithoutError(t *testing.T) {
 	content := "Just some random prose about a job with no labels or JSON structure at all."
 	calls := 0
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "d"}
-	e, err := Score(j, nil, p, 70)
+	_, err := Enrich(j, nil, p)
 	if err != nil {
 		t.Errorf("unparseable response should not error, got %v", err)
 	}
-	if e.FitScore != nil {
-		t.Errorf("expected no score from unstructured prose, got %+v", e.FitScore)
-	}
 }
 
-func TestScore_EmptyDescriptionMakesNoCall(t *testing.T) {
+func TestEnrich_EmptyDescriptionMakesNoCall(t *testing.T) {
 	calls := 0
 	srv, p := fakeCompletions(t, "{}", 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: ""}
-	_, err := Score(j, nil, p, 70)
+	_, err := Enrich(j, nil, p)
 	if err != ErrEmptyDescription {
 		t.Fatalf("Score err = %v, want ErrEmptyDescription", err)
 	}
@@ -164,12 +150,12 @@ func TestScore_EmptyDescriptionMakesNoCall(t *testing.T) {
 	}
 }
 
-func TestScore_TransportFailureReturnsError(t *testing.T) {
+func TestEnrich_TransportFailureReturnsError(t *testing.T) {
 	calls := 0
 	srv, p := fakeCompletions(t, "", 500, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "d"}
-	_, err := Score(j, nil, p, 70)
+	_, err := Enrich(j, nil, p)
 	if err == nil {
 		t.Fatalf("want error on HTTP 500")
 	}

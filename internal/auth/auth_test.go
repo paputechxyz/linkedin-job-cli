@@ -50,7 +50,7 @@ func TestSessionValid(t *testing.T) {
 		{"complete session", &Session{
 			CookieHeader: "li_at=abc; JSESSIONID=\"ajax:1234\"",
 			CSRFToken:    "ajax:1234",
-			Source:       "press-auth",
+			Source:       "env",
 		}, true},
 		{"missing li_at (pre-login capture)", &Session{
 			CookieHeader: "__cf_bm=x; bcookie=y; lidc=z",

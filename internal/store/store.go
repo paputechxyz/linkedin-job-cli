@@ -287,12 +287,6 @@ WHERE id=?`,
 	return nil
 }
 
-// SetLLMSummary writes the LLM summary for a job.
-func (s *Store) SetLLMSummary(id, summary string) error {
-	_, err := s.db.Exec(`UPDATE jobs SET llm_summary=? WHERE id=?`, summary, id)
-	return err
-}
-
 // SetTag updates status and notes for a job.
 func (s *Store) SetTag(id, status, notes string) error {
 	if status == "" && notes == "" {
@@ -311,19 +305,16 @@ func (s *Store) SetTag(id, status, notes string) error {
 	return nil
 }
 
-// SetEnrichmentAndScore persists the combined enrichment + fit-score result for
-// a job, stamping enriched_at and scored_at. remote_type is refined only when
-// the LLM returned a non-empty work arrangement (so it never clobbers an
-// existing DetectRemote value with empty).
+// SetEnrichmentAndScore persists the LLM-extracted structured fields for a job,
+// stamping enriched_at and scored_at. remote_type is refined only when the LLM
+// returned a non-empty work arrangement (so it never clobbers an existing
+// DetectRemote value with empty). The fit score itself is written separately by
+// SetScore after the deterministic rubric runs.
 func (s *Store) SetEnrichmentAndScore(id string, e models.Enrichment) error {
 	now := NowISO()
 	var years interface{}
 	if e.YearsExperience != nil {
 		years = *e.YearsExperience
-	}
-	var fit interface{}
-	if e.FitScore != nil {
-		fit = *e.FitScore
 	}
 	founding := 0
 	if e.IsFoundingRole {
@@ -345,14 +336,13 @@ UPDATE jobs SET
   years_experience=COALESCE(?, years_experience), company_size_band=?, company_stage=?,
   is_founding_role=?, visa_sponsorship=?,
   remote_type=COALESCE(NULLIF(?, ''), remote_type),
-  fit_score=COALESCE(?, fit_score), fit_reason=?,
   enriched_at=?, scored_at=?,
   has_bonus=?, has_equity=?, has_retirement_match=?,
   ai_intensity=COALESCE(NULLIF(?, ''), ai_intensity)
 WHERE id=?`,
 		e.CompanyOverview, e.Industry, e.TechStack, e.Seniority, e.EmploymentType,
 		years, e.CompanySizeBand, e.CompanyStage, founding, e.VisaSponsorship,
-		e.WorkArrangement, fit, e.FitReason, now, now,
+		e.WorkArrangement, now, now,
 		hasBonus, hasEquity, hasRetirementMatch, e.AIIntensity, id)
 	return err
 }
@@ -364,13 +354,6 @@ WHERE id=?`,
 func (s *Store) SetScore(id string, score int, fitReason, capReason string) error {
 	_, err := s.db.Exec(`UPDATE jobs SET fit_score=?, fit_reason=?, score_cap_reason=?, scored_at=? WHERE id=?`,
 		score, fitReason, capReason, NowISO(), id)
-	return err
-}
-
-// SetFiltered marks a job as a hard-filter mismatch: status=filtered, fit_score=0.
-func (s *Store) SetFiltered(id string) error {
-	zero := 0
-	_, err := s.db.Exec(`UPDATE jobs SET status='filtered', fit_score=? WHERE id=?`, zero, id)
 	return err
 }
 
@@ -460,7 +443,6 @@ type Filters struct {
 	Status            string
 	Source            string
 	MinScore          int  // 0 = no score filter
-	IncludeFiltered   bool // include status='filtered' jobs (excluded by default)
 	SortByScore       bool // order by fit_score desc instead of salary
 	Limit             int
 }
@@ -504,9 +486,6 @@ func (s *Store) List(f Filters) ([]*models.JobPosting, error) {
 	if f.Status != "" {
 		q += ` AND status=?`
 		args = append(args, f.Status)
-	} else if !f.IncludeFiltered {
-		// Hard-filter mismatches are hidden from the default list but stay stored.
-		q += ` AND (status IS NULL OR status!='filtered')`
 	}
 	if f.Source != "" {
 		q += ` AND source=?`
@@ -548,16 +527,6 @@ func (s *Store) SearchFTS(expr string, limit int) ([]*models.JobPosting, error) 
 	}
 	q += `) f ON f.id = j.id ORDER BY f.rank`
 	rows, err := s.db.Query(q, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanJobs(rows)
-}
-
-// Unsummarized returns jobs that have a description but no LLM summary.
-func (s *Store) Unsummarized() ([]*models.JobPosting, error) {
-	rows, err := s.db.Query(jobCols + ` FROM jobs WHERE llm_summary IS NULL AND description IS NOT NULL AND description != ''`)
 	if err != nil {
 		return nil, err
 	}

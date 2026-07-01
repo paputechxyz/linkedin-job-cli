@@ -20,7 +20,6 @@ var (
 	listStatus           string
 	listSource           string
 	listLimit            int
-	listIncludeFiltered  bool
 	listMinScore         int
 	listSortScore        bool
 )
@@ -47,7 +46,6 @@ var listCmd = &cobra.Command{
 			Status:            listStatus,
 			Source:            listSource,
 			MinScore:          listMinScore,
-			IncludeFiltered:   listIncludeFiltered,
 			SortByScore:       listSortScore,
 		}
 		// FX-aware salary filtering can't be expressed in SQL: fetch a broader
@@ -88,7 +86,6 @@ func init() {
 	listCmd.Flags().StringVar(&listStatus, "status", "", "filter by status (new/viewed/saved/applied/rejected/filtered)")
 	listCmd.Flags().StringVar(&listSource, "source", "", "filter by source (recommended/search)")
 	listCmd.Flags().IntVar(&listLimit, "limit", 50, "max results")
-	listCmd.Flags().BoolVar(&listIncludeFiltered, "include-filtered", false, "include jobs tagged filtered (hidden by default)")
 	listCmd.Flags().IntVar(&listMinScore, "min-score", 0, "only jobs with fit_score >= N")
 	listCmd.Flags().BoolVar(&listSortScore, "sort-score", false, "sort by fit_score descending (default: salary)")
 	rootCmd.AddCommand(listCmd)

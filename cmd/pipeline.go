@@ -30,7 +30,6 @@ type ingestOptions struct {
 	remote            bool
 	hybrid            bool
 	noDetail          bool
-	noSummarize       bool // legacy flag; treated as noScore for the combined flow
 	noScore           bool
 	noFilter          bool
 	forceOverwrite    bool // bypass dedup: re-parse + re-score + overwrite jobs already in the DB
@@ -86,7 +85,7 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 	}
 
 	// 3. Run gates per job: dedup -> score (which internally applies caps).
-	noScore := opts.noScore || opts.noSummarize
+	noScore := opts.noScore
 	profileData, _ := profile.Load(settings.Profile)
 	var provider *llm.Provider
 	if !noScore {

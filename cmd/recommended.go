@@ -14,7 +14,6 @@ var (
 	recRemote           bool
 	recHybrid           bool
 	recNoDetail         bool
-	recNoSummarize      bool
 	recNoScore          bool
 	recNoFilter         bool
 	recForceOW          bool
@@ -24,9 +23,9 @@ var recommendedCmd = &cobra.Command{
 	Use:   "recommended",
 	Short: "Pull your personalized LinkedIn 'Recommended for you' job feed",
 	Long: `Fetches the authenticated 'Recommended for you' job collection using your
-captured browser session (see 'auth login'). Requires a session. Pulls up to
---top jobs (alias: --limit), fetches salary + description, applies the user
-gates (--remote/--hybrid/--min-salary; jobs failing any active gate are dropped
+captured browser session (see 'auth status'). Requires a session. Pulls up to
+--top jobs, fetches salary + description, applies the user gates
+(--remote/--hybrid/--min-salary; jobs failing any active gate are dropped
 in-memory and never stored or scored), summarizes, stores, and displays the
 survivors.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -40,8 +39,7 @@ survivors.`,
 			die("%v", err)
 		}
 		if !c.HasSession() {
-			fmt.Fprintln(os.Stderr, "No LinkedIn session. Run: linkedin-jobs auth login")
-			fmt.Fprintln(os.Stderr, "(or set LJ_COOKIES_FILE / LJ_COOKIE to a raw Cookie header)")
+			fmt.Fprintln(os.Stderr, "No LinkedIn session. Set LJ_COOKIES_FILE or LJ_COOKIE to a raw Cookie header.")
 			os.Exit(1)
 		}
 		fmt.Fprintln(os.Stderr, "Fetching your recommended jobs…")
@@ -58,7 +56,6 @@ survivors.`,
 			remote:            recRemote,
 			hybrid:            recHybrid,
 			noDetail:          recNoDetail,
-			noSummarize:       recNoSummarize,
 			noScore:           recNoScore,
 			noFilter:          recNoFilter,
 			forceOverwrite:    recForceOW,
@@ -71,17 +68,12 @@ survivors.`,
 }
 
 func init() {
-	// --top is the primary name (matches the `search` command's convention);
-	// --limit is kept as a backward-compat alias bound to the same variable.
-	// If both are passed, the last one on the command line wins.
 	recommendedCmd.Flags().IntVar(&recLimit, "top", 50, "max number of recommended jobs to fetch")
-	recommendedCmd.Flags().IntVar(&recLimit, "limit", 50, "alias of --top")
 	recommendedCmd.Flags().StringVar(&recMinSalary, "min-salary", "", "only keep jobs paying at or above this (e.g. 200k)")
 	recommendedCmd.Flags().StringVar(&recSalaryCurrency, "salary-currency", "", "currency for --min-salary (ISO 4217, e.g. CAD); enables FX-aware filtering")
 	recommendedCmd.Flags().BoolVar(&recRemote, "remote", false, "only keep remote-friendly jobs")
 	recommendedCmd.Flags().BoolVar(&recHybrid, "hybrid", false, "only keep hybrid-friendly jobs (combine with --remote for OR)")
 	recommendedCmd.Flags().BoolVar(&recNoDetail, "no-detail", false, "skip detail page fetching (faster; no salary/description)")
-	recommendedCmd.Flags().BoolVar(&recNoSummarize, "no-summarize", false, "skip LLM scoring (alias of --no-score)")
 	recommendedCmd.Flags().BoolVar(&recNoScore, "no-score", false, "skip LLM enrichment+fit-scoring")
 	recommendedCmd.Flags().BoolVar(&recNoFilter, "no-filter", false, "skip the hard preference filter")
 	recommendedCmd.Flags().BoolVar(&recForceOW, "force-overwrite", false, "re-parse and re-score jobs already in the DB (bypass dedup; overwrites existing values)")
