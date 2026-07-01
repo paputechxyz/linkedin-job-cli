@@ -246,23 +246,87 @@ func enrichAndScoreJob(st *store.Store, j *models.JobPosting, prof *models.Profi
 // never reach the DB or the LLM. --salary-currency is not itself a gate; it
 // only supplies the unit for the --min-salary floor (FX-converted via fx.Convert).
 // --remote and --hybrid OR together when both are set.
+//
+// Each dropped job is logged to stderr with its title, company, and a
+// human-readable reason so the user can see WHY a given job vanished (e.g.
+// "salary $150,000 below CA$200,000 floor" or "not remote/hybrid
+// (remote_type=onsite)").
 func applyGates(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting {
 	out := make([]*models.JobPosting, 0, len(jobs))
 	for _, j := range jobs {
-		if opts.minSalary > 0 && !meetsDisplaySalaryFloor(j, opts.minSalary, opts.minSalaryCurrency) {
+		if reason := gateDropReason(j, opts); reason != "" {
+			fmt.Fprintf(os.Stderr, "  dropped %q @ %s: %s\n", j.Title, companyOrDash(j.Company), reason)
 			continue
-		}
-		if opts.remote || opts.hybrid {
-			blob := strings.ToLower(j.Location + " " + j.RemoteType)
-			matchRemote := strings.Contains(blob, "remote")
-			matchHybrid := strings.Contains(blob, "hybrid")
-			if !((opts.remote && matchRemote) || (opts.hybrid && matchHybrid)) {
-				continue
-			}
 		}
 		out = append(out, j)
 	}
 	return out
+}
+
+// gateDropReason returns a human-readable reason why j fails the active user
+// gates, or "" when j passes every active gate. The first failing gate wins.
+// Mirrors the boolean logic in meetsDisplaySalaryFloor (salary) so the stated
+// reason always matches the actual decision.
+func gateDropReason(j *models.JobPosting, opts ingestOptions) string {
+	// Salary floor.
+	if opts.minSalary > 0 {
+		if !j.HasSalary() {
+			return fmt.Sprintf("no salary data (floor %s)", money(opts.minSalary, opts.minSalaryCurrency))
+		}
+		jobCur := j.SalaryCurrency
+		if jobCur == "" {
+			jobCur = "USD"
+		}
+		jobMax := j.SalaryMax()
+		if opts.minSalaryCurrency == "" {
+			if jobMax < opts.minSalary {
+				return fmt.Sprintf("salary %s below %s floor", money(jobMax, jobCur), money(opts.minSalary, ""))
+			}
+		} else {
+			conv, err := fx.Convert(jobMax, jobCur, opts.minSalaryCurrency)
+			switch {
+			case err != nil && jobMax < opts.minSalary:
+				// FX rate unavailable — meetsDisplaySalaryFloor falls back to raw compare.
+				return fmt.Sprintf("salary %s below %s floor (FX %s->%s unavailable)", money(jobMax, jobCur), money(opts.minSalary, opts.minSalaryCurrency), jobCur, opts.minSalaryCurrency)
+			case err == nil && conv < opts.minSalary:
+				return fmt.Sprintf("salary %s ~= %s below %s floor", money(jobMax, jobCur), money(conv, opts.minSalaryCurrency), money(opts.minSalary, opts.minSalaryCurrency))
+			}
+		}
+	}
+	// Work arrangement (--remote / --hybrid OR together).
+	if opts.remote || opts.hybrid {
+		blob := strings.ToLower(j.Location + " " + j.RemoteType)
+		matchRemote := strings.Contains(blob, "remote")
+		matchHybrid := strings.Contains(blob, "hybrid")
+		if !((opts.remote && matchRemote) || (opts.hybrid && matchHybrid)) {
+			var wanted []string
+			if opts.remote {
+				wanted = append(wanted, "remote")
+			}
+			if opts.hybrid {
+				wanted = append(wanted, "hybrid")
+			}
+			rt := j.RemoteType
+			if rt == "" {
+				rt = "unknown"
+			}
+			loc := j.Location
+			if loc == "" {
+				loc = "unknown"
+			}
+			return fmt.Sprintf("not %s (remote_type=%s, location=%q)", strings.Join(wanted, "/"), rt, loc)
+		}
+	}
+	return ""
+}
+
+// companyOrDash renders a company for diagnostic output, falling back to the
+// em dash the renderer uses when the field is empty.
+func companyOrDash(c string) string {
+	if c == "" {
+		return "—"
+	}
+	return c
 }
 
 // meetsDisplaySalaryFloor reports whether a job's max salary clears the floor.
