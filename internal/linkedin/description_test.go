@@ -110,6 +110,97 @@ func TestExtractTopCardMeta_EmptyPage(t *testing.T) {
 	}
 }
 
+func TestWorkplaceTypeFromURNs(t *testing.T) {
+	t.Run("remote", func(t *testing.T) {
+		if got := workplaceTypeFromURNs([]string{"urn:li:fs_workplaceType:2"}); got != "remote" {
+			t.Errorf("got %q", got)
+		}
+	})
+	t.Run("hybrid", func(t *testing.T) {
+		if got := workplaceTypeFromURNs([]string{"urn:li:fs_workplaceType:3"}); got != "hybrid" {
+			t.Errorf("got %q", got)
+		}
+	})
+	t.Run("onsite", func(t *testing.T) {
+		if got := workplaceTypeFromURNs([]string{"urn:li:fs_workplaceType:1"}); got != "onsite" {
+			t.Errorf("got %q", got)
+		}
+	})
+	t.Run("first wins", func(t *testing.T) {
+		// When multiple URNs are present, the first recognizable one wins.
+		if got := workplaceTypeFromURNs([]string{"urn:li:fs_workplaceType:2", "urn:li:fs_workplaceType:1"}); got != "remote" {
+			t.Errorf("got %q", got)
+		}
+	})
+	t.Run("empty", func(t *testing.T) {
+		if got := workplaceTypeFromURNs(nil); got != "" {
+			t.Errorf("got %q", got)
+		}
+	})
+	t.Run("unknown urn", func(t *testing.T) {
+		if got := workplaceTypeFromURNs([]string{"urn:li:fs_workplaceType:99"}); got != "" {
+			t.Errorf("got %q", got)
+		}
+	})
+}
+
+// TestJobPostingAPIFields_FlatRootShape covers the CURRENT Voyager shape, where
+// description/workplaceTypes/workRemoteAllowed live at the root of the JSON
+// object (not nested under "data"). The guest page omits the workplace type, so
+// recovering it here is what populates RemoteType for authenticated fetches.
+func TestJobPostingAPIFields_FlatRootShape(t *testing.T) {
+	body := `{
+		"description": {"text": "About The Job\n\nWe are hiring."},
+		"workplaceTypes": ["urn:li:fs_workplaceType:2"],
+		"workRemoteAllowed": true
+	}`
+	desc, rt := jobPostingAPIFields(body)
+	if desc != "About The Job\n\nWe are hiring." {
+		t.Errorf("description: got %q", desc)
+	}
+	if rt != "remote" {
+		t.Errorf("remoteType: got %q", rt)
+	}
+}
+
+// TestJobPostingAPIFields_WorkRemoteAllowedFallback covers the case where the
+// workplaceTypes URN list is absent but workRemoteAllowed is true.
+func TestJobPostingAPIFields_WorkRemoteAllowedFallback(t *testing.T) {
+	body := `{"description": {"text": "x"}, "workRemoteAllowed": true}`
+	if _, rt := jobPostingAPIFields(body); rt != "remote" {
+		t.Errorf("expected remote from workRemoteAllowed, got %q", rt)
+	}
+}
+
+// TestJobPostingAPIFields_LegacyDataEnvelope covers the older Pemberly shape
+// where the fields are nested under "data" (the shape the testdata fixture
+// uses). The flat root takes priority, so this only fills when root is absent.
+func TestJobPostingAPIFields_LegacyDataEnvelope(t *testing.T) {
+	body := `{"data": {"description": {"text": "legacy body"}, "workplaceTypes": ["urn:li:fs_workplaceType:3"]}}`
+	desc, rt := jobPostingAPIFields(body)
+	if desc != "legacy body" {
+		t.Errorf("description: got %q", desc)
+	}
+	if rt != "hybrid" {
+		t.Errorf("remoteType: got %q", rt)
+	}
+}
+
+func TestJobPostingAPIFields_EmptyOrMalformed(t *testing.T) {
+	for name, body := range map[string]string{
+		"empty":    ``,
+		"not json": `<html>nope</html>`,
+		"no fields": `{"unrelated": 1}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			desc, rt := jobPostingAPIFields(body)
+			if desc != "" || rt != "" {
+				t.Errorf("expected soft-miss, got desc=%q rt=%q", desc, rt)
+			}
+		})
+	}
+}
+
 // TestDescriptionFromJobPostingAPI validates extraction of the plain `text`
 // field from a Voyager jobPostings response's data.description node. The
 // AttributedText `attributes` array (bold/list/hyperlink metadata) must be

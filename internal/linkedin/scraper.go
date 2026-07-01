@@ -361,13 +361,25 @@ func (c *Client) FetchDetail(j *models.JobPosting) error {
 		j.Location = meta.Location
 	}
 
-	// 2b. LinkedIn's detail page is now a React Server Components SPA that does
-	// not include the description body in the initial HTML. When the HTML
-	// extraction misses AND we have a CSRF-bearing session, fetch the
-	// description from the Voyager jobPostings API (data.description.text).
-	if strings.TrimSpace(j.Description) == "" {
-		if desc, err := c.fetchDescriptionViaAPI(j.ID); err == nil {
-			j.Description = desc
+	// 2b. LinkedIn's detail page is now a React Server Components SPA: the
+	// initial HTML often omits the description body, and the guest page omits
+	// the workplace type (Remote/Hybrid/On-site) entirely. Detect what we can
+	// from text first; when a CSRF-bearing session is available and either the
+	// description or the workplace type is still missing, recover both from the
+	// authenticated Voyager jobPostings API in a single call.
+	j.RemoteType = DetectRemote(j.Location + " " + j.Description)
+	if c.HasSession() && (strings.TrimSpace(j.Description) == "" || j.RemoteType == "unknown") {
+		desc, rt, err := c.fetchJobPostingViaAPI(j.ID)
+		if err == nil {
+			if strings.TrimSpace(j.Description) == "" && desc != "" {
+				j.Description = desc
+				if j.RemoteType == "unknown" {
+					j.RemoteType = DetectRemote(j.Location + " " + j.Description)
+				}
+			}
+			if j.RemoteType == "unknown" && rt != "" {
+				j.RemoteType = rt
+			}
 		}
 	}
 
@@ -381,7 +393,6 @@ func (c *Client) FetchDetail(j *models.JobPosting) error {
 		j.SalarySource = models.SalarySourceDescription
 	}
 
-	j.RemoteType = DetectRemote(j.Location + " " + j.Description)
 	j.FetchedAt = store.NowISO()
 	return nil
 }
@@ -600,17 +611,19 @@ func hasJobPostingType(t interface{}) bool {
 	return false
 }
 
-// fetchDescriptionViaAPI fetches a job's description body from the Voyager
-// jobPostings REST API. Used as a fallback when the detail HTML page (now a
-// React Server Components SPA) ships no description in the initial HTML.
+// fetchJobPostingViaAPI pulls the description body and workplace type for a job
+// from the Voyager jobPostings REST API. Used as a fallback when the detail
+// HTML (a React Server Components SPA) ships no description in the initial
+// HTML, and to recover the workplace type (Remote/Hybrid/On-site), which the
+// guest page omits entirely. workplaceTypes is a list of URNs
+// (urn:li:fs_workplaceType:1=on-site, :2=remote, :3=hybrid); workRemoteAllowed
+// is a boolean fallback. See jobPostingAPIFields for the two supported shapes.
 //
-// Requires a CSRF-bearing session (authenticated calls only). The endpoint
-// returns a normalized object whose `data.description` is a Pemberly
-// AttributedText {text, attributes}; only the plain `text` is needed. Returns
-// ("", nil) when the field is absent so the caller can treat it as a soft miss.
-func (c *Client) fetchDescriptionViaAPI(id string) (string, error) {
+// Requires a CSRF-bearing session (authenticated calls only). Returns empty
+// strings on any soft miss so the caller can treat it as a non-fatal miss.
+func (c *Client) fetchJobPostingViaAPI(id string) (description, remoteType string, err error) {
 	if id == "" || !c.HasSession() || c.session.CSRFToken == "" {
-		return "", nil
+		return "", "", nil
 	}
 	url := "https://www.linkedin.com/voyager/api/jobs/jobPostings/" + id
 	hdr := http.Header{
@@ -620,12 +633,78 @@ func (c *Client) fetchDescriptionViaAPI(id string) (string, error) {
 	}
 	body, status, err := c.getJSON(url, true, hdr)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if status != 200 {
-		return "", errf("jobPostings API returned status %d for %s", status, id)
+		return "", "", errf("jobPostings API returned status %d for %s", status, id)
 	}
-	return descriptionFromJobPostingAPI(body), nil
+	description, remoteType = jobPostingAPIFields(body)
+	return description, remoteType, nil
+}
+
+// jobPostingAPIFields extracts the description text and workplace type from a
+// Voyager jobPostings response. The endpoint has shipped two shapes — a flat
+// object with fields at the root (current), and a legacy Pemberly envelope that
+// nests them under "data" — so both are tried. Returns ("", "") on any shape
+// mismatch so the caller can treat it as a soft miss.
+func jobPostingAPIFields(body string) (description, remoteType string) {
+	var resp struct {
+		Description struct {
+			Text string `json:"text"`
+		} `json:"description"`
+		WorkplaceTypes    []string `json:"workplaceTypes"`
+		WorkRemoteAllowed bool     `json:"workRemoteAllowed"`
+		Data struct {
+			Description struct {
+				Text string `json:"text"`
+			} `json:"description"`
+			WorkplaceTypes    []string `json:"workplaceTypes"`
+			WorkRemoteAllowed bool     `json:"workRemoteAllowed"`
+		} `json:"data"`
+	}
+	if json.Unmarshal([]byte(body), &resp) != nil {
+		return "", ""
+	}
+	description = strings.TrimSpace(resp.Description.Text)
+	remoteType = workplaceTypeFromURNs(resp.WorkplaceTypes)
+	if remoteType == "" && resp.WorkRemoteAllowed {
+		remoteType = "remote"
+	}
+	// Fall back to the legacy "data" envelope when the root fields were absent.
+	if description == "" {
+		description = strings.TrimSpace(resp.Data.Description.Text)
+	}
+	if remoteType == "" {
+		remoteType = workplaceTypeFromURNs(resp.Data.WorkplaceTypes)
+		if remoteType == "" && resp.Data.WorkRemoteAllowed {
+			remoteType = "remote"
+		}
+	}
+	return description, remoteType
+}
+
+// fetchDescriptionViaAPI fetches only the description body. Thin wrapper over
+// fetchJobPostingViaAPI, kept for callers/tests that only need the description.
+func (c *Client) fetchDescriptionViaAPI(id string) (string, error) {
+	desc, _, err := c.fetchJobPostingViaAPI(id)
+	return desc, err
+}
+
+// workplaceTypeFromURNs maps a Voyager workplaceType URN to the remote/hybrid/
+// onsite vocabulary used by DetectRemote. Returns "" when no known URN is
+// present. URN ids: 1=on-site, 2=remote, 3=hybrid.
+func workplaceTypeFromURNs(urns []string) string {
+	for _, u := range urns {
+		switch {
+		case strings.HasSuffix(u, ":2"):
+			return "remote"
+		case strings.HasSuffix(u, ":3"):
+			return "hybrid"
+		case strings.HasSuffix(u, ":1"):
+			return "onsite"
+		}
+	}
+	return ""
 }
 
 // descriptionFromJobPostingAPI extracts the plain text from a Voyager
