@@ -84,6 +84,11 @@ var profileShowCmd = &cobra.Command{
 		} else {
 			fmt.Println("  preferred tech:    (none)")
 		}
+		if len(p.PrefAvoidedTech) > 0 {
+			fmt.Printf("  avoided tech:      %d — %s (caps score at %d)\n", len(p.PrefAvoidedTech), strings.Join(p.PrefAvoidedTech, ", "), settings.Scoring.DealBreakerCap)
+		} else {
+			fmt.Println("  avoided tech:      (none)")
+		}
 		if p.UpdatedAt != "" {
 			fmt.Printf("\nLoaded at: %s\n", p.UpdatedAt)
 		}

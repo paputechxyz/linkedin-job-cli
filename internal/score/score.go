@@ -108,8 +108,10 @@ func Compute(job *models.JobPosting, profile *models.Profile, w Weights) Result 
 		return Result{Score: w.baselineOrDefault()}
 	}
 
-	// 1. Deal-breaker check.
-	if token := dealBreakerMatch(job.TechStack, w.DealBreakers); token != "" {
+	// 1. Deal-breaker check. Tokens come from both scoring.deal_breakers
+	//    (legacy, tunable) and profile.avoided_tech (candidate-facing knob);
+	//    a hit in either caps at DealBreakerCap.
+	if token := dealBreakerMatch(job.TechStack, combinedDealBreakers(w.DealBreakers, profile)); token != "" {
 		return Result{
 			Score:     w.dealBreakerCapOrDefault(),
 			CapReason: CapDealBreakerTech,
@@ -212,6 +214,23 @@ func dealBreakerMatch(techStack string, dealBreakers []string) string {
 		}
 	}
 	return ""
+}
+
+// combinedDealBreakers merges the scoring-level deal-breaker tokens with the
+// profile-level avoided_tech tokens. A fresh slice is returned so the caller's
+// backing array is never mutated. A nil profile contributes nothing.
+func combinedDealBreakers(scoring []string, profile *models.Profile) []string {
+	avoided := 0
+	if profile != nil {
+		avoided = len(profile.PrefAvoidedTech)
+	}
+	if avoided == 0 {
+		return scoring
+	}
+	out := make([]string, 0, len(scoring)+avoided)
+	out = append(out, scoring...)
+	out = append(out, profile.PrefAvoidedTech...)
+	return out
 }
 
 type capResult struct {

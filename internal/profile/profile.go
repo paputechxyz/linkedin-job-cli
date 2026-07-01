@@ -8,10 +8,10 @@
 //	$CWD/RESUME.md       — resume body (free text), sent to the LLM as context
 //	$CWD/settings.yaml   — preference knobs under the `profile:` section
 //
-// Preference knobs (work_arrangement, min_salary, locations, preferred_tech)
-// drive the deterministic hard filter (internal/filter) and the rubric
-// (internal/score); the resume body feeds the LLM enrich call as candidate
-// context.
+// Preference knobs (work_arrangement, min_salary, locations, preferred_tech,
+// avoided_tech) drive the deterministic hard filter (internal/filter) and the
+// rubric (internal/score); the resume body feeds the LLM enrich call as
+// candidate context.
 package profile
 
 import (
@@ -42,6 +42,7 @@ func Load(prefs config.ProfileSettings) (*models.Profile, error) {
 		PrefMinSalaryCurrency: prefs.MinSalaryCurrency,
 		PrefLocations:         prefs.Locations,
 		PrefPreferredTech:     prefs.PreferredTech,
+		PrefAvoidedTech:       prefs.AvoidedTech,
 	}
 
 	resumeBytes, err := os.ReadFile(ResumePath())
@@ -65,7 +66,8 @@ func IsEmpty(p *models.Profile) bool {
 		len(p.PrefWorkArrangement) == 0 &&
 		p.PrefMinSalary == nil &&
 		len(p.PrefLocations) == 0 &&
-		len(p.PrefPreferredTech) == 0
+		len(p.PrefPreferredTech) == 0 &&
+		len(p.PrefAvoidedTech) == 0
 }
 
 // SaveResume writes the resume body to RESUME.md (creating the project dir if

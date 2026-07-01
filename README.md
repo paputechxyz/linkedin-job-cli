@@ -133,6 +133,7 @@ under the `profile:` section of `settings.yaml`:
     min_salary_currency: CAD
     locations: [Remote, Toronto]
     preferred_tech: [Java, Python, Go, Postgres, AWS]
+    avoided_tech: [C#, .NET, Ruby]   # deal-breakers: caps score at scoring.deal_breaker_cap
   ```
 
 ```bash
@@ -215,6 +216,7 @@ profile:                         # preference knobs for the hard filter + rubric
   min_salary_currency: CAD
   locations: [Remote, Toronto]
   preferred_tech: [Java, Python, Go, Postgres, AWS]
+  avoided_tech: [C#, .NET, Ruby]   # caps score at scoring.deal_breaker_cap
 ```
 
 When scoring runs, the CLI prints which profile context it loaded (resume from
