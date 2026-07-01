@@ -11,6 +11,7 @@ import (
 	"linkedin-jobs/internal/models"
 	"linkedin-jobs/internal/profile"
 	"linkedin-jobs/internal/render"
+	"linkedin-jobs/internal/score"
 )
 
 var enrichAll bool
@@ -60,19 +61,20 @@ var enrichCmd = &cobra.Command{
 		fmt.Fprintf(os.Stderr, "Enriching + scoring %d job(s) via %s…\n", len(jobs), provider.Source)
 		fmt.Fprintln(os.Stderr, profileStatus(p))
 		delay := resolveLLMDelay()
+		weights := score.FromSettings(settings.Scoring)
 		scored := 0
 		for _, j := range jobs {
 			paceLLM(delay, scored)
-			if _, err := enrichAndScoreJob(st, j, p, provider, settings.Scoring.ReasonThreshold); err != nil {
+			if err := enrichAndScoreJob(st, j, p, provider, weights); err != nil {
 				fmt.Fprintf(os.Stderr, "  ! %s: %v\n", j.Title, err)
 				continue
 			}
 			scored++
-			score := "-"
+			s := "-"
 			if j.FitScore != nil {
-				score = fmt.Sprintf("%d", *j.FitScore)
+				s = fmt.Sprintf("%d", *j.FitScore)
 			}
-			fmt.Fprintf(os.Stderr, "  + [%s] %s @ %s\n", score, j.Title, orNA2(j.Company))
+			fmt.Fprintf(os.Stderr, "  + [%s] %s @ %s\n", s, j.Title, orNA2(j.Company))
 		}
 		fmt.Fprintln(os.Stderr, "Done.")
 

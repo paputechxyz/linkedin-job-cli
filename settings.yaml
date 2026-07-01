@@ -1,14 +1,24 @@
 # linkedin-jobs settings — edit freely, delete a key to fall back to its default.
-# Docs: https://github.com/paputechxyz/linkedin-job-cli → README → Settings
+# Docs: README → Settings
 
 stats:
-  top_companies_limit: 25        # `stats` command + serve UI; also `stats --top N`
+  top_companies_limit: 50        # `stats` command + serve UI; also `stats --top N`
 
 filter:
   auto_filter: true              # hard preference filter on fetch; set false to disable
 
 scoring:
   reason_threshold: 70           # fit_reason only emitted at/above this score (0-100)
+  baseline: 60                   # starting score after a job passes the hard filter
+  deal_breaker_cap: 30           # hard floor when a deal-breaker tech is matched
+  deal_breakers: [".NET", "C#", "Ruby on Rails"]
+  weights:
+    salary: 6                    # tiered by how far above your floor (0/at-floor/+10%/+30%)
+    tech_overlap: 7              # count of preferred_tech items found in tech_stack
+    startup: 5                   # company_stage seed/early + size 1-50
+    ai_intensity: 5              # core=full, mentioned=partial, none=0
+    compensation_extras: 4       # bonus + equity + retirement match (1pt each, +1 all three)
+    remote_tiebreak: 3           # full-remote=full, hybrid=partial
 
 enrich:
   auto_enrich_on_save: false     # set true to auto-score jobs when you tag them `saved`

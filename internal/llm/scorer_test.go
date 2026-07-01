@@ -38,7 +38,7 @@ func fakeCompletions(t *testing.T, content string, status int, calls *int) (*htt
 }
 
 func TestScore_HappyPathJSON(t *testing.T) {
-	content := `{"company_overview":"Makes dev tools","industry":"DevTools","tech_stack":"Go,K8s","seniority":"staff","employment_type":"full-time","years_experience":7,"company_size_band":"11-50","company_stage":"early","is_founding_role":true,"visa_sponsorship":"yes","work_arrangement":"remote","fit_score":85,"fit_reason":"Strong Go fit"}`
+	content := `{"company_overview":"Makes dev tools","industry":"DevTools","tech_stack":"Go,K8s","seniority":"staff","employment_type":"full-time","years_experience":7,"company_size_band":"11-50","company_stage":"early","is_founding_role":true,"visa_sponsorship":"yes","work_arrangement":"remote","has_bonus":true,"has_equity":true,"has_retirement_match":false,"ai_intensity":"core"}`
 	calls := 0
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
@@ -62,16 +62,26 @@ func TestScore_HappyPathJSON(t *testing.T) {
 	if e.WorkArrangement != "remote" {
 		t.Errorf("work_arrangement=%q", e.WorkArrangement)
 	}
-	if e.FitScore == nil || *e.FitScore != 85 {
-		t.Errorf("fit_score=%+v want 85", e.FitScore)
+	if !e.HasBonus {
+		t.Errorf("has_bonus should be true")
 	}
-	if e.FitReason == "" {
-		t.Errorf("fit_reason should be populated above threshold")
+	if !e.HasEquity {
+		t.Errorf("has_equity should be true")
+	}
+	if e.HasRetirementMatch {
+		t.Errorf("has_retirement_match should be false")
+	}
+	if e.AIIntensity != "core" {
+		t.Errorf("ai_intensity=%q want core", e.AIIntensity)
+	}
+	// FitScore/fit_reason are now computed by internal/score, not the LLM.
+	if e.FitScore != nil {
+		t.Errorf("FitScore should be nil from enrichment; got %+v", e.FitScore)
 	}
 }
 
 func TestScore_JSONWrappedInFence(t *testing.T) {
-	content := "```json\n{\"industry\":\"AI\",\"fit_score\":90,\"fit_reason\":\"great\"}\n```"
+	content := "```json\n{\"industry\":\"AI\",\"ai_intensity\":\"mentioned\"}\n```"
 	calls := 0
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
@@ -83,10 +93,13 @@ func TestScore_JSONWrappedInFence(t *testing.T) {
 	if e.Industry != "AI" {
 		t.Errorf("industry=%q", e.Industry)
 	}
+	if e.AIIntensity != "mentioned" {
+		t.Errorf("ai_intensity=%q want mentioned", e.AIIntensity)
+	}
 }
 
 func TestScore_DelimiterFallback(t *testing.T) {
-	content := "Company: Acme || Stack: Go,React || Score: 65 || Reason: ok match || Remote: onsite"
+	content := "Company: Acme || Stack: Go,React || Bonus: true || Equity: false || AI: core || Remote: onsite"
 	calls := 0
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
@@ -104,12 +117,21 @@ func TestScore_DelimiterFallback(t *testing.T) {
 	if e.WorkArrangement != "onsite" {
 		t.Errorf("work_arrangement=%q want onsite", e.WorkArrangement)
 	}
-	if e.FitScore == nil || *e.FitScore != 65 {
-		t.Errorf("fit_score=%+v want 65", e.FitScore)
+	if !e.HasBonus {
+		t.Errorf("has_bonus should be true via delimiter fallback")
 	}
-	// Score below threshold -> reason should be cleared.
+	if e.HasEquity {
+		t.Errorf("has_equity should be false via delimiter fallback")
+	}
+	if e.AIIntensity != "core" {
+		t.Errorf("ai_intensity=%q want core", e.AIIntensity)
+	}
+	// FitScore/fit_reason no longer flow through the LLM enrich path.
+	if e.FitScore != nil {
+		t.Errorf("FitScore should be nil from enrichment; got %+v", e.FitScore)
+	}
 	if e.FitReason != "" {
-		t.Errorf("fit_reason should be cleared below threshold, got %q", e.FitReason)
+		t.Errorf("FitReason should be empty from enrichment, got %q", e.FitReason)
 	}
 }
 

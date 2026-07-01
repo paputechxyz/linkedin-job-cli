@@ -16,9 +16,7 @@ import (
 
 const enrichSystem = "You are an expert technical recruiter assistant. Analyze a job posting for an engineering candidate and extract structured facts plus a fit score against the candidate's resume and preferences."
 
-const enrichPromptTmpl = `Analyze this job posting and return ONLY a JSON object (no prose, no code fences) with EXACTLY these keys (emit fit_score and fit_reason FIRST so they are never lost to a length truncation):
-"fit_score": integer 0-100 reflecting how well this role fits the candidate's resume and stated preferences,
-"fit_reason": one concise sentence explaining the fit (include ONLY when fit_score >= %d; otherwise empty string),
+const enrichPromptTmpl = `Analyze this job posting and return ONLY a JSON object (no prose, no code fences) with EXACTLY these keys:
 "company_overview": 1-2 sentences on what the company does,
 "industry": the company's industry,
 "tech_stack": comma-separated technologies required,
@@ -29,7 +27,11 @@ const enrichPromptTmpl = `Analyze this job posting and return ONLY a JSON object
 "company_stage": one of seed|early|growth|mature|public,
 "is_founding_role": boolean (founding/founding-engineer role),
 "visa_sponsorship": one of yes|no|unknown,
-"work_arrangement": one of remote|hybrid|onsite|unknown.
+"work_arrangement": one of remote|hybrid|onsite|unknown,
+"has_bonus": boolean (job mentions a bonus component, sign-on, or performance bonus),
+"has_equity": boolean (job mentions equity, stock options, RSUs, or shares),
+"has_retirement_match": boolean (job mentions 401k match, RRSP match, pension, or retirement contribution),
+"ai_intensity": one of core|mentioned|none — "core" if AI/LLM is central to the role or product, "mentioned" if AI appears as a supporting skill, "none" if AI is not referenced.
 
 Job Title: %s
 Company: %s
@@ -50,29 +52,33 @@ Job description:
 // enriched_at/scored_at, otherwise the dedup gate would hide the job from
 // future retries (a real regression risk now that LinkedIn's detail page is a
 // SPA whose description sometimes fails to load).
-var ErrEmptyDescription = errors.New("job description is empty; cannot score")
+var ErrEmptyDescription = errors.New("job description is empty; cannot enrich")
 
-// Score runs the combined enrichment + fit-scoring LLM call for one job and
-// returns the structured result. An empty description yields ErrEmptyDescription
-// without any HTTP call so the caller can skip silently persisting a no-op
-// result. A transport/HTTP failure returns an error so the caller can warn and
-// persist the job unenriched; an unparseable response never errors (it yields a
-// partial Enrichment) per KTD2.
-func Score(j *models.JobPosting, p *models.Profile, provider *Provider, reasonThreshold int) (models.Enrichment, error) {
+// Enrich runs the LLM extraction call for one job and returns the structured
+// result. Fit score is NOT computed here — it is derived deterministically by
+// internal/score from the extracted fields. An empty description yields
+// ErrEmptyDescription without any HTTP call so the caller can skip silently
+// persisting a no-op result. A transport/HTTP failure returns an error so the
+// caller can warn and persist the job unenriched; an unparseable response
+// never errors (it yields a partial Enrichment) per KTD2.
+func Enrich(j *models.JobPosting, p *models.Profile, provider *Provider) (models.Enrichment, error) {
 	if strings.TrimSpace(j.Description) == "" {
 		return models.Enrichment{}, ErrEmptyDescription
 	}
-	if reasonThreshold <= 0 || reasonThreshold > 100 {
-		reasonThreshold = 70
-	}
-	content, err := requestEnrichment(j, p, provider, reasonThreshold)
+	content, err := requestEnrichment(j, p, provider)
 	if err != nil {
 		return models.Enrichment{}, err
 	}
-	return parseEnrichment(content, reasonThreshold), nil
+	return parseEnrichment(content), nil
 }
 
-func enrichPrompt(j *models.JobPosting, p *models.Profile, reasonThreshold int) string {
+// Score is a legacy alias for Enrich kept to minimize call-site churn during
+// the rubric-scorer migration. Prefer Enrich for new code. Deprecated.
+func Score(j *models.JobPosting, p *models.Profile, provider *Provider, _ int) (models.Enrichment, error) {
+	return Enrich(j, p, provider)
+}
+
+func enrichPrompt(j *models.JobPosting, p *models.Profile) string {
 	desc := j.Description
 	if len(desc) > 4000 {
 		desc = desc[:4000]
@@ -87,18 +93,18 @@ func enrichPrompt(j *models.JobPosting, p *models.Profile, reasonThreshold int) 
 	if len(prefs) > 1000 {
 		prefs = prefs[:1000]
 	}
-	return fmt.Sprintf(enrichPromptTmpl, reasonThreshold, j.Title, orNA(j.Company), orNA(j.Location),
+	return fmt.Sprintf(enrichPromptTmpl, j.Title, orNA(j.Company), orNA(j.Location),
 		j.SalaryDisplay(), orNA(resume), orNA(prefs), desc)
 }
 
-func requestEnrichment(j *models.JobPosting, p *models.Profile, provider *Provider, reasonThreshold int) (string, error) {
+func requestEnrichment(j *models.JobPosting, p *models.Profile, provider *Provider) (string, error) {
 	reqBody := map[string]interface{}{
 		"model":       provider.Model,
 		"max_tokens":  4096,
 		"temperature": 0.2,
 		"messages": []map[string]string{
 			{"role": "system", "content": enrichSystem},
-			{"role": "user", "content": enrichPrompt(j, p, reasonThreshold)},
+			{"role": "user", "content": enrichPrompt(j, p)},
 		},
 	}
 	raw, err := json.Marshal(reqBody)
@@ -150,30 +156,32 @@ func truncateForError(s string) string {
 }
 
 type enrichJSON struct {
-	CompanyOverview string `json:"company_overview"`
-	Industry        string `json:"industry"`
-	TechStack       string `json:"tech_stack"`
-	Seniority       string `json:"seniority"`
-	EmploymentType  string `json:"employment_type"`
-	YearsExperience *int   `json:"years_experience"`
-	CompanySizeBand string `json:"company_size_band"`
-	CompanyStage    string `json:"company_stage"`
-	IsFoundingRole  bool   `json:"is_founding_role"`
-	VisaSponsorship string `json:"visa_sponsorship"`
-	WorkArrangement string `json:"work_arrangement"`
-	FitScore        *int   `json:"fit_score"`
-	FitReason       string `json:"fit_reason"`
+	CompanyOverview    string `json:"company_overview"`
+	Industry           string `json:"industry"`
+	TechStack          string `json:"tech_stack"`
+	Seniority          string `json:"seniority"`
+	EmploymentType     string `json:"employment_type"`
+	YearsExperience    *int   `json:"years_experience"`
+	CompanySizeBand    string `json:"company_size_band"`
+	CompanyStage       string `json:"company_stage"`
+	IsFoundingRole     bool   `json:"is_founding_role"`
+	VisaSponsorship    string `json:"visa_sponsorship"`
+	WorkArrangement    string `json:"work_arrangement"`
+	HasBonus           bool   `json:"has_bonus"`
+	HasEquity          bool   `json:"has_equity"`
+	HasRetirementMatch bool   `json:"has_retirement_match"`
+	AIIntensity        string `json:"ai_intensity"`
 }
 
-func parseEnrichment(content string, reasonThreshold int) models.Enrichment {
+func parseEnrichment(content string) models.Enrichment {
 	var ej enrichJSON
 	if jstr := extractJSON(content); jstr != "" {
 		if err := json.Unmarshal([]byte(jstr), &ej); err == nil {
-			return toEnrichment(ej, reasonThreshold)
+			return toEnrichment(ej)
 		}
 	}
 	// Delimiter/labeled-prose fallback.
-	return toEnrichment(parseDelimiter(content), reasonThreshold)
+	return toEnrichment(parseDelimiter(content))
 }
 
 // extractJSON pulls the outermost {...} block out of content that may be wrapped
@@ -192,34 +200,33 @@ func extractJSON(content string) string {
 	return s[start : end+1]
 }
 
-func toEnrichment(ej enrichJSON, reasonThreshold int) models.Enrichment {
-	e := models.Enrichment{
-		CompanyOverview: strings.TrimSpace(ej.CompanyOverview),
-		Industry:        strings.TrimSpace(ej.Industry),
-		TechStack:       strings.TrimSpace(ej.TechStack),
-		Seniority:       normalizeEnum(ej.Seniority, seniorityVals),
-		EmploymentType:  normalizeEnum(ej.EmploymentType, employmentVals),
-		YearsExperience: ej.YearsExperience,
-		CompanySizeBand: normalizeEnum(ej.CompanySizeBand, sizeVals),
-		CompanyStage:    normalizeEnum(ej.CompanyStage, stageVals),
-		IsFoundingRole:  ej.IsFoundingRole,
-		VisaSponsorship: normalizeEnum(ej.VisaSponsorship, visaVals),
-		WorkArrangement: normalizeArrangement(ej.WorkArrangement),
-		FitScore:        ej.FitScore,
-		FitReason:       strings.TrimSpace(ej.FitReason),
+func toEnrichment(ej enrichJSON) models.Enrichment {
+	return models.Enrichment{
+		CompanyOverview:    strings.TrimSpace(ej.CompanyOverview),
+		Industry:           strings.TrimSpace(ej.Industry),
+		TechStack:          strings.TrimSpace(ej.TechStack),
+		Seniority:          normalizeEnum(ej.Seniority, seniorityVals),
+		EmploymentType:     normalizeEnum(ej.EmploymentType, employmentVals),
+		YearsExperience:    ej.YearsExperience,
+		CompanySizeBand:    normalizeEnum(ej.CompanySizeBand, sizeVals),
+		CompanyStage:       normalizeEnum(ej.CompanyStage, stageVals),
+		IsFoundingRole:     ej.IsFoundingRole,
+		VisaSponsorship:    normalizeEnum(ej.VisaSponsorship, visaVals),
+		WorkArrangement:    normalizeArrangement(ej.WorkArrangement),
+		HasBonus:           ej.HasBonus,
+		HasEquity:          ej.HasEquity,
+		HasRetirementMatch: ej.HasRetirementMatch,
+		AIIntensity:        normalizeEnum(ej.AIIntensity, aiIntensityVals),
 	}
-	if e.FitScore != nil && *e.FitScore < reasonThreshold {
-		e.FitReason = "" // only keep reason above threshold
-	}
-	return e
 }
 
 var (
-	seniorityVals  = []string{"intern", "junior", "mid", "senior", "staff", "principal", "lead", "manager", "director"}
-	employmentVals = []string{"full-time", "part-time", "contract", "temporary", "internship"}
-	sizeVals       = []string{"1-10", "11-50", "51-200", "201-1000", "1000+"}
-	stageVals      = []string{"seed", "early", "growth", "mature", "public"}
-	visaVals       = []string{"yes", "no", "unknown"}
+	seniorityVals   = []string{"intern", "junior", "mid", "senior", "staff", "principal", "lead", "manager", "director"}
+	employmentVals  = []string{"full-time", "part-time", "contract", "temporary", "internship"}
+	sizeVals        = []string{"1-10", "11-50", "51-200", "201-1000", "1000+"}
+	stageVals       = []string{"seed", "early", "growth", "mature", "public"}
+	visaVals        = []string{"yes", "no", "unknown"}
+	aiIntensityVals = []string{"core", "mentioned", "none"}
 )
 
 func normalizeEnum(v string, allowed []string) string {
@@ -267,9 +274,9 @@ func parseDelimiter(content string) enrichJSON {
 		"company_stage": &ej.CompanyStage, "stage": &ej.CompanyStage,
 		"visa_sponsorship": &ej.VisaSponsorship, "visa": &ej.VisaSponsorship,
 		"work_arrangement": &ej.WorkArrangement, "remote": &ej.WorkArrangement, "arrangement": &ej.WorkArrangement,
-		"fit_reason": &ej.FitReason, "reason": &ej.FitReason,
+		"ai_intensity": &ej.AIIntensity, "ai": &ej.AIIntensity,
 	}
-	var foundScore, foundYears, foundFounding bool
+	var foundYears, foundFounding bool
 	for _, seg := range segs {
 		label, val := splitLabel(seg)
 		if label == "" {
@@ -281,11 +288,6 @@ func parseDelimiter(content string) enrichJSON {
 			*p = val
 		}
 		switch lbl {
-		case "fit_score", "score":
-			if n, err := strconv.Atoi(strings.TrimSpace(val)); err == nil {
-				ej.FitScore = &n
-				foundScore = true
-			}
 		case "years_experience", "years":
 			if n, err := strconv.Atoi(strings.TrimSpace(val)); err == nil {
 				ej.YearsExperience = &n
@@ -295,9 +297,14 @@ func parseDelimiter(content string) enrichJSON {
 			b := parseBool(val)
 			ej.IsFoundingRole = b
 			foundFounding = true
+		case "has_bonus", "bonus":
+			ej.HasBonus = parseBool(val)
+		case "has_equity", "equity":
+			ej.HasEquity = parseBool(val)
+		case "has_retirement_match", "retirement_match", "retirement":
+			ej.HasRetirementMatch = parseBool(val)
 		}
 	}
-	_ = foundScore
 	_ = foundYears
 	_ = foundFounding
 	return ej
