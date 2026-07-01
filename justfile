@@ -1,0 +1,4 @@
+# Build the linkedin-jobs binary into the project root.
+build:
+    go build -o linkedin-jobs .
+    go install .

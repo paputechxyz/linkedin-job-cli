@@ -16,6 +16,7 @@ import (
 	"linkedin-jobs/internal/profile"
 	"linkedin-jobs/internal/render"
 	"linkedin-jobs/internal/salary"
+	"linkedin-jobs/internal/score"
 	"linkedin-jobs/internal/store"
 )
 
@@ -72,7 +73,7 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 		}
 	}
 
-	// 3. Run gates per job: dedup -> hard-filter -> score.
+	// 3. Run gates per job: dedup -> score (which internally applies caps).
 	noScore := opts.noScore || opts.noSummarize
 	profileData, _ := profile.Load()
 	var provider *llm.Provider
@@ -84,34 +85,44 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 			provider = p
 			// Surface profile state so the user can tell whether scores will
 			// reflect their actual resume/preferences or run context-free.
-			// (Profile files live in the project dir — see profile.ResumePath.)
 			fmt.Fprintln(os.Stderr, profileStatus(profileData))
 		}
 	}
-	threshold := settings.Scoring.ReasonThreshold
-	scoredN, filteredN, dupsN := 0, 0, 0
+	weights := score.FromSettings(settings.Scoring)
+	scoredN, cappedN, dupsN := 0, 0, 0
 	for _, j := range jobs {
 		if !opts.forceOverwrite && st.IsDuplicateEnriched(j.ContentHash) {
 			dupsN++
 			continue
 		}
+		// Token-frugality gate: jobs that fail the hard filter are still visible
+		// (the new cap-not-hide semantics), but they skip the LLM enrich call
+		// because their final score is already known (the cap).
 		if !opts.noFilter && settings.Filter.AutoFilter && !filter.PassesHardFilter(j, profileData) {
-			st.SetFiltered(j.ID)
-			j.Status = "filtered"
-			filteredN++
+			res := score.Compute(j, profileData, weights)
+			reason := score.FitReason(res)
+			if err := st.SetScore(j.ID, res.Score, reason, res.CapReason); err != nil {
+				fmt.Fprintf(os.Stderr, "  ! %s: %v\n", j.Title, err)
+			} else {
+				j.FitScore = &res.Score
+				j.FitReason = reason
+				j.ScoreCapReason = res.CapReason
+				j.ScoredAt = "set"
+				cappedN++
+			}
 			continue
 		}
 		if provider != nil {
-			paceLLM(opts.scoreDelay, scoredN)
-			if _, err := enrichAndScoreJob(st, j, profileData, provider, threshold); err != nil {
+			paceLLM(opts.scoreDelay, scoredN+cappedN)
+			if err := enrichAndScoreJob(st, j, profileData, provider, weights); err != nil {
 				fmt.Fprintf(os.Stderr, "  ! %s: %v\n", j.Title, err)
 			} else {
 				scoredN++
 			}
 		}
 	}
-	if scoredN > 0 || filteredN > 0 || dupsN > 0 {
-		fmt.Fprintf(os.Stderr, "Processed: %d scored, %d filtered, %d duplicates skipped.\n", scoredN, filteredN, dupsN)
+	if scoredN > 0 || cappedN > 0 || dupsN > 0 {
+		fmt.Fprintf(os.Stderr, "Processed: %d scored, %d capped, %d duplicates skipped.\n", scoredN, cappedN, dupsN)
 	}
 
 	// 4. Display filters (CLI-level) + output.
@@ -160,37 +171,58 @@ func profileDir() string {
 	return filepath.Dir(profile.ResumePath())
 }
 
-// enrichAndScoreJob runs the combined enrichment + fit-score call for one job
-// and persists the result. Shared by ingest, the enrich command, and score --all.
-func enrichAndScoreJob(st *store.Store, j *models.JobPosting, profile *models.Profile, provider *llm.Provider, threshold int) (models.Enrichment, error) {
-	e, err := llm.Score(j, profile, provider, threshold)
+// enrichAndScoreJob runs the LLM enrichment call, persists the extracted facts,
+// then computes the deterministic rubric score and persists that. The LLM never
+// picks a score — it only extracts facts; score.Compute derives the number.
+// Shared by ingest, the enrich command, and score --all.
+func enrichAndScoreJob(st *store.Store, j *models.JobPosting, prof *models.Profile, provider *llm.Provider, weights score.Weights) error {
+	e, err := llm.Enrich(j, prof, provider)
 	if err != nil {
-		return models.Enrichment{}, err
+		return err
 	}
 	if err := st.SetEnrichmentAndScore(j.ID, e); err != nil {
-		return e, err
+		return err
 	}
-	// Reflect onto the in-memory job so callers/render see fresh values.
-	if e.FitScore != nil {
-		j.FitScore = e.FitScore
-	}
-	j.FitReason = e.FitReason
+	// Reflect enrichment onto the in-memory job so the scorer sees fresh values.
 	j.EnrichedAt = "set"
-	j.ScoredAt = "set"
 	j.CompanyOverview = e.CompanyOverview
 	j.Industry = e.Industry
 	j.TechStack = e.TechStack
 	j.Seniority = e.Seniority
-	return e, nil
+	j.EmploymentType = e.EmploymentType
+	if e.YearsExperience != nil {
+		j.YearsExperience = e.YearsExperience
+	}
+	j.CompanySizeBand = e.CompanySizeBand
+	j.CompanyStage = e.CompanyStage
+	j.IsFoundingRole = e.IsFoundingRole
+	j.VisaSponsorship = e.VisaSponsorship
+	if e.WorkArrangement != "" {
+		j.RemoteType = e.WorkArrangement
+	}
+	j.HasBonus = e.HasBonus
+	j.HasEquity = e.HasEquity
+	j.HasRetirementMatch = e.HasRetirementMatch
+	j.AIIntensity = e.AIIntensity
+
+	// Compute the rubric score from the freshly-enriched facts + profile.
+	res := score.Compute(j, prof, weights)
+	reason := score.FitReason(res)
+	if err := st.SetScore(j.ID, res.Score, reason, res.CapReason); err != nil {
+		return err
+	}
+	j.FitScore = &res.Score
+	j.FitReason = reason
+	j.ScoreCapReason = res.CapReason
+	j.ScoredAt = "set"
+	return nil
 }
 
 func filterJobs(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting {
 	out := make([]*models.JobPosting, 0, len(jobs))
 	for _, j := range jobs {
-		// Hide hard-filtered mismatches from the ingest display (use --include-filtered via `list`).
-		if j.Status == "filtered" {
-			continue
-		}
+		// Cap-not-hide: jobs with a hard-filter cap remain visible (their score
+		// communicates marginality). Only the user's CLI display filters apply.
 		if opts.minSalary > 0 && !meetsDisplaySalaryFloor(j, opts.minSalary, opts.minSalaryCurrency) {
 			continue
 		}

@@ -53,6 +53,7 @@ type prefsFrontmatter struct {
 	MinSalary       *float64 `yaml:"min_salary,omitempty"`
 	MinSalaryCurrency string `yaml:"min_salary_currency,omitempty"`
 	Locations       string   `yaml:"locations,omitempty"`
+	PreferredTech   []string `yaml:"preferred_tech,omitempty"`
 }
 
 // Load reads both files and returns a merged Profile. Returns (nil, nil) when
@@ -89,6 +90,7 @@ func Load() (*models.Profile, error) {
 		p.PrefMinSalary = fm.MinSalary
 		p.PrefMinSalaryCurrency = fm.MinSalaryCurrency
 		p.PrefLocations = fm.Locations
+		p.PrefPreferredTech = fm.PreferredTech
 		p.PreferencesText = strings.TrimSpace(body)
 	}
 	p.UpdatedAt = nowISO()
@@ -118,6 +120,7 @@ func SavePrefs(p *models.Profile) error {
 		MinSalary:         p.PrefMinSalary,
 		MinSalaryCurrency: p.PrefMinSalaryCurrency,
 		Locations:         p.PrefLocations,
+		PreferredTech:     p.PrefPreferredTech,
 	}
 	fmBytes, err := yaml.Marshal(&fm)
 	if err != nil {

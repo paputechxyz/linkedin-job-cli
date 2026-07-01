@@ -25,7 +25,22 @@ type FilterSettings struct {
 }
 
 type ScoringSettings struct {
-	ReasonThreshold int `yaml:"reason_threshold"`
+	ReasonThreshold int             `yaml:"reason_threshold"`
+	Baseline        int             `yaml:"baseline"`
+	DealBreakerCap  int             `yaml:"deal_breaker_cap"`
+	DealBreakers    []string        `yaml:"deal_breakers"`
+	Weights         ScoringWeights  `yaml:"weights"`
+}
+
+// ScoringWeights tunes the rubric dimensions. All default to the values in
+// DefaultSettings(); any weight set to 0 disables that dimension.
+type ScoringWeights struct {
+	Salary              int `yaml:"salary"`
+	TechOverlap         int `yaml:"tech_overlap"`
+	Startup             int `yaml:"startup"`
+	AIIntensity         int `yaml:"ai_intensity"`
+	CompensationExtras  int `yaml:"compensation_extras"`
+	RemoteTiebreak      int `yaml:"remote_tiebreak"`
 }
 
 type EnrichSettings struct {
@@ -38,8 +53,28 @@ func DefaultSettings() Settings {
 	return Settings{
 		Stats:   StatsSettings{TopCompaniesLimit: 50},
 		Filter:  FilterSettings{AutoFilter: true},
-		Scoring: ScoringSettings{ReasonThreshold: 70},
+		Scoring: DefaultScoringSettings(),
 		Enrich:  EnrichSettings{AutoEnrichOnSave: false},
+	}
+}
+
+// DefaultScoringSettings returns the rubric defaults: baseline 60 after passing
+// the hard filter, deal-breakers cap at 30, six weighted dimensions summing to
+// a ~30-point upside above baseline. Tunable via settings.yaml.
+func DefaultScoringSettings() ScoringSettings {
+	return ScoringSettings{
+		ReasonThreshold: 70,
+		Baseline:        60,
+		DealBreakerCap:  30,
+		DealBreakers:    []string{".NET", "C#", "Ruby on Rails"},
+		Weights: ScoringWeights{
+			Salary:             6,
+			TechOverlap:        7,
+			Startup:            5,
+			AIIntensity:        5,
+			CompensationExtras: 4,
+			RemoteTiebreak:     3,
+		},
 	}
 }
 
@@ -101,5 +136,29 @@ func LoadSettings() (Settings, error) {
 	if s.Scoring.ReasonThreshold <= 0 || s.Scoring.ReasonThreshold > 100 {
 		s.Scoring.ReasonThreshold = DefaultSettings().Scoring.ReasonThreshold
 	}
+	// Rubric defaults: fill any missing/invalid scoring values from defaults so
+	// the scorer never sees a zero baseline or an empty deal-breaker cap.
+	if s.Scoring.Baseline <= 0 || s.Scoring.Baseline > 100 {
+		s.Scoring.Baseline = DefaultSettings().Scoring.Baseline
+	}
+	if s.Scoring.DealBreakerCap <= 0 || s.Scoring.DealBreakerCap > 100 {
+		s.Scoring.DealBreakerCap = DefaultSettings().Scoring.DealBreakerCap
+	}
+	if len(s.Scoring.DealBreakers) == 0 {
+		s.Scoring.DealBreakers = DefaultSettings().Scoring.DealBreakers
+	}
+	applyDefaultWeight := func(current, def int) int {
+		if current < 0 {
+			return def
+		}
+		return current
+	}
+	dw := DefaultSettings().Scoring.Weights
+	s.Scoring.Weights.Salary = applyDefaultWeight(s.Scoring.Weights.Salary, dw.Salary)
+	s.Scoring.Weights.TechOverlap = applyDefaultWeight(s.Scoring.Weights.TechOverlap, dw.TechOverlap)
+	s.Scoring.Weights.Startup = applyDefaultWeight(s.Scoring.Weights.Startup, dw.Startup)
+	s.Scoring.Weights.AIIntensity = applyDefaultWeight(s.Scoring.Weights.AIIntensity, dw.AIIntensity)
+	s.Scoring.Weights.CompensationExtras = applyDefaultWeight(s.Scoring.Weights.CompensationExtras, dw.CompensationExtras)
+	s.Scoring.Weights.RemoteTiebreak = applyDefaultWeight(s.Scoring.Weights.RemoteTiebreak, dw.RemoteTiebreak)
 	return s, nil
 }

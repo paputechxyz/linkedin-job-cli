@@ -9,6 +9,7 @@ import (
 	"linkedin-jobs/internal/config"
 	"linkedin-jobs/internal/llm"
 	"linkedin-jobs/internal/profile"
+	"linkedin-jobs/internal/score"
 	"linkedin-jobs/internal/store"
 )
 
@@ -44,10 +45,11 @@ profile to refresh scores across the DB. (Dedup is ignored on re-score.)`,
 		fmt.Fprintf(os.Stderr, "Re-scoring %d job(s) via %s…\n", len(jobs), provider.Source)
 		fmt.Fprintln(os.Stderr, profileStatus(p))
 		delay := resolveLLMDelay()
+		weights := score.FromSettings(settings.Scoring)
 		scored := 0
 		for _, j := range jobs {
 			paceLLM(delay, scored)
-			if _, err := enrichAndScoreJob(st, j, p, provider, settings.Scoring.ReasonThreshold); err != nil {
+			if err := enrichAndScoreJob(st, j, p, provider, weights); err != nil {
 				fmt.Fprintf(os.Stderr, "  ! %s: %v\n", j.Title, err)
 				continue
 			}

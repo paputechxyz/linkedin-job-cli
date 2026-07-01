@@ -7,9 +7,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	"linkedin-jobs/internal/config"
 	"linkedin-jobs/internal/filter"
 	"linkedin-jobs/internal/llm"
 	"linkedin-jobs/internal/models"
+	"linkedin-jobs/internal/score"
 	"linkedin-jobs/internal/store"
 )
 
@@ -38,12 +40,13 @@ func fakeScoreServer(t *testing.T, scoreJSON string) (*httptest.Server, *llm.Pro
 	return srv, &llm.Provider{BaseURL: srv.URL, APIKey: "k", Model: "m"}
 }
 
-// TestGateSequence exercises dedup -> filter -> score end to end against a real
-// store and a fake provider.
-func TestGateSequence_DedupFilterScore(t *testing.T) {
+// TestGateSequence exercises dedup -> score end to end against a real store and
+// a fake provider. With the rubric scorer, the LLM only extracts facts; the
+// fit_score is derived deterministically by score.Compute.
+func TestGateSequence_DedupEnrichScore(t *testing.T) {
 	st := openTempStore(t)
-	scoreJSON := `{"industry":"DevTools","tech_stack":"Go","seniority":"staff","work_arrangement":"remote","fit_score":85,"fit_reason":"great"}`
-	srv, provider := fakeScoreServer(t, scoreJSON)
+	enrichJSON := `{"industry":"DevTools","tech_stack":"Go","seniority":"staff","work_arrangement":"remote","ai_intensity":"core"}`
+	srv, provider := fakeScoreServer(t, enrichJSON)
 	defer srv.Close()
 
 	// 1. New candidate job -> not yet a duplicate.
@@ -55,16 +58,29 @@ func TestGateSequence_DedupFilterScore(t *testing.T) {
 		t.Fatalf("fresh job should not be an enriched duplicate")
 	}
 
-	// 2. Score it -> persists structured fields + score.
-	if _, err := enrichAndScoreJob(st, j, nil, provider, 70); err != nil {
+	// 2. Enrich + score -> persists extracted facts + computed score.
+	weights := score.FromSettings(config.DefaultScoringSettings())
+	if err := enrichAndScoreJob(st, j, nil, provider, weights); err != nil {
 		t.Fatalf("enrichAndScoreJob: %v", err)
 	}
 	got, _ := st.Get("x")
-	if got.Industry != "DevTools" || got.FitScore == nil || *got.FitScore != 85 {
-		t.Errorf("not persisted: industry=%q score=%+v", got.Industry, got.FitScore)
+	if got.Industry != "DevTools" {
+		t.Errorf("industry=%q want DevTools", got.Industry)
 	}
-	if got.FitReason != "great" {
-		t.Errorf("fit_reason=%q want great", got.FitReason)
+	if got.AIIntensity != "core" {
+		t.Errorf("ai_intensity=%q want core", got.AIIntensity)
+	}
+	if got.FitScore == nil {
+		t.Errorf("FitScore should be set; got nil")
+	}
+	if got.ScoreCapReason != "" {
+		t.Errorf("no cap expected for a passing job; got %q", got.ScoreCapReason)
+	}
+	// Baseline (60) + AI core (5) — no profile means salary/tech/remote/etc are 0.
+	if got.FitScore == nil {
+		t.Errorf("FitScore should be set; got nil")
+	} else if *got.FitScore != 65 {
+		t.Errorf("FitScore=%d want 65 (baseline 60 + AI core 5; no remote bonus without a profile)", *got.FitScore)
 	}
 
 	// 3. Now it IS an enriched duplicate -> a re-fetch would skip the LLM.
@@ -72,7 +88,8 @@ func TestGateSequence_DedupFilterScore(t *testing.T) {
 		t.Errorf("enriched job should count as a duplicate-for-skip")
 	}
 
-	// 4. A clear mismatch fails the hard filter and is tagged filtered/0.
+	// 4. Cap-not-hide: a job that fails the hard filter is now visible (status
+	// stays "new") and gets a cap reason instead of being zeroed + hidden.
 	bad := &models.JobPosting{ID: "y", Title: "Eng", Company: "X", Location: "New York, NY (On-site)",
 		Description: "On-site role", SearchedAt: "2026-06-28"}
 	st.Upsert(bad)
@@ -80,16 +97,19 @@ func TestGateSequence_DedupFilterScore(t *testing.T) {
 	if filter.PassesHardFilter(bad, profile) {
 		t.Errorf("on-site job should fail the remote-required hard filter")
 	}
-	st.SetFiltered("y")
-	got2, _ := st.Get("y")
-	if !got2.IsFiltered() {
-		t.Errorf("expected status=filtered")
+	// Compute + persist the cap (mirrors what the ingest loop does for filter failures).
+	res := score.Compute(bad, profile, weights)
+	if err := st.SetScore(bad.ID, res.Score, score.FitReason(res), res.CapReason); err != nil {
+		t.Fatalf("SetScore: %v", err)
 	}
-	// Filtered jobs are hidden from the default list.
-	listed, _ := st.List(store.Filters{})
-	for _, lj := range listed {
-		if lj.ID == "y" {
-			t.Errorf("filtered job should be hidden from default list")
-		}
+	got2, _ := st.Get("y")
+	if got2.IsFiltered() {
+		t.Errorf("cap-not-hide: status should NOT be 'filtered'")
+	}
+	if got2.ScoreCapReason != score.CapNonRemote {
+		t.Errorf("cap reason=%q want %q", got2.ScoreCapReason, score.CapNonRemote)
+	}
+	if got2.FitScore == nil || *got2.FitScore != 55 {
+		t.Errorf("FitScore=%+v want 55 (non-remote cap)", got2.FitScore)
 	}
 }
