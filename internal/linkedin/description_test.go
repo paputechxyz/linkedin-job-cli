@@ -72,6 +72,44 @@ func TestExtractDescription_EmptyPage(t *testing.T) {
 	}
 }
 
+func TestExtractTopCardMeta_RendersTitleCompanyLocation(t *testing.T) {
+	html := `<html><body>
+	  <h1 class="top-card-layout__title topcard__title">Staff Backend Software Engineer</h1>
+	  <div class="topcard__flavor-row">
+	    <span class="topcard__flavor">
+	      <a class="topcard__org-name-link topcard__flavor--black-link" href="/company/hopper">Hopper</a>
+	    </span>
+	    <span class="topcard__flavor topcard__flavor--bullet">Toronto, Ontario, Canada</span>
+	    <span class="topcard__flavor topcard__flavor--bullet">40 applicants</span>
+	  </div>
+	</body></html>`
+	m := extractTopCardMeta(docFrom(t, html))
+	if m.Title != "Staff Backend Software Engineer" {
+		t.Errorf("title: got %q", m.Title)
+	}
+	if m.Company != "Hopper" {
+		t.Errorf("company: got %q", m.Company)
+	}
+	if m.Location != "Toronto, Ontario, Canada" {
+		t.Errorf("location: got %q", m.Location)
+	}
+}
+
+func TestExtractTopCardMeta_SkipsApplicantBulletForLocation(t *testing.T) {
+	html := `<html><body>
+	  <span class="topcard__flavor topcard__flavor--bullet">40 applicants</span>
+	</body></html>`
+	if m := extractTopCardMeta(docFrom(t, html)); m.Location != "" {
+		t.Errorf("expected empty location, got %q", m.Location)
+	}
+}
+
+func TestExtractTopCardMeta_EmptyPage(t *testing.T) {
+	if m := extractTopCardMeta(docFrom(t, `<html></html>`)); m != (jobMeta{}) {
+		t.Errorf("expected zero-value meta, got %+v", m)
+	}
+}
+
 // TestDescriptionFromJobPostingAPI validates extraction of the plain `text`
 // field from a Voyager jobPostings response's data.description node. The
 // AttributedText `attributes` array (bold/list/hyperlink metadata) must be

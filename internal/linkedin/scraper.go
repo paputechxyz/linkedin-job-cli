@@ -329,14 +329,27 @@ func (c *Client) FetchDetail(j *models.JobPosting) error {
 	// 2. JSON-LD JobPosting — source for description AND any missing card
 	// metadata (title/company/location). Cards from the listing page already
 	// carry these, but jobs built from a bare ID (e.g. via the `url` command's
-	// originToLandingJobPostings path) only have an ID + view URL, so the
-	// JSON-LD block on the detail page is where their title comes from.
+	// originToLandingJobPostings path, or the `score-job` command) only have an
+	// ID + view URL. LinkedIn now ships the detail page as a React SPA that
+	// frequently omits the JobPosting JSON-LD block, so when JSON-LD misses we
+	// fall back to the rendered topcard__ elements for title/company/location.
 	meta := extractJobMeta(doc)
 	if meta.Description != "" {
 		j.Description = meta.Description
 	} else {
 		// HTML fallbacks for pages where LinkedIn ships no JobPosting JSON-LD.
 		j.Description = extractDescriptionHTML(doc)
+	}
+	// topcard__ fallback for title/company/location when JSON-LD gave nothing.
+	tc := extractTopCardMeta(doc)
+	if meta.Title == "" {
+		meta.Title = tc.Title
+	}
+	if meta.Company == "" {
+		meta.Company = tc.Company
+	}
+	if meta.Location == "" {
+		meta.Location = tc.Location
 	}
 	if (j.Title == "" || j.Title == "Unknown Title") && meta.Title != "" {
 		j.Title = meta.Title
@@ -403,6 +416,44 @@ func extractDescriptionHTML(doc *goquery.Document) string {
 		}
 	}
 	return ""
+}
+
+// applicantBulletRE matches the "N applicants" topcard bullet so the location
+// fallback can skip it and pick the geography bullet instead.
+var applicantBulletRE = regexp.MustCompile(`(?i)\d+\s+applicant`)
+
+// extractTopCardMeta pulls title/company/location from the rendered topcard__
+// elements on a LinkedIn job detail page. Used as a fallback when the page
+// ships no JobPosting JSON-LD (LinkedIn's detail page is now a React SPA, so
+// the initial HTML frequently lacks the JSON-LD block). Any field may be empty.
+func extractTopCardMeta(doc *goquery.Document) jobMeta {
+	var m jobMeta
+	if t := strings.TrimSpace(doc.Find(".topcard__title").First().Text()); t != "" {
+		m.Title = t
+	}
+	if a := doc.Find("a.topcard__org-name-link").First(); a.Length() > 0 {
+		if c := strings.TrimSpace(a.Text()); c != "" {
+			m.Company = c
+		}
+	}
+	if m.Company == "" {
+		if f := doc.Find(".topcard__flavor").First(); f.Length() > 0 {
+			if c := strings.TrimSpace(f.Text()); c != "" {
+				m.Company = c
+			}
+		}
+	}
+	// The first non-applicant bullet is the location (e.g. "Toronto, Ontario,
+	// Canada"); later bullets are things like "40 applicants".
+	doc.Find(".topcard__flavor--bullet").EachWithBreak(func(_ int, s *goquery.Selection) bool {
+		t := strings.TrimSpace(s.Text())
+		if t == "" || applicantBulletRE.MatchString(t) {
+			return true
+		}
+		m.Location = t
+		return false
+	})
+	return m
 }
 
 // jobMeta captures the structured fields available in a JSON-LD JobPosting

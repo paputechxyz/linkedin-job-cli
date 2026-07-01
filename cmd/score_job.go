@@ -1,0 +1,46 @@
+package cmd
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/spf13/cobra"
+
+	"linkedin-jobs/internal/models"
+	"linkedin-jobs/internal/store"
+)
+
+var scoreJobCmd = &cobra.Command{
+	Use:   "score-job <job-id>",
+	Short: "Fetch + fit-score a single LinkedIn job by its numeric ID",
+	Args:  cobra.ExactArgs(1),
+	Long: `Fetches a single LinkedIn job posting by its numeric job ID and runs it
+through the same fetch → score pipeline as 'search'. No flags: salary, remote,
+and hard-filter behavior all come from your settings.yaml. The job is always
+(re-)fetched and (re-)scored.
+
+Example:
+  linkedin-jobs score-job 4434368088`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id := args[0]
+		job := &models.JobPosting{
+			ID:         id,
+			URL:        "https://www.linkedin.com/jobs/view/" + id + "/",
+			Title:      "Unknown Title",
+			Source:     "id",
+			SearchedAt: store.NowISO(),
+		}
+		fmt.Fprintf(os.Stderr, "Fetching + scoring job %s…\n", id)
+		ingest([]*models.JobPosting{job}, ingestOptions{
+			forceOverwrite: true,
+			detailDelay:    resolveDetailDelay(),
+			scoreDelay:     resolveLLMDelay(),
+			jsonOut:        jsonOut,
+		})
+		return nil
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(scoreJobCmd)
+}
