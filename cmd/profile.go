@@ -72,13 +72,13 @@ var profileShowCmd = &cobra.Command{
 			fmt.Println(indent(p.ResumeText))
 		}
 		fmt.Printf("\nPreference knobs (%s → profile:):\n", config.SettingsPath())
-		fmt.Printf("  work arrangement: %s\n", orNone(p.PrefWorkArrangement))
+		fmt.Printf("  work arrangement: %s\n", orNoneSlice(p.PrefWorkArrangement))
 		if p.PrefMinSalary != nil {
 			fmt.Printf("  min salary:        %s%.0f %s\n", currencyLabel(p.PrefMinSalaryCurrency), *p.PrefMinSalary, orNoneCurrency(p.PrefMinSalaryCurrency))
 		} else {
 			fmt.Println("  min salary:        (none)")
 		}
-		fmt.Printf("  locations:         %s\n", orNone(p.PrefLocations))
+		fmt.Printf("  locations:         %s\n", orNoneSlice(p.PrefLocations))
 		if len(p.PrefPreferredTech) > 0 {
 			fmt.Printf("  preferred tech:    %d — %s\n", len(p.PrefPreferredTech), strings.Join(p.PrefPreferredTech, ", "))
 		} else {
@@ -128,11 +128,11 @@ func indent(s string) string {
 	return b.String()
 }
 
-func orNone(s string) string {
-	if s == "" {
+func orNoneSlice(ss []string) string {
+	if len(ss) == 0 {
 		return "(none)"
 	}
-	return s
+	return strings.Join(ss, ", ")
 }
 
 // orNoneCurrency hides an empty currency code in display when salary is set.

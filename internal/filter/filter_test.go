@@ -26,7 +26,7 @@ func TestPassesHardFilter_NilProfilePassesAll(t *testing.T) {
 }
 
 func TestPassesHardFilter_RemoteRequired(t *testing.T) {
-	p := &models.Profile{PrefWorkArrangement: "remote"}
+	p := &models.Profile{PrefWorkArrangement: []string{"remote"}}
 	cases := []struct {
 		name string
 		j    *models.JobPosting
@@ -60,7 +60,7 @@ func TestPassesHardFilter_SalaryFloor(t *testing.T) {
 }
 
 func TestPassesHardFilter_Locations(t *testing.T) {
-	p := &models.Profile{PrefLocations: "Toronto,Remote,US"}
+	p := &models.Profile{PrefLocations: []string{"Toronto", "Remote", "US"}}
 	if !PassesHardFilter(job("Toronto, Canada", "", nil), p) {
 		t.Errorf("Toronto should match")
 	}
@@ -77,7 +77,7 @@ func TestPassesHardFilter_Locations(t *testing.T) {
 }
 
 func TestPassesHardFilter_Combined(t *testing.T) {
-	p := &models.Profile{PrefWorkArrangement: "remote", PrefMinSalary: fptr(180000), PrefLocations: "Remote,US"}
+	p := &models.Profile{PrefWorkArrangement: []string{"remote"}, PrefMinSalary: fptr(180000), PrefLocations: []string{"Remote", "US"}}
 	// Passes all three.
 	if !PassesHardFilter(job("Remote, US", "", fptr(200000)), p) {
 		t.Errorf("should pass all constraints")

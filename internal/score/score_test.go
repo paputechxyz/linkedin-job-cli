@@ -39,18 +39,18 @@ func techOnlyProfile() *models.Profile {
 // remoteOnlyProfile enables just the remote-work preference and preferred locations.
 func remoteOnlyProfile() *models.Profile {
 	return &models.Profile{
-		PrefWorkArrangement: "remote",
-		PrefLocations:       "Remote,Toronto",
+		PrefWorkArrangement: []string{"remote"},
+		PrefLocations:       []string{"Remote", "Toronto"},
 	}
 }
 
 // fullProfile enables every preference — realistic case for combined + cap tests.
 func fullProfile() *models.Profile {
 	return &models.Profile{
-		PrefWorkArrangement:   "remote",
+		PrefWorkArrangement:   []string{"remote"},
 		PrefMinSalary:         floatPtr(200000),
 		PrefMinSalaryCurrency: "CAD",
-		PrefLocations:         "Remote,Toronto",
+		PrefLocations:         []string{"Remote", "Toronto"},
 		PrefPreferredTech:     []string{"Java", "Python", "Go", "Kafka", "Postgres"},
 	}
 }

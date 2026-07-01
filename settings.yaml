@@ -27,9 +27,10 @@ enrich:
 # and the rubric (internal/score): salary floor, remote requirement, location
 # match, and tech-overlap scoring. The free-text resume context lives in
 # RESUME.md; deal-breaker tech tokens are under scoring.deal_breakers above.
+# all case insensitive
 profile:
-  work_arrangement: remote
+  work_arrangement: [remote, hybrid]
   min_salary: 200000
   min_salary_currency: CAD
-  locations: Remote,Toronto
+  locations: [Remote, Toronto]
   preferred_tech: [Java, Python, Elixir, Go, FastAPI, Flask, Django, NestJS, ReactJS, NextJS, Docker, Kubernetes, Postgres, BigQuery, Snowflake, AWS, GCP]

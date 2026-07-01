@@ -156,13 +156,13 @@ func profileStatus(p *models.Profile) string {
 		parts = append(parts, "no resume")
 	}
 	knobs := 0
-	if p.PrefWorkArrangement != "" {
+	if len(p.PrefWorkArrangement) > 0 {
 		knobs++
 	}
 	if p.PrefMinSalary != nil {
 		knobs++
 	}
-	if p.PrefLocations != "" {
+	if len(p.PrefLocations) > 0 {
 		knobs++
 	}
 	if len(p.PrefPreferredTech) > 0 {

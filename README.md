@@ -128,10 +128,10 @@ under the `profile:` section of `settings.yaml`:
 
   ```yaml
   profile:
-    work_arrangement: remote
+    work_arrangement: [remote, hybrid]
     min_salary: 200000
     min_salary_currency: CAD
-    locations: Remote,Toronto
+    locations: [Remote, Toronto]
     preferred_tech: [Java, Python, Go, Postgres, AWS]
   ```
 
@@ -210,10 +210,10 @@ scoring:
 enrich:
   auto_enrich_on_save: false     # tag saved does not auto-score by default
 profile:                         # preference knobs for the hard filter + rubric
-  work_arrangement: remote
+  work_arrangement: [remote, hybrid]
   min_salary: 200000
   min_salary_currency: CAD
-  locations: Remote,Toronto
+  locations: [Remote, Toronto]
   preferred_tech: [Java, Python, Go, Postgres, AWS]
 ```
 

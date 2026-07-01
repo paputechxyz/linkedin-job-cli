@@ -93,7 +93,7 @@ func TestGateSequence_DedupEnrichScore(t *testing.T) {
 	bad := &models.JobPosting{ID: "y", Title: "Eng", Company: "X", Location: "New York, NY (On-site)",
 		Description: "On-site role", SearchedAt: "2026-06-28"}
 	st.Upsert(bad)
-	profile := &models.Profile{PrefWorkArrangement: "remote"}
+	profile := &models.Profile{PrefWorkArrangement: []string{"remote"}}
 	if filter.PassesHardFilter(bad, profile) {
 		t.Errorf("on-site job should fail the remote-required hard filter")
 	}

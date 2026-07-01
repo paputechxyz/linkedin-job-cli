@@ -52,10 +52,10 @@ func TestSaveResume_RoundTrip(t *testing.T) {
 func TestLoad_KnobsFromSettings(t *testing.T) {
 	setConfigDir(t)
 	prefs := config.ProfileSettings{
-		WorkArrangement:   "remote",
+		WorkArrangement:   []string{"remote", "hybrid"},
 		MinSalary:         ptr(200000),
 		MinSalaryCurrency: "CAD",
-		Locations:         "Remote,Toronto",
+		Locations:         []string{"Remote", "Toronto"},
 		PreferredTech:     []string{"Go", "Python"},
 	}
 	got, err := Load(prefs)
@@ -65,8 +65,8 @@ func TestLoad_KnobsFromSettings(t *testing.T) {
 	if got.ResumeText != "" {
 		t.Errorf("resume should be empty, got %q", got.ResumeText)
 	}
-	if got.PrefWorkArrangement != "remote" {
-		t.Errorf("work = %q", got.PrefWorkArrangement)
+	if len(got.PrefWorkArrangement) != 2 || got.PrefWorkArrangement[0] != "remote" || got.PrefWorkArrangement[1] != "hybrid" {
+		t.Errorf("work = %+v", got.PrefWorkArrangement)
 	}
 	if got.PrefMinSalary == nil || *got.PrefMinSalary != 200000 {
 		t.Errorf("min_salary = %+v", got.PrefMinSalary)
@@ -74,8 +74,8 @@ func TestLoad_KnobsFromSettings(t *testing.T) {
 	if got.PrefMinSalaryCurrency != "CAD" {
 		t.Errorf("min_salary_currency = %q", got.PrefMinSalaryCurrency)
 	}
-	if got.PrefLocations != "Remote,Toronto" {
-		t.Errorf("locations = %q", got.PrefLocations)
+	if len(got.PrefLocations) != 2 || got.PrefLocations[0] != "Remote" || got.PrefLocations[1] != "Toronto" {
+		t.Errorf("locations = %+v", got.PrefLocations)
 	}
 	if len(got.PrefPreferredTech) != 2 || got.PrefPreferredTech[0] != "Go" {
 		t.Errorf("preferred_tech = %+v", got.PrefPreferredTech)
@@ -92,15 +92,15 @@ func TestLoad_ResumePlusKnobs(t *testing.T) {
 	if err := SaveResume("staff backend engineer"); err != nil {
 		t.Fatalf("SaveResume: %v", err)
 	}
-	got, err := Load(config.ProfileSettings{WorkArrangement: "hybrid", MinSalary: ptr(160000)})
+	got, err := Load(config.ProfileSettings{WorkArrangement: []string{"hybrid"}, MinSalary: ptr(160000)})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	if got.ResumeText != "staff backend engineer" {
 		t.Errorf("resume = %q", got.ResumeText)
 	}
-	if got.PrefWorkArrangement != "hybrid" {
-		t.Errorf("work = %q", got.PrefWorkArrangement)
+	if len(got.PrefWorkArrangement) != 1 || got.PrefWorkArrangement[0] != "hybrid" {
+		t.Errorf("work = %+v", got.PrefWorkArrangement)
 	}
 }
 
