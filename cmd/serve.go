@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -51,7 +53,12 @@ Read-only — no data is written. Binds to localhost only.`,
 		if _, err := rand.Read(token); err != nil {
 			die("csrf token: %v", err)
 		}
-		ws := &webServer{st: st, tpl: tpl, csrf: hex.EncodeToString(token)}
+		ws := &webServer{
+			st:          st,
+			tpl:         tpl,
+			csrf:        hex.EncodeToString(token),
+			filtersPath: filtersFilePath(loadCfg().DBPath),
+		}
 
 		addr := serveAddr
 		if addr == "" {
@@ -89,11 +96,15 @@ func newPageTemplate() (*template.Template, error) {
 }
 
 // webServer holds the open store, the parsed page template, and a per-session
-// CSRF token required for all write endpoints.
+// CSRF token required for all write endpoints. filtersPath points at a JSON
+// file alongside the DB where the last-applied filter state is persisted so it
+// survives server restarts; filtersMu guards concurrent read/write.
 type webServer struct {
-	st   *store.Store
-	tpl  *template.Template
-	csrf string
+	st          *store.Store
+	tpl         *template.Template
+	csrf        string
+	filtersPath string
+	filtersMu   sync.Mutex
 }
 
 func (ws *webServer) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -102,8 +113,28 @@ func (ws *webServer) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	pd := pageData{F: readForm(q), CSRF: ws.csrf}
-	jobs, mode, qerr := ws.query(q)
+
+	// Three arrival modes:
+	//   ?clear=1      → explicit reset: drop saved state, render empty
+	//   <any filters> → Apply submit: use the URL's values and persist them
+	//   bare "/"      → fresh visit: restore the last-saved filter (if any)
+	var f formVals
+	switch {
+	case q.Get("clear") == "1":
+		ws.clearSavedFilters()
+		f = defaultFormVals()
+	case hasFilterParams(q):
+		f = readForm(q)
+		ws.saveFilters(f)
+	default:
+		f = ws.loadSavedFilters()
+	}
+
+	// Rebuild query values from the chosen form state so the query/render path
+	// runs identically whether the source was a fresh GET or a restored filter.
+	qq := f.toQueryValues()
+	pd := pageData{F: f, CSRF: ws.csrf}
+	jobs, mode, qerr := ws.query(qq)
 	pd.Mode = mode
 	if qerr != nil {
 		pd.Error = qerr.Error()
@@ -274,6 +305,118 @@ func readForm(q url.Values) formVals {
 		IncludeFiltered:   q.Get("include_filtered") == "1",
 		Hybrid:            q.Get("hybrid") == "1",
 	}
+}
+
+// toQueryValues reconstructs url.Values from the form state, mirroring the
+// filter form's submit shape. Lets the query/render path run off either a fresh
+// GET or a restored saved filter without branching at every call site.
+func (f formVals) toQueryValues() url.Values {
+	v := url.Values{}
+	v.Set("q", f.Q)
+	v.Set("company", f.Company)
+	v.Set("title", f.Title)
+	v.Set("location", f.Location)
+	v.Set("status", f.Status)
+	v.Set("source", f.Source)
+	v.Set("min_salary", f.MinSalary)
+	v.Set("salary_currency", f.MinSalaryCurrency)
+	v.Set("min_score", f.MinScore)
+	v.Set("sort", f.Sort)
+	if f.Remote {
+		v.Set("remote", "1")
+	}
+	if f.Hybrid {
+		v.Set("hybrid", "1")
+	}
+	if f.IncludeFiltered {
+		v.Set("include_filtered", "1")
+	}
+	return v
+}
+
+// filterParamKeys are the query params the filter form submits. Used to tell a
+// bare "/" visit (restore saved) apart from an explicit Apply submit (persist).
+var filterParamKeys = []string{
+	"q", "company", "title", "location", "status", "source",
+	"min_salary", "salary_currency", "min_score", "sort",
+	"remote", "hybrid", "include_filtered",
+}
+
+// hasFilterParams reports whether the URL carries any filter form params.
+func hasFilterParams(q url.Values) bool {
+	for _, k := range filterParamKeys {
+		if q.Has(k) {
+			return true
+		}
+	}
+	return false
+}
+
+// defaultFormVals returns the empty filter state (sort defaults to fit score,
+// matching readForm's behavior for a bare form submit).
+func defaultFormVals() formVals {
+	return formVals{Sort: "score"}
+}
+
+// filtersFilePath returns the path to the persisted web-filter state, placed
+// alongside the SQLite DB so each store carries its own saved view. Returns ""
+// when no DB path is known, disabling persistence entirely.
+func filtersFilePath(dbPath string) string {
+	if dbPath == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(dbPath), "web_filters.json")
+}
+
+// loadSavedFilters reads the persisted filter state. A missing or unreadable
+// file yields the empty defaults — persistence is best-effort and never fatal.
+func (ws *webServer) loadSavedFilters() formVals {
+	if ws.filtersPath == "" {
+		return defaultFormVals()
+	}
+	ws.filtersMu.Lock()
+	defer ws.filtersMu.Unlock()
+	b, err := os.ReadFile(ws.filtersPath)
+	if err != nil {
+		return defaultFormVals()
+	}
+	var f formVals
+	if err := json.Unmarshal(b, &f); err != nil {
+		return defaultFormVals()
+	}
+	if f.Sort == "" {
+		f.Sort = "score"
+	}
+	return f
+}
+
+// saveFilters persists the filter state alongside the DB. Write failures are
+// logged to stderr but never surfaced to the user — the page still renders.
+func (ws *webServer) saveFilters(f formVals) {
+	if ws.filtersPath == "" {
+		return
+	}
+	ws.filtersMu.Lock()
+	defer ws.filtersMu.Unlock()
+	b, err := json.Marshal(f)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "save filters:", err)
+		return
+	}
+	if err := os.WriteFile(ws.filtersPath, b, 0o644); err != nil {
+		fmt.Fprintln(os.Stderr, "save filters:", err)
+	}
+}
+
+// clearSavedFilters removes the persisted state. A no-op if the file is absent
+// or persistence is disabled.
+func (ws *webServer) clearSavedFilters() {
+	if ws.filtersPath == "" {
+		return
+	}
+	ws.filtersMu.Lock()
+	defer ws.filtersMu.Unlock()
+	_ = os.Remove(ws.filtersPath)
 }
 
 type jobView struct {
@@ -1096,7 +1239,7 @@ const pageHTML = `<!DOCTYPE html>
         </div>
         <div class="actions">
           <button class="btn btn-primary" type="submit">Apply</button>
-          <a href="/" class="btn btn-ghost">Clear</a>
+          <a href="/?clear=1" class="btn btn-ghost">Clear</a>
         </div>
       </div>
     </form>
