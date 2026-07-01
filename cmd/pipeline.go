@@ -20,12 +20,16 @@ import (
 	"linkedin-jobs/internal/store"
 )
 
-// ingestOptions controls the shared fetch → dedup → hard-filter → score → display pipeline.
+// ingestOptions controls the shared fetch → gate → dedup → hard-filter → score → display pipeline.
+// Gates (--remote/--hybrid/--min-salary) run AFTER detail fetch (so salary and
+// RemoteType are populated) but BEFORE persist+score: failing jobs are dropped
+// in-memory, never stored, and never sent to the LLM.
 type ingestOptions struct {
 	minSalary         float64
 	minSalaryCurrency string // "" = legacy raw numeric compare; else ISO 4217 (e.g. CAD) for FX-aware filtering
 	excludeCompanies  []string
 	remote            bool
+	hybrid            bool
 	noDetail          bool
 	noSummarize       bool // legacy flag; treated as noScore for the combined flow
 	noScore           bool
@@ -65,7 +69,16 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 		fmt.Fprintln(os.Stderr)
 	}
 
-	// 2. Compute dedup hash + persist ALL jobs (save-all; dedup memory).
+	// 1b. Apply user gates (--remote/--hybrid/--min-salary). Runs after the detail
+	// fetch so salary and RemoteType are populated, but before persist + score.
+	// Jobs failing any active gate are dropped in-memory: never stored, never LLM'd.
+	beforeGate := len(jobs)
+	jobs = applyGates(jobs, opts)
+	if beforeGate != len(jobs) {
+		fmt.Fprintf(os.Stderr, "Gates: %d/%d passed (remote/hybrid/salary); %d dropped pre-store.\n", len(jobs), beforeGate, beforeGate-len(jobs))
+	}
+
+	// 2. Compute dedup hash + persist ALL surviving jobs (save-all; dedup memory).
 	for _, j := range jobs {
 		j.ContentHash = store.ContentHash(j.Company, j.Title, j.Description, j.ListedAt)
 		if err := st.Upsert(j); err != nil {
@@ -125,19 +138,16 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 		fmt.Fprintf(os.Stderr, "Processed: %d scored, %d capped, %d duplicates skipped.\n", scoredN, cappedN, dupsN)
 	}
 
-	// 4. Display filters (CLI-level) + output.
-	shown := filterJobs(jobs, opts)
-	if opts.minSalary > 0 {
-		fmt.Fprintf(os.Stderr, "Salary filter >= %s: %d/%d shown.\n", money(opts.minSalary, opts.minSalaryCurrency), len(shown), len(jobs))
-	}
+	// 4. Output. No further filtering here — the user gates already ran in
+	// step 1b and trimmed the slice pre-store. What remains is the shown set.
 	if opts.jsonOut {
-		if err := render.AsJSON(os.Stdout, shown); err != nil {
+		if err := render.AsJSON(os.Stdout, jobs); err != nil {
 			die("json output failed: %v", err)
 		}
 	} else {
-		render.Table(os.Stdout, shown)
+		render.Table(os.Stdout, jobs)
 	}
-	return shown
+	return jobs
 }
 
 // profileStatus renders a one-line summary of what profile context scoring will
@@ -228,16 +238,25 @@ func enrichAndScoreJob(st *store.Store, j *models.JobPosting, prof *models.Profi
 	return nil
 }
 
-func filterJobs(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting {
+// applyGates drops jobs that fail any active user gate (--remote/--hybrid/
+// --min-salary). Runs after the detail fetch (salary + RemoteType are now
+// populated) and before persist+score: failing jobs are dropped in-memory and
+// never reach the DB or the LLM. --salary-currency is not itself a gate; it
+// only supplies the unit for the --min-salary floor (FX-converted via fx.Convert).
+// --remote and --hybrid OR together when both are set.
+func applyGates(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting {
 	out := make([]*models.JobPosting, 0, len(jobs))
 	for _, j := range jobs {
-		// Cap-not-hide: jobs with a hard-filter cap remain visible (their score
-		// communicates marginality). Only the user's CLI display filters apply.
 		if opts.minSalary > 0 && !meetsDisplaySalaryFloor(j, opts.minSalary, opts.minSalaryCurrency) {
 			continue
 		}
-		if opts.remote && !strings.Contains(strings.ToLower(j.Location+" "+j.RemoteType), "remote") {
-			continue
+		if opts.remote || opts.hybrid {
+			blob := strings.ToLower(j.Location + " " + j.RemoteType)
+			matchRemote := strings.Contains(blob, "remote")
+			matchHybrid := strings.Contains(blob, "hybrid")
+			if !((opts.remote && matchRemote) || (opts.hybrid && matchHybrid)) {
+				continue
+			}
 		}
 		excluded := false
 		for _, ex := range opts.excludeCompanies {
