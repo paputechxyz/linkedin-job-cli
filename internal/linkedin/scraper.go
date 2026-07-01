@@ -3,6 +3,7 @@ package linkedin
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -69,6 +70,179 @@ func (c *Client) Search(keywords, location string, pages int) ([]*models.JobPost
 		}
 	}
 	return out, nil
+}
+
+// SearchURL extracts job postings from an arbitrary LinkedIn search/collection
+// URL (e.g. a job-alert email link, a saved-search URL, or a URL pasted from
+// the browser). Strategy, in priority order:
+//
+//  1. URL has a `keywords` query param — replay it against the paginated
+//     guest seeMoreJobPostings API so `top` can pull more than the first page
+//     (this is the same XHR the browser fires when you scroll the left panel).
+//     geoId/distance/f_TPR filters from the URL are preserved.
+//  2. URL carries explicit job IDs (originToLandingJobPostings from a job-alert
+//     email, or currentJobId) and NO keywords — those IDs are used directly.
+//  3. Otherwise, fetch the URL HTML and parse cards via the same selectors as
+//     Search.
+//
+// Cards returned here carry only id/title/company/location (cases 1 and 3) or
+// just id with title "Unknown Title" (case 2); FetchDetail fills the rest.
+func (c *Client) SearchURL(rawURL string, top int) ([]*models.JobPosting, error) {
+	if u, err := url.Parse(rawURL); err == nil && u.Query().Has("keywords") {
+		return c.jobsFromSearchURL(rawURL, top)
+	}
+	if ids := jobIDsFromURL(rawURL); len(ids) > 0 {
+		return jobsFromIDs(ids, "url"), nil
+	}
+	return c.jobsFromHTMLPage(rawURL)
+}
+
+// jobsFromSearchURL paginates through a LinkedIn job search by replaying the
+// URL's query params against the guest seeMoreJobPostings endpoint — the same
+// XHR the browser fires when you scroll the left panel of /jobs/search/.
+// maxJobs <= 0 means pull until fewer than a full page comes back.
+//
+// Tracking/pinning params (currentJobId, originToLandingJobPostings, trk, …)
+// are stripped; everything else (keywords, geoId, distance, f_TPR, f_WT, …) is
+// passed through so the user's filters are honored.
+func (c *Client) jobsFromSearchURL(rawURL string, maxJobs int) ([]*models.JobPosting, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	q := u.Query()
+	for _, k := range []string{
+		"currentJobId", "origin", "originToLandingJobPostings",
+		"sortBy", "trk", "sessionId", "lipi", "refId",
+	} {
+		q.Del(k)
+	}
+	var out []*models.JobPosting
+	seen := map[string]bool{}
+	const pageSize = 25
+	for start := 0; maxJobs <= 0 || len(out) < maxJobs; start += pageSize {
+		q.Set("start", itoa(start))
+		apiURL := guestSearchURL + "?" + q.Encode()
+		html, _, status, err := c.get(apiURL, false, nil)
+		if err != nil {
+			return out, err
+		}
+		if status != 200 || strings.TrimSpace(html) == "" {
+			break
+		}
+		doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+		if err != nil {
+			return out, err
+		}
+		cards := doc.Find("div[data-entity-urn]")
+		if cards.Length() == 0 {
+			break
+		}
+		cards.Each(func(_ int, s *goquery.Selection) {
+			j := parseCard(s)
+			if j == nil || seen[j.ID] {
+				return
+			}
+			seen[j.ID] = true
+			j.Source = "url"
+			out = append(out, j)
+		})
+		if cards.Length() < pageSize {
+			break // last page
+		}
+	}
+	return out, nil
+}
+
+// jobIDsFromURL extracts job IDs from a LinkedIn URL's query params. Prefers
+// originToLandingJobPostings (the full list from job-alert emails); falls back
+// to currentJobId (a single job). Returns nil when neither is present.
+func jobIDsFromURL(rawURL string) []string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil
+	}
+	q := u.Query()
+	seen := map[string]bool{}
+	var ids []string
+	if list := q.Get("originToLandingJobPostings"); list != "" {
+		for _, id := range strings.Split(list, ",") {
+			id = strings.TrimSpace(id)
+			if id != "" && isDigits(id) && !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+		if len(ids) > 0 {
+			return ids
+		}
+	}
+	if id := strings.TrimSpace(q.Get("currentJobId")); id != "" && isDigits(id) {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// jobsFromIDs builds skeleton JobPosting records from a list of LinkedIn job
+// IDs. Title/company/location are filled later by FetchDetail; only the ID +
+// canonical view URL are known at this stage.
+func jobsFromIDs(ids []string, source string) []*models.JobPosting {
+	out := make([]*models.JobPosting, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, &models.JobPosting{
+			ID:         id,
+			URL:        "https://www.linkedin.com/jobs/view/" + id + "/",
+			Title:      "Unknown Title",
+			Source:     source,
+			SearchedAt: store.NowISO(),
+		})
+	}
+	return out
+}
+
+// jobsFromHTMLPage fetches a LinkedIn search/collection URL and parses job
+// cards from the HTML. Uses the same selectors as the guest Search path. Tries
+// an authenticated GET when a session is available (LinkedIn returns more
+// complete results to signed-in users), then falls back to anonymous.
+func (c *Client) jobsFromHTMLPage(rawURL string) ([]*models.JobPosting, error) {
+	authed := c.HasSession()
+	html, _, status, err := c.get(rawURL, authed, nil)
+	if err != nil {
+		return nil, err
+	}
+	if status != 200 {
+		return nil, errf("page fetch returned status %d for %s", status, rawURL)
+	}
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		return nil, err
+	}
+	var out []*models.JobPosting
+	seen := map[string]bool{}
+	cards := doc.Find("div[data-entity-urn]")
+	cards.Each(func(_ int, s *goquery.Selection) {
+		j := parseCard(s)
+		if j == nil || seen[j.ID] {
+			return
+		}
+		seen[j.ID] = true
+		j.Source = "url"
+		out = append(out, j)
+	})
+	return out, nil
+}
+
+// isDigits reports whether s is a non-empty string of ASCII digits.
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func parseCard(s *goquery.Selection) *models.JobPosting {
@@ -145,9 +319,27 @@ func (c *Client) FetchDetail(j *models.JobPosting) error {
 		}
 	}
 
-	// 2. Description — try JSON-LD first (cleanest), then HTML fallbacks for
-	// pages where LinkedIn doesn't serve a JobPosting JSON-LD block.
-	j.Description = extractDescription(doc)
+	// 2. JSON-LD JobPosting — source for description AND any missing card
+	// metadata (title/company/location). Cards from the listing page already
+	// carry these, but jobs built from a bare ID (e.g. via the `url` command's
+	// originToLandingJobPostings path) only have an ID + view URL, so the
+	// JSON-LD block on the detail page is where their title comes from.
+	meta := extractJobMeta(doc)
+	if meta.Description != "" {
+		j.Description = meta.Description
+	} else {
+		// HTML fallbacks for pages where LinkedIn ships no JobPosting JSON-LD.
+		j.Description = extractDescriptionHTML(doc)
+	}
+	if (j.Title == "" || j.Title == "Unknown Title") && meta.Title != "" {
+		j.Title = meta.Title
+	}
+	if j.Company == "" && meta.Company != "" {
+		j.Company = meta.Company
+	}
+	if j.Location == "" && meta.Location != "" {
+		j.Location = meta.Location
+	}
 
 	// 2b. LinkedIn's detail page is now a React Server Components SPA that does
 	// not include the description body in the initial HTML. When the HTML
@@ -176,24 +368,21 @@ func (c *Client) FetchDetail(j *models.JobPosting) error {
 
 // extractDescription pulls the job description body, trying JSON-LD first
 // (preferred — structured and clean) and falling back to rendered HTML
-// containers when the page serves no JobPosting JSON-LD. Robust to @type being
-// a string or an array, and to the JSON-LD being a single object or an array.
+// containers when the page serves no JobPosting JSON-LD. FetchDetail calls
+// extractJobMeta + extractDescriptionHTML directly so it can also pick up
+// title/company/location; this wrapper is kept for tests and other callers
+// that only need the description.
 func extractDescription(doc *goquery.Document) string {
-	var fromJSONLD string
-	doc.Find(`script[type="application/ld+json"]`).EachWithBreak(func(_ int, s *goquery.Selection) bool {
-		raw := strings.TrimSpace(s.Text())
-		if raw == "" {
-			return true
-		}
-		if desc := descriptionFromJSONLD(raw); desc != "" {
-			fromJSONLD = desc
-			return false
-		}
-		return true
-	})
-	if fromJSONLD != "" {
-		return fromJSONLD
+	if m := extractJobMeta(doc); m.Description != "" {
+		return m.Description
 	}
+	return extractDescriptionHTML(doc)
+}
+
+// extractDescriptionHTML pulls the job description body from rendered HTML
+// containers. Used as a fallback when the page ships no JobPosting JSON-LD
+// (the JSON-LD path lives in extractJobMeta, which the caller already tried).
+func extractDescriptionHTML(doc *goquery.Document) string {
 	// HTML fallbacks: order matters; the most specific selector first.
 	for _, sel := range []string{
 		".description__text .show-more-less-html__markup",
@@ -209,43 +398,131 @@ func extractDescription(doc *goquery.Document) string {
 	return ""
 }
 
-// descriptionFromJSONLD extracts a JobPosting description from a raw JSON-LD
-// blob, accepting either a single object or an array of objects.
-func descriptionFromJSONLD(raw string) string {
+// jobMeta captures the structured fields available in a JSON-LD JobPosting
+// block on a LinkedIn detail page. Any field may be empty if absent.
+type jobMeta struct {
+	Title       string
+	Company     string
+	Location    string
+	Description string
+}
+
+// extractJobMeta scans JSON-LD <script> blocks for a JobPosting and returns its
+// structured fields. Returns a zero-value jobMeta when no JobPosting is found.
+func extractJobMeta(doc *goquery.Document) jobMeta {
+	var meta jobMeta
+	doc.Find(`script[type="application/ld+json"]`).EachWithBreak(func(_ int, s *goquery.Selection) bool {
+		raw := strings.TrimSpace(s.Text())
+		if raw == "" {
+			return true
+		}
+		if m := jobMetaFromJSONLD(raw); m != nil {
+			meta = *m
+			return false
+		}
+		return true
+	})
+	return meta
+}
+
+// jobMetaFromJSONLD parses a raw JSON-LD blob (single object or array) and
+// returns the first JobPosting's fields, or nil if none is present.
+func jobMetaFromJSONLD(raw string) *jobMeta {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return ""
+		return nil
 	}
-	if desc := jobPostingDesc([]byte(raw)); desc != "" {
-		return desc
+	if m := jobMetaFromBytes([]byte(raw)); m != nil {
+		return m
 	}
 	if raw[0] == '[' {
 		var arr []map[string]interface{}
 		if json.Unmarshal([]byte(raw), &arr) == nil {
 			for _, o := range arr {
-				if desc := descFromMap(o); desc != "" {
-					return desc
+				if m := jobMetaFromMap(o); m != nil {
+					return m
 				}
 			}
 		}
 	}
-	return ""
+	return nil
 }
 
-func jobPostingDesc(b []byte) string {
+func jobMetaFromBytes(b []byte) *jobMeta {
 	var o map[string]interface{}
 	if json.Unmarshal(b, &o) != nil {
-		return ""
+		return nil
 	}
-	return descFromMap(o)
+	return jobMetaFromMap(o)
 }
 
-func descFromMap(o map[string]interface{}) string {
+// jobMetaFromMap extracts JobPosting fields from a decoded JSON-LD object.
+// Returns nil if the object isn't a JobPosting or has none of the fields we
+// care about, so the caller can keep scanning.
+func jobMetaFromMap(o map[string]interface{}) *jobMeta {
 	if !hasJobPostingType(o["@type"]) {
+		return nil
+	}
+	m := &jobMeta{}
+	if t, ok := o["title"].(string); ok {
+		m.Title = strings.TrimSpace(t)
+	}
+	if org, ok := o["hiringOrganization"].(map[string]interface{}); ok {
+		if name, ok := org["name"].(string); ok {
+			m.Company = strings.TrimSpace(name)
+		}
+	}
+	m.Location = locationStringFromJSONLD(o["jobLocation"])
+	if d, ok := o["description"].(string); ok {
+		m.Description = cleanHTMLText(d)
+	}
+	if m.Title == "" && m.Company == "" && m.Location == "" && m.Description == "" {
+		return nil
+	}
+	return m
+}
+
+// locationStringFromJSONLD renders "City, Region, Country" from a JSON-LD
+// jobLocation value (single object or array). Returns "" when no address is
+// present.
+func locationStringFromJSONLD(v interface{}) string {
+	var locs []interface{}
+	switch x := v.(type) {
+	case map[string]interface{}:
+		locs = []interface{}{x}
+	case []interface{}:
+		locs = x
+	default:
 		return ""
 	}
-	if d, ok := o["description"].(string); ok {
-		return cleanHTMLText(d)
+	for _, l := range locs {
+		lm, ok := l.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		addr, _ := lm["address"].(map[string]interface{})
+		if addr == nil {
+			continue
+		}
+		var parts []string
+		if s, ok := addr["addressLocality"].(string); ok {
+			if s = strings.TrimSpace(s); s != "" {
+				parts = append(parts, s)
+			}
+		}
+		if s, ok := addr["addressRegion"].(string); ok {
+			if s = strings.TrimSpace(s); s != "" {
+				parts = append(parts, s)
+			}
+		}
+		if s, ok := addr["addressCountry"].(string); ok {
+			if s = strings.TrimSpace(s); s != "" {
+				parts = append(parts, s)
+			}
+		}
+		if len(parts) > 0 {
+			return strings.Join(parts, ", ")
+		}
 	}
 	return ""
 }
