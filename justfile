@@ -17,3 +17,6 @@ url target_url:
 
 score-job job_id:
     linkedin-jobs score-job {{job_id}}
+
+hr target_url:
+    linkedin-jobs hr '{{target_url}}'
