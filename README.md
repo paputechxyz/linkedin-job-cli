@@ -12,6 +12,8 @@ offline full-text search.
 - **`search`** — anonymous public job-board search (no login required).
 - **`url`** — paste any LinkedIn search/collection URL (job-alert email link,
   saved search, browser URL) and score every job on that page.
+- **`hr`** — paste a job URL and get the best person to reach out to (ranked
+  contacts + reasoning + a tailored hook + company-scoped LinkedIn search links).
 - **Salary parsing** — handles `CA$173,000.00 - CA$220,000.00`, `$212,500/yr`,
   `$120k`, USD/CAD.
 - **LLM enrichment + fit scoring** — OpenAI-compatible API extracts structured
@@ -96,6 +98,27 @@ linkedin-jobs url "https://www.linkedin.com/jobs/collections/recommended/?start=
 
 Uses your captured session when available (more reliable for signed-in pages);
 falls back to anonymous otherwise.
+
+### HR (who to reach out to about a job)
+
+Paste any LinkedIn job URL and get back the single best person to contact to get
+your application noticed, a ranked shortlist, the reasoning, a tailored outreach
+hook, and a ready-to-click LinkedIn people-search URL for each contact scoped to
+that company. It fetches the public job page (extracting the company, its
+LinkedIn slug, and its numeric company id from the page's "See who you know"
+links), pulls the company's public profile, then asks the LLM to pick the
+highest-leverage contact — reading the job description for signals like "work
+directly with our CTO". With no LLM configured it falls back to a deterministic
+heuristic (founding roles → founders/CTO; manager roles → VP/Director;
+otherwise recruiter first) and still emits usable search links. Works
+anonymously; no session required.
+
+```bash
+linkedin-jobs hr "https://www.linkedin.com/jobs/view/4435820129/"
+linkedin-jobs hr "https://www.linkedin.com/jobs/search/?currentJobId=4435820129&f_C=105863333"
+linkedin-jobs hr "<url>" --json      # machine-readable report
+linkedin-jobs hr "<url>" --no-llm    # heuristic only (no LLM key needed)
+```
 
 ### Work with stored jobs
 
@@ -268,11 +291,12 @@ description are fetched per-job from the public detail page (JSON-LD
 
 ```
 main.go
-cmd/                       cobra commands (recommended, search, list, enrich, score, profile, config, …)
+cmd/                       cobra commands (recommended, search, list, enrich, score, profile, config, hr, …)
 internal/
   auth/                    session resolution (cookie env/file) + csrf
   config/                  env-based config + YAML settings
   filter/                  deterministic hard preference filter
+  hr/                      outreach research: best contact + ranked list for a job
   linkedin/                HTTP client, anonymous scraper, recommended graphql
   llm/                     OpenAI-compatible provider resolution + enrich/score
   models/                  JobPosting, Profile, Enrichment

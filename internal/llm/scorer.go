@@ -1,15 +1,11 @@
 package llm
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"linkedin-jobs/internal/models"
 )
@@ -99,50 +95,7 @@ func enrichPrompt(j *models.JobPosting, p *models.Profile) string {
 }
 
 func requestEnrichment(j *models.JobPosting, p *models.Profile, provider *Provider) (string, error) {
-	reqBody := map[string]interface{}{
-		"model":       provider.Model,
-		"max_tokens":  4096,
-		"temperature": 0.2,
-		"messages": []map[string]string{
-			{"role": "system", "content": enrichSystem},
-			{"role": "user", "content": enrichPrompt(j, p)},
-		},
-	}
-	raw, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", err
-	}
-	endpoint := strings.TrimRight(provider.BaseURL, "/") + "/chat/completions"
-	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(raw))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	provider.Apply(req)
-	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("LLM API status %d: %s", resp.StatusCode, truncateForError(string(body)))
-	}
-	var parsed struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return "", err
-	}
-	if len(parsed.Choices) == 0 {
-		return "", errors.New("LLM returned no choices")
-	}
-	return strings.TrimSpace(parsed.Choices[0].Message.Content), nil
+	return Chat(provider, enrichSystem, enrichPrompt(j, p), 4096, 0.2)
 }
 
 // truncateForError bounds an error body to 256 bytes and scrubs newlines so a
