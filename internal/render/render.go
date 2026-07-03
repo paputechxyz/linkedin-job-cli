@@ -40,7 +40,7 @@ func Table(w io.Writer, jobs []*models.JobPosting) {
 			trunc(j.Title, 38),
 			trunc(orDash(j.Company), 24),
 			trunc(orDash(j.Location), 20),
-			trunc(j.SalaryDisplay(), 16),
+			trunc(j.SalaryDisplay(), 26),
 			orDash(j.Source),
 		}
 		rows[i] = row
