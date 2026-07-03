@@ -385,7 +385,9 @@ func (c *Client) FetchDetail(j *models.JobPosting) error {
 
 	// 3. Description-body salary is authoritative (carries the localized band +
 	// currency). Override the badge when present and mark it high-confidence.
-	if descSal := salary.InDescription(j.Description); descSal != nil {
+	// A bare "$lo - $hi" range introduced by a "Salary:" label also overrides,
+	// inheriting the badge's currency so we don't lose the locale signal.
+	if descSal := salary.InDescriptionWithDefault(j.Description, j.SalaryCurrency); descSal != nil {
 		j.SalaryRaw = descSal.Raw
 		j.SalaryLow = descSal.Low
 		j.SalaryHigh = descSal.High

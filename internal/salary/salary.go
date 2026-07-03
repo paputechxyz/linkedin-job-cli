@@ -57,16 +57,27 @@ var (
 	rangeSplitRE = regexp.MustCompile(`\s[-–—]\s|\s[to]\s`)
 )
 
-// Parse parses a salary string from a LinkedIn job page. Returns nil if nothing
-// could be parsed.
+// Parse parses a salary string from a LinkedIn job page, defaulting to USD when
+// no currency signal is present. Returns nil if nothing could be parsed.
 func Parse(text string) *Salary {
+	return ParseWithDefault(text, "USD")
+}
+
+// ParseWithDefault is like Parse but lets the caller supply the currency used
+// when the text carries no explicit currency signal (e.g. a bare "$100k -
+// $150k"). Used to inherit the LinkedIn salary badge's currency when the
+// description body states a range with only a "$" prefix.
+func ParseWithDefault(text, defaultCurrency string) *Salary {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil
 	}
+	if defaultCurrency == "" {
+		defaultCurrency = "USD"
+	}
 	parts := rangeSplitRE.Split(text, -1)
 	var amounts []float64
-	currency := "USD"
+	currency := defaultCurrency
 	for _, part := range parts {
 		amt, cur := parseAmount(part, currency)
 		if amt != nil {
@@ -151,8 +162,44 @@ var descriptionSalaryRE = regexp.MustCompile(
 // and returns the first plausible one (low end >= 1000 to reject small
 // non-salary figures). Returns nil when no currency-stated range is present.
 func InDescription(desc string) *Salary {
+	return InDescriptionWithDefault(desc, "")
+}
+
+// labeledBareRangeRE matches a compensation range introduced by an explicit
+// "Salary"/"Compensation" label where the amounts carry only a bare "$" (no
+// currency code). The label is a strong signal that the range really is pay, so
+// we accept the bare "$" and let the caller supply a default currency
+// (typically inherited from the LinkedIn salary badge). Requires two amounts
+// separated by a dash/en-dash/em-dash or the word "to".
+var labeledBareRangeRE = regexp.MustCompile(
+	`(?i)(?:annual\s+|yearly\s+)?(?:base\s+)?(?:salary|compensation)(?:\s+(?:range|band))?` +
+		`(?:[:\-]\s*|\s+)` +
+		`\$[\d,]+(?:\.\d+)?[kKmM]?(?:/(?:yr|year|hr|hour|annual|annum|month|week))?` +
+		`\s*(?:[-–—]|to)\s+` +
+		`\$[\d,]+(?:\.\d+)?[kKmM]?(?:/(?:yr|year|hr|hour|annual|annum|month|week))?`)
+
+// InDescriptionWithDefault extends InDescription with a fallback: when no
+// currency-stated range is found but defaultCurrency is non-empty, it also
+// accepts a range introduced by a "Salary"/"Compensation" label whose amounts
+// are bare "$" figures, tagging it with defaultCurrency. This lets a
+// description body override the lower-confidence LinkedIn salary badge while
+// inheriting its currency. Returns nil when neither path yields a range.
+func InDescriptionWithDefault(desc, defaultCurrency string) *Salary {
 	for _, m := range descriptionSalaryRE.FindAllString(desc, -1) {
 		s := Parse(m)
+		if s == nil || s.Low == nil || s.High == nil {
+			continue
+		}
+		if *s.Low < 1000 || *s.High < 1000 {
+			continue
+		}
+		return s
+	}
+	if defaultCurrency == "" {
+		return nil
+	}
+	for _, m := range labeledBareRangeRE.FindAllString(desc, -1) {
+		s := ParseWithDefault(m, defaultCurrency)
 		if s == nil || s.Low == nil || s.High == nil {
 			continue
 		}

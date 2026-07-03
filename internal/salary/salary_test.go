@@ -103,3 +103,59 @@ func TestInDescription_RejectsSmallFigures(t *testing.T) {
 		t.Errorf("expected nil for small range, got %+v", s)
 	}
 }
+
+func TestInDescriptionWithDefault_LabeledBareRangeInheritsBadgeCurrency(t *testing.T) {
+	// "Salary: $190K/yr - $300K/yr" — bare "$" with a Salary label. The badge
+	// already supplied CAD, so the description range should override the badge
+	// and inherit CAD rather than defaulting to USD.
+	desc := "About the role.\nSalary: $190K/yr - $300K/yr\nWe offer equity."
+
+	s := InDescriptionWithDefault(desc, "CAD")
+	if s == nil {
+		t.Fatal("expected a salary from the labeled bare-$ range")
+	}
+	if s.Low == nil || *s.Low != 190000 {
+		t.Errorf("low = %v, want 190000", s.Low)
+	}
+	if s.High == nil || *s.High != 300000 {
+		t.Errorf("high = %v, want 300000", s.High)
+	}
+	if s.Currency != "CAD" {
+		t.Errorf("currency = %q, want CAD (inherited from badge)", s.Currency)
+	}
+}
+
+func TestInDescriptionWithDefault_NoLabelStillStrict(t *testing.T) {
+	// A bare "$" range with NO Salary label and NO currency signal must not
+	// match even when a default currency is supplied — avoids grabbing
+	// incidental figures. Only the strict currency-stated path or a labeled
+	// range can override.
+	if s := InDescriptionWithDefault("We pay $200k - $250k depending on experience.", "CAD"); s != nil {
+		t.Errorf("expected nil for unlabeled bare-$ range, got %+v", s)
+	}
+}
+
+func TestInDescriptionWithDefault_StrictRangeWinsOverLabeledBare(t *testing.T) {
+	// When both a currency-stated range and a labeled bare-$ range are present,
+	// the explicit-currency one is authoritative and is returned first.
+	desc := "Pay band: $205,600 - $257,000 CAD\nAlso: Salary: $190k - $300k"
+
+	s := InDescriptionWithDefault(desc, "USD")
+	if s == nil {
+		t.Fatal("expected the currency-stated range to win")
+	}
+	if s.Currency != "CAD" {
+		t.Errorf("currency = %q, want CAD (from explicit range)", s.Currency)
+	}
+	if s.High == nil || *s.High != 257000 {
+		t.Errorf("high = %v, want 257000", s.High)
+	}
+}
+
+func TestInDescriptionWithDefault_NoDefaultSkipsLabeledBare(t *testing.T) {
+	// Without a default currency (no badge to inherit), a labeled bare-$ range
+	// is not matched — we can't know the currency, so we don't guess.
+	if s := InDescriptionWithDefault("Salary: $190k - $300k", ""); s != nil {
+		t.Errorf("expected nil when no default currency, got %+v", s)
+	}
+}
