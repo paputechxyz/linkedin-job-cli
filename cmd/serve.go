@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -139,11 +140,22 @@ func (ws *webServer) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if qerr != nil {
 		pd.Error = qerr.Error()
 	} else {
-		pd.Jobs = make([]jobView, 0, len(jobs))
-		for _, j := range jobs {
+		// Client-side pagination: the store returns all matches (no LIMIT),
+		// then we slice the current page and precompute pager links.
+		pageSize := f.PageSizeOrDefault()
+		page := softPage(q.Get("page"))
+		total := len(jobs)
+		pd.Pagination = ws.buildPagination(f, page, pageSize, total)
+		from := (pd.Pagination.Page - 1) * pageSize
+		to := pd.Pagination.Page * pageSize
+		if to > total {
+			to = total
+		}
+		pd.N = total
+		pd.Jobs = make([]jobView, 0, to-from)
+		for _, j := range jobs[from:to] {
 			pd.Jobs = append(pd.Jobs, toJobView(j))
 		}
-		pd.N = len(pd.Jobs)
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := ws.tpl.Execute(w, pd); err != nil {
@@ -262,6 +274,7 @@ func (ws *webServer) query(q url.Values) ([]*models.JobPosting, string, error) {
 		Remote:            q.Get("remote") == "1",
 		Hybrid:            q.Get("hybrid") == "1",
 		SortByScore:       q.Get("sort") != "salary", // default: fit score
+		SinceSearched:     normalizeSinceSearched(q.Get("since_searched")),
 	}
 	// FX-aware floor can't be done in SQL: defer it to Go.
 	if currency != "" && minSal > 0 {
@@ -282,7 +295,16 @@ type formVals struct {
 	MinSalary, MinSalaryCurrency, MinScore      string
 	Sort                                        string
 	Remote, Hybrid                              bool
+	PageSize                                    int
+	SinceSearched                               string
 }
+
+// defaultPageSize is the per-page job count when none is chosen. validPageSizes
+// are the only page sizes the UI offers; any other value falls back to the
+// default so the pager can't be coerced into a huge/odd slice via the URL.
+const defaultPageSize = 20
+
+var validPageSizes = []int{20, 50, 100}
 
 func readForm(q url.Values) formVals {
 	sort := q.Get("sort")
@@ -302,7 +324,33 @@ func readForm(q url.Values) formVals {
 		Sort:              sort,
 		Remote:            q.Get("remote") == "1",
 		Hybrid:            q.Get("hybrid") == "1",
+		PageSize:          validPageSize(q.Get("page_size")),
+		SinceSearched:     q.Get("since_searched"),
 	}
+}
+
+// validPageSize parses the page_size query param, accepting only the offered
+// values and defaulting otherwise.
+func validPageSize(s string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		return defaultPageSize
+	}
+	for _, v := range validPageSizes {
+		if n == v {
+			return n
+		}
+	}
+	return defaultPageSize
+}
+
+// softPage parses a 1-indexed page number, clamping bad input to 1.
+func softPage(s string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || n < 1 {
+		return 1
+	}
+	return n
 }
 
 // toQueryValues reconstructs url.Values from the form state, mirroring the
@@ -320,6 +368,10 @@ func (f formVals) toQueryValues() url.Values {
 	v.Set("salary_currency", f.MinSalaryCurrency)
 	v.Set("min_score", f.MinScore)
 	v.Set("sort", f.Sort)
+	v.Set("page_size", strconv.Itoa(f.PageSizeOrDefault()))
+	if f.SinceSearched != "" {
+		v.Set("since_searched", f.SinceSearched)
+	}
 	if f.Remote {
 		v.Set("remote", "1")
 	}
@@ -329,12 +381,24 @@ func (f formVals) toQueryValues() url.Values {
 	return v
 }
 
+// PageSizeOrDefault guards against a zero page size (e.g. from a deserialized
+// saved-filter file written before pagination existed) so the pager never
+// divides by zero. Exported so the page template can call it directly.
+func (f formVals) PageSizeOrDefault() int {
+	if f.PageSize <= 0 {
+		return defaultPageSize
+	}
+	return f.PageSize
+}
+
 // filterParamKeys are the query params the filter form submits. Used to tell a
 // bare "/" visit (restore saved) apart from an explicit Apply submit (persist).
+// "page" is intentionally NOT here: pagination clicks are navigation, not a
+// filter change, so they shouldn't be persisted as the saved view's page.
 var filterParamKeys = []string{
 	"q", "company", "title", "location", "status", "source",
 	"min_salary", "salary_currency", "min_score", "sort",
-	"remote", "hybrid",
+	"remote", "hybrid", "page_size", "since_searched",
 }
 
 // hasFilterParams reports whether the URL carries any filter form params.
@@ -348,9 +412,9 @@ func hasFilterParams(q url.Values) bool {
 }
 
 // defaultFormVals returns the empty filter state (sort defaults to fit score,
-// matching readForm's behavior for a bare form submit).
+// page size defaults to 20, matching readForm's behavior for a bare form submit).
 func defaultFormVals() formVals {
-	return formVals{Sort: "score"}
+	return formVals{Sort: "score", PageSize: defaultPageSize}
 }
 
 // filtersFilePath returns the path to the persisted web-filter state, placed
@@ -381,6 +445,9 @@ func (ws *webServer) loadSavedFilters() formVals {
 	}
 	if f.Sort == "" {
 		f.Sort = "score"
+	}
+	if f.PageSize <= 0 {
+		f.PageSize = defaultPageSize
 	}
 	return f
 }
@@ -551,13 +618,157 @@ func softInt(s string) int {
 	return v
 }
 
+// sinceSearchedLayouts are the accepted datetime formats for the "stored since"
+// filter, tried in order. The input is interpreted in the user's local time so
+// typing "2026-07-03" means local midnight of that day.
+var sinceSearchedLayouts = []string{
+	time.RFC3339,
+	"2006-01-02 15:04:05",
+	"2006-01-02 15:04",
+	"2006-01-02T15:04:05",
+	"2006-01-02T15:04",
+	"2006-01-02",
+}
+
+// normalizeSinceSearched parses a user-entered datetime floor for the
+// searched_at column, accepting a date-only ("2026-07-03"), a space- or
+// 'T'-separated datetime ("2026-07-03 00:00:00"), or an RFC3339 value. The
+// result is normalized to RFC3339 UTC so a lexicographic string comparison
+// against the stored TEXT column matches chronological order. Returns "" on
+// empty or unparseable input (the filter is then a no-op).
+func normalizeSinceSearched(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t.UTC().Format(time.RFC3339)
+	}
+	for _, layout := range sinceSearchedLayouts {
+		if t, err := time.ParseInLocation(layout, s, time.Local); err == nil {
+			return t.UTC().Format(time.RFC3339)
+		}
+	}
+	return ""
+}
+
 type pageData struct {
-	Jobs  []jobView
-	N     int
-	F     formVals
-	Mode  string
-	Error string
-	CSRF  string
+	Jobs       []jobView
+	N          int
+	F          formVals
+	Mode       string
+	Error      string
+	CSRF       string
+	Pagination pagination
+}
+
+// pagination carries everything the template needs to render the pager and the
+// "showing X–Y of Z" result count. Page numbers are 1-indexed.
+type pagination struct {
+	Page     int // current page (1-indexed)
+	PageSize int
+	Total    int // total matching jobs across all pages
+	Pages    int // total page count (>=1)
+	From     int // 1-indexed inclusive start of the current page
+	To       int // 1-indexed inclusive end of the current page
+	HasPrev  bool
+	HasNext  bool
+	PrevURL  string
+	NextURL  string
+	Links    []pageLink
+}
+
+// pageLink is one entry in the pager. Page==0 means an ellipsis gap. Current
+// marks the active page (rendered as non-link).
+type pageLink struct {
+	Page    int
+	URL     string
+	Current bool
+}
+
+// buildPagination computes the page window, clamps the current page, and
+// precomputes the prev/next/page-number links so the template only renders.
+func (ws *webServer) buildPagination(f formVals, page, pageSize, total int) pagination {
+	pages := 1
+	if total > 0 {
+		pages = (total + pageSize - 1) / pageSize
+	}
+	if page > pages {
+		page = pages
+	}
+	if page < 1 {
+		page = 1
+	}
+	pg := pagination{
+		Page:     page,
+		PageSize: pageSize,
+		Total:    total,
+		Pages:    pages,
+		HasPrev:  page > 1,
+		HasNext:  page < pages,
+	}
+	if total > 0 {
+		pg.From = (page-1)*pageSize + 1
+		pg.To = page * pageSize
+		if pg.To > total {
+			pg.To = total
+		}
+	}
+	if pg.HasPrev {
+		pg.PrevURL = ws.pageURL(f, page-1)
+	}
+	if pg.HasNext {
+		pg.NextURL = ws.pageURL(f, page+1)
+	}
+	pg.Links = ws.pageLinks(f, page, pages)
+	return pg
+}
+
+// pageLinks returns the page-number entries to render. For modest page counts
+// every page is shown; for larger ones a window around the current page is
+// shown with ellipses (Page==0) bridging the gaps to the first/last page.
+func (ws *webServer) pageLinks(f formVals, page, pages int) []pageLink {
+	if pages <= 12 {
+		out := make([]pageLink, 0, pages)
+		for i := 1; i <= pages; i++ {
+			out = append(out, pageLink{Page: i, URL: ws.pageURL(f, i), Current: i == page})
+		}
+		return out
+	}
+	want := map[int]bool{}
+	add := func(n int) {
+		if n >= 1 && n <= pages {
+			want[n] = true
+		}
+	}
+	add(1)
+	add(pages)
+	for i := page - 2; i <= page + 2; i++ {
+		add(i)
+	}
+	var nums []int
+	for n := range want {
+		nums = append(nums, n)
+	}
+	sort.Ints(nums)
+	out := make([]pageLink, 0, len(nums)*2)
+	prev := 0
+	for _, n := range nums {
+		if prev > 0 && n > prev+1 {
+			out = append(out, pageLink{Page: 0}) // ellipsis
+		}
+		out = append(out, pageLink{Page: n, URL: ws.pageURL(f, n), Current: n == page})
+		prev = n
+	}
+	return out
+}
+
+// pageURL builds a URL for a given page that preserves the current filter +
+// page-size state (page itself is not part of formVals, so it's set here).
+func (ws *webServer) pageURL(f formVals, page int) string {
+	v := f.toQueryValues()
+	v.Set("page", strconv.Itoa(page))
+	return "/?" + v.Encode()
 }
 
 const pageHTML = `<!DOCTYPE html>
@@ -1111,6 +1322,24 @@ const pageHTML = `<!DOCTYPE html>
   .empty-state .empty-sub { font-size: 0.8125rem; color: var(--ink-4); }
   .empty-state code { font-family: var(--font-mono); font-size: 0.75rem; background: var(--inset-bg); padding: 1px 5px; border-radius: 4px; color: var(--ink-3); }
 
+  /* Pagination */
+  .pager {
+    display: flex; align-items: center; justify-content: center;
+    gap: 4px; flex-wrap: wrap; margin-top: 22px;
+  }
+  .pager a, .pager span {
+    font-family: var(--font-mono); font-size: 0.8125rem; font-variant-numeric: tabular-nums;
+    min-width: 34px; height: 34px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: var(--radius-field); padding: 0 9px;
+  }
+  .pager a { color: var(--ink-2); border: 1px solid var(--line); background: var(--card-bg); text-decoration: none; transition: background-color .12s, border-color .12s, color .12s; }
+  .pager a:hover { background: var(--hover-bg); border-color: var(--line-strong); color: var(--ink-1); text-decoration: none; }
+  .pager .pager-page--current { background: var(--accent); color: var(--accent-on); border: 1px solid var(--accent); font-weight: 700; }
+  .pager .pager-gap { color: var(--ink-4); border: 1px solid transparent; background: transparent; }
+  .pager .pager-nav { font-weight: 600; }
+  .pager .pager-nav--disabled { color: var(--ink-4); opacity: 0.45; border: 1px solid var(--line); background: var(--card-subtle); cursor: default; }
+
   /* Footer */
   footer.app-footer {
     margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--line);
@@ -1227,6 +1456,19 @@ const pageHTML = `<!DOCTYPE html>
             <option value="salary"{{if eq .F.Sort "salary"}} selected{{end}}>salary</option>
           </select>
         </div>
+        <div class="field field-narrow">
+          <label for="page_size">Per page</label>
+          {{$ps := .F.PageSizeOrDefault}}
+          <select id="page_size" name="page_size">
+            <option value="20"{{if eq $ps 20}} selected{{end}}>20</option>
+            <option value="50"{{if eq $ps 50}} selected{{end}}>50</option>
+            <option value="100"{{if eq $ps 100}} selected{{end}}>100</option>
+          </select>
+        </div>
+        <div class="field field-narrow">
+          <label for="since_searched">Added since</label>
+          <input type="text" id="since_searched" name="since_searched" value="{{.F.SinceSearched}}" placeholder="2026-07-03 00:00:00" title="Only show jobs first stored on or after this date/time">
+        </div>
         <div class="checks">
           <label class="check"><input type="checkbox" id="remote" name="remote" value="1"{{if .F.Remote}} checked{{end}}> remote</label>
           <label class="check"><input type="checkbox" id="hybrid" name="hybrid" value="1"{{if .F.Hybrid}} checked{{end}}> hybrid</label>
@@ -1242,7 +1484,11 @@ const pageHTML = `<!DOCTYPE html>
     {{if eq .Mode "search"}}<div class="notice">Showing full-text search results ranked by relevance. Column filters and sort are ignored while searching — clear the search box to filter and sort.</div>{{end}}
 
     <div class="result-count">
-      <strong>{{.N}}</strong> job{{if ne .N 1}}s{{end}}{{if eq .Mode "search"}} matching "{{.F.Q}}"{{end}}
+      {{if gt .Pagination.Pages 1}}
+        Showing <strong>{{.Pagination.From}}–{{.Pagination.To}}</strong> of <strong>{{.N}}</strong> job{{if ne .N 1}}s{{end}}{{if eq .Mode "search"}} matching "{{.F.Q}}"{{end}}
+      {{else}}
+        <strong>{{.N}}</strong> job{{if ne .N 1}}s{{end}}{{if eq .Mode "search"}} matching "{{.F.Q}}"{{end}}
+      {{end}}
       <span class="legend" aria-hidden="true">
         <span><i style="background:var(--score-high)"></i>HIGH ≥70</span>
         <span><i style="background:var(--score-mid)"></i>MID 40–69</span>
@@ -1336,6 +1582,14 @@ const pageHTML = `<!DOCTYPE html>
       </article>
     {{end}}
     </main>
+
+    {{if gt .Pagination.Pages 1}}
+    <nav class="pager" aria-label="Pagination">
+      {{if .Pagination.HasPrev}}<a class="pager-nav" href="{{.Pagination.PrevURL}}" rel="prev">‹ Prev</a>{{else}}<span class="pager-nav pager-nav--disabled" aria-disabled="true">‹ Prev</span>{{end}}
+      {{range .Pagination.Links}}{{if eq .Page 0}}<span class="pager-gap" aria-hidden="true">…</span>{{else if .Current}}<span class="pager-page pager-page--current" aria-current="page">{{.Page}}</span>{{else}}<a class="pager-page" href="{{.URL}}">{{.Page}}</a>{{end}}{{end}}
+      {{if .Pagination.HasNext}}<a class="pager-nav" href="{{.Pagination.NextURL}}" rel="next">Next ›</a>{{else}}<span class="pager-nav pager-nav--disabled" aria-disabled="true">Next ›</span>{{end}}
+    </nav>
+    {{end}}
 
     <footer class="app-footer">
       Status &amp; delete editable · everything else read-only · <code>linkedin-jobs serve</code> · localhost only

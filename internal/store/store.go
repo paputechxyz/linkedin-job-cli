@@ -445,6 +445,10 @@ type Filters struct {
 	MinScore          int  // 0 = no score filter
 	SortByScore       bool // order by fit_score desc instead of salary
 	Limit             int
+	// SinceSearched filters to jobs first stored (searched_at) on or after the
+	// given RFC3339 instant. Compared as a string because searched_at is stored
+	// as ISO 8601 UTC, which sorts chronologically.
+	SinceSearched string
 }
 
 // List returns jobs matching the filters, newest salary first.
@@ -494,6 +498,10 @@ func (s *Store) List(f Filters) ([]*models.JobPosting, error) {
 	if f.MinScore > 0 {
 		q += ` AND fit_score>=?`
 		args = append(args, f.MinScore)
+	}
+	if f.SinceSearched != "" {
+		q += ` AND searched_at>=?`
+		args = append(args, f.SinceSearched)
 	}
 	if f.SortByScore {
 		q += ` ORDER BY fit_score DESC`

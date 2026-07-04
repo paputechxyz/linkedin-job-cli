@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // scoreForTest builds a jobView the way toJobView does, deriving the score tier
@@ -197,6 +198,7 @@ func TestFormValsRoundTrip(t *testing.T) {
 		Status: "saved", Source: "recommended",
 		MinSalary: "200k", MinSalaryCurrency: "CAD", MinScore: "60",
 		Sort: "salary", Remote: true, Hybrid: true,
+		PageSize: 50,
 	}
 	q := original.toQueryValues()
 	// Empty-default and Clear-button use defaultFormVals(); verify that path
@@ -230,7 +232,7 @@ func TestSavedFiltersPersistAcrossInstances(t *testing.T) {
 	}
 	saved := formVals{
 		Q: "founder", Company: "Globex", Sort: "salary",
-		Remote: true, MinSalaryCurrency: "USD",
+		Remote: true, MinSalaryCurrency: "USD", PageSize: 100,
 	}
 	ws1.saveFilters(saved)
 	// A brand-new server instance pointing at the same file must restore the
@@ -243,5 +245,266 @@ func TestSavedFiltersPersistAcrossInstances(t *testing.T) {
 	ws2.clearSavedFilters()
 	if got := ws2.loadSavedFilters(); got != defaultFormVals() {
 		t.Errorf("expected defaults after clear, got %+v", got)
+	}
+}
+
+func TestValidPageSize(t *testing.T) {
+	cases := map[string]int{
+		"":      defaultPageSize,
+		"junk":  defaultPageSize,
+		"0":     defaultPageSize,
+		"10":    defaultPageSize, // not an offered size
+		"-5":    defaultPageSize,
+		"20":    20,
+		"50":    50,
+		"100":   100,
+		"  50 ": 50,
+	}
+	for in, want := range cases {
+		if got := validPageSize(in); got != want {
+			t.Errorf("validPageSize(%q) = %d, want %d", in, got, want)
+		}
+	}
+}
+
+func TestSoftPage(t *testing.T) {
+	cases := map[string]int{
+		"":     1,
+		"junk": 1,
+		"0":    1,
+		"-3":   1,
+		"1":    1,
+		"4":    4,
+		" 9 ":  9,
+	}
+	for in, want := range cases {
+		if got := softPage(in); got != want {
+			t.Errorf("softPage(%q) = %d, want %d", in, got, want)
+		}
+	}
+}
+
+func TestNormalizeSinceSearched(t *testing.T) {
+	// RFC3339 passes through and is normalized to UTC (Z suffix).
+	if got := normalizeSinceSearched("2026-07-03T12:00:00+05:00"); got != "2026-07-03T07:00:00Z" {
+		t.Errorf("RFC3339 tz normalize = %q, want 2026-07-03T07:00:00Z", got)
+	}
+	// Space-separated datetime → RFC3339 UTC (local interpretation).
+	got := normalizeSinceSearched("2026-07-03 00:00:00")
+	if _, err := time.Parse(time.RFC3339, got); err != nil {
+		t.Errorf("space-datetime result %q is not RFC3339: %v", got, err)
+	}
+	if !strings.HasSuffix(got, "Z") {
+		t.Errorf("expected UTC (Z) output, got %q", got)
+	}
+	// Date-only means start of that day.
+	got = normalizeSinceSearched("2026-07-03")
+	if _, err := time.Parse(time.RFC3339, got); err != nil {
+		t.Errorf("date-only result %q is not RFC3339: %v", got, err)
+	}
+	// datetime-local 'T' form.
+	got = normalizeSinceSearched("2026-07-03T15:04")
+	if _, err := time.Parse(time.RFC3339, got); err != nil {
+		t.Errorf("datetime-local result %q is not RFC3339: %v", got, err)
+	}
+	// Empty / junk → "" (no-op filter).
+	if normalizeSinceSearched("") != "" {
+		t.Error(`"" should normalize to ""`)
+	}
+	if normalizeSinceSearched("not a date") != "" {
+		t.Error(`junk should normalize to ""`)
+	}
+}
+
+func TestBuildPagination(t *testing.T) {
+	ws := &webServer{}
+	f := formVals{Sort: "score", PageSize: 20}
+
+	t.Run("clamps page beyond last", func(t *testing.T) {
+		// 25 jobs / 20 per page = 2 pages; ask for page 9 → clamped to 2.
+		pg := ws.buildPagination(f, 9, 20, 25)
+		if pg.Page != 2 {
+			t.Errorf("Page = %d, want 2 (clamped)", pg.Page)
+		}
+		if pg.Pages != 2 {
+			t.Errorf("Pages = %d, want 2", pg.Pages)
+		}
+		if !pg.HasPrev || pg.HasNext {
+			t.Errorf("HasPrev=%v HasNext=%v, want true/false on last page", pg.HasPrev, pg.HasNext)
+		}
+		if pg.From != 21 || pg.To != 25 {
+			t.Errorf("From/To = %d/%d, want 21/25", pg.From, pg.To)
+		}
+	})
+
+	t.Run("middle page range", func(t *testing.T) {
+		// 50 jobs / 20 per page = 3 pages; page 2 shows 21–40.
+		pg := ws.buildPagination(f, 2, 20, 50)
+		if pg.From != 21 || pg.To != 40 {
+			t.Errorf("From/To = %d/%d, want 21/40", pg.From, pg.To)
+		}
+		if !pg.HasPrev || !pg.HasNext {
+			t.Errorf("middle page must have both prev and next")
+		}
+	})
+
+	t.Run("single page no prev/next", func(t *testing.T) {
+		pg := ws.buildPagination(f, 1, 20, 5)
+		if pg.Pages != 1 || pg.HasPrev || pg.HasNext {
+			t.Errorf("single page should have no nav: %+v", pg)
+		}
+		if len(pg.Links) != 1 {
+			t.Errorf("Links len = %d, want 1", len(pg.Links))
+		}
+	})
+
+	t.Run("zero jobs empty range", func(t *testing.T) {
+		pg := ws.buildPagination(f, 1, 20, 0)
+		if pg.From != 0 || pg.To != 0 {
+			t.Errorf("From/To = %d/%d, want 0/0 for no jobs", pg.From, pg.To)
+		}
+		if pg.Pages != 1 {
+			t.Errorf("Pages = %d, want 1 even when empty", pg.Pages)
+		}
+	})
+
+	t.Run("links render all when modest", func(t *testing.T) {
+		// 240 jobs / 20 = 12 pages → every page is a link, no gaps.
+		pg := ws.buildPagination(f, 5, 20, 240)
+		if len(pg.Links) != 12 {
+			t.Errorf("Links len = %d, want 12", len(pg.Links))
+		}
+		for i, l := range pg.Links {
+			if l.Page != i+1 {
+				t.Errorf("link[%d].Page = %d, want %d", i, l.Page, i+1)
+			}
+			if l.URL == "" {
+				t.Errorf("link[%d] missing URL", i)
+			}
+			if l.Page == 5 && !l.Current {
+				t.Errorf("page 5 should be Current")
+			}
+		}
+	})
+
+	t.Run("links windowed with gaps when large", func(t *testing.T) {
+		// 2000 jobs / 20 = 100 pages → windowed with ellipses (Page==0).
+		pg := ws.buildPagination(f, 50, 20, 2000)
+		if pg.Pages != 100 {
+			t.Fatalf("Pages = %d, want 100", pg.Pages)
+		}
+		hasGap := false
+		hasFirst := false
+		hasLast := false
+		for _, l := range pg.Links {
+			if l.Page == 0 {
+				hasGap = true
+			}
+			if l.Page == 1 {
+				hasFirst = true
+			}
+			if l.Page == 100 {
+				hasLast = true
+			}
+		}
+		if !hasGap {
+			t.Error("expected an ellipsis gap link for 100 pages")
+		}
+		if !hasFirst || !hasLast {
+			t.Error("expected first and last page links when windowed")
+		}
+	})
+}
+
+func TestPageURLPreservesFiltersAndSize(t *testing.T) {
+	ws := &webServer{}
+	f := formVals{Company: "Acme", Sort: "salary", PageSize: 50, Remote: true}
+	u := ws.pageURL(f, 3)
+	parsed, err := url.Parse(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := parsed.Query()
+	if q.Get("page") != "3" {
+		t.Errorf("page = %q, want 3", q.Get("page"))
+	}
+	if q.Get("page_size") != "50" {
+		t.Errorf("page_size = %q, want 50", q.Get("page_size"))
+	}
+	if q.Get("company") != "Acme" {
+		t.Errorf("company filter not preserved: %q", q.Get("company"))
+	}
+	if q.Get("remote") != "1" {
+		t.Errorf("remote flag not preserved: %q", q.Get("remote"))
+	}
+}
+
+func TestRenderPagerWhenMultiplePages(t *testing.T) {
+	tpl, err := newPageTemplate()
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	// 45 jobs, page 2 of 3 (page size 20): the pager, the active page, and the
+	// "showing X–Y of Z" count must all render.
+	pd := pageData{
+		CSRF: "t",
+		F:    formVals{Sort: "score", PageSize: 20},
+		Mode: "list",
+		N:    45,
+		Pagination: pagination{
+			Page: 2, PageSize: 20, Total: 45, Pages: 3,
+			From: 21, To: 40, HasPrev: true, HasNext: true,
+			PrevURL: "/?page=1&page_size=20", NextURL: "/?page=3&page_size=20",
+			Links: []pageLink{
+				{Page: 1, URL: "/?page=1&page_size=20"},
+				{Page: 2, URL: "/?page=2&page_size=20", Current: true},
+				{Page: 3, URL: "/?page=3&page_size=20"},
+			},
+		},
+		Jobs: []jobView{scoreForTest(70, "new")},
+	}
+	var buf bytes.Buffer
+	if err := tpl.Execute(&buf, pd); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`class="pager"`,
+		`pager-page--current`,
+		`rel="prev"`,
+		`rel="next"`,
+		`Showing <strong>21–40</strong> of <strong>45</strong>`,
+		`name="page_size"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered output missing %q", want)
+		}
+	}
+}
+
+func TestRenderNoPagerWhenSinglePage(t *testing.T) {
+	tpl, err := newPageTemplate()
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	// 5 jobs, one page: no pager markup, simple count only.
+	pd := pageData{
+		CSRF: "t",
+		F:    formVals{Sort: "score", PageSize: 20},
+		Mode: "list",
+		N:    5,
+		Pagination: pagination{Page: 1, PageSize: 20, Total: 5, Pages: 1},
+		Jobs: []jobView{scoreForTest(70, "new")},
+	}
+	var buf bytes.Buffer
+	if err := tpl.Execute(&buf, pd); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, `class="pager"`) {
+		t.Error("pager should not render when there is a single page")
+	}
+	if !strings.Contains(out, `<strong>5</strong> job`) {
+		t.Error("simple count should render on a single page")
 	}
 }

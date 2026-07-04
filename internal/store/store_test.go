@@ -241,3 +241,39 @@ func TestDelete(t *testing.T) {
 		t.Errorf("deleting missing id should not error: %v", err)
 	}
 }
+
+// TestList_SinceSearched covers the "stored since" floor: only jobs whose
+// searched_at is >= the cutoff are returned. The comparison is a string match
+// against the ISO 8601 column, so a date-only cutoff floors to start-of-day.
+func TestList_SinceSearched(t *testing.T) {
+	st := tmpDB(t)
+	old := sampleJob("old")
+	old.SearchedAt = "2026-06-01T10:00:00Z"
+	recent := sampleJob("recent")
+	recent.SearchedAt = "2026-07-03T09:00:00Z"
+	st.Upsert(old)
+	st.Upsert(recent)
+
+	// Floor at 2026-07-03 00:00:00 UTC → only the recent job qualifies.
+	got, err := st.List(Filters{SinceSearched: "2026-07-03T00:00:00Z"})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "recent" {
+		t.Fatalf("want only [recent], got %v", jobIDs(got))
+	}
+
+	// Empty floor returns both.
+	got, _ = st.List(Filters{})
+	if len(got) != 2 {
+		t.Errorf("want 2 jobs with no floor, got %d", len(got))
+	}
+}
+
+func jobIDs(jobs []*models.JobPosting) []string {
+	out := make([]string, 0, len(jobs))
+	for _, j := range jobs {
+		out = append(out, j.ID)
+	}
+	return out
+}
