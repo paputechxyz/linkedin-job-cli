@@ -3,10 +3,11 @@
 // models.Profile consumed by the deterministic scorer, the hard filter, and the
 // LLM enrich prompt.
 //
-// Files used (in the project directory, override with $LJ_CONFIG_DIR):
+// Files used (override each with an env var; otherwise resolved under
+// $LJ_CONFIG_DIR or $CWD):
 //
-//	$CWD/RESUME.md       — resume body (free text), sent to the LLM as context
-//	$CWD/settings.yaml   — preference knobs under the `profile:` section
+//	$LJ_RESUME_FILE / $CWD/RESUME.md       — resume body (free text), LLM context
+//	$LJ_SETTINGS_FILE / $CWD/settings.yaml — preference knobs (`profile:` section)
 //
 // Preference knobs (work_arrangement, min_salary, locations, preferred_tech,
 // avoided_tech) drive the deterministic hard filter (internal/filter) and the
@@ -28,8 +29,14 @@ import (
 // ResumeFile is the filename holding the resume body.
 const ResumeFile = "RESUME.md"
 
-// ResumePath returns the resolved path to RESUME.md (project-local).
-func ResumePath() string { return filepath.Join(config.ProjectDir(), ResumeFile) }
+// ResumePath returns the resolved path to RESUME.md. An absolute path in
+// $LJ_RESUME_FILE overrides the default project-local location.
+func ResumePath() string {
+	if p := os.Getenv("LJ_RESUME_FILE"); p != "" {
+		return p
+	}
+	return filepath.Join(config.ProjectDir(), ResumeFile)
+}
 
 // Load builds the in-memory profile from RESUME.md (for ResumeText) plus the
 // structured preference knobs from settings. A missing resume yields an empty
@@ -70,11 +77,12 @@ func IsEmpty(p *models.Profile) bool {
 		len(p.PrefAvoidedTech) == 0
 }
 
-// SaveResume writes the resume body to RESUME.md (creating the project dir if
-// needed). An empty text clears the file.
+// SaveResume writes the resume body to RESUME.md (creating the parent dir of
+// the resolved path if needed). An empty text clears the file.
 func SaveResume(text string) error {
-	if err := os.MkdirAll(config.ProjectDir(), 0o755); err != nil {
-		return fmt.Errorf("create project dir: %w", err)
+	dir := filepath.Dir(ResumePath())
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create resume dir: %w", err)
 	}
 	if err := os.WriteFile(ResumePath(), []byte(strings.TrimSpace(text)+"\n"), 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", ResumeFile, err)

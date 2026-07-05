@@ -122,8 +122,12 @@ func ProjectDir() string {
 	return "."
 }
 
-// SettingsPath returns the resolved path to settings.yaml (project-local).
+// SettingsPath returns the resolved path to settings.yaml. An absolute path in
+// $LJ_SETTINGS_FILE overrides the default project-local location.
 func SettingsPath() string {
+	if p := os.Getenv("LJ_SETTINGS_FILE"); p != "" {
+		return p
+	}
 	return filepath.Join(ProjectDir(), "settings.yaml")
 }
 
