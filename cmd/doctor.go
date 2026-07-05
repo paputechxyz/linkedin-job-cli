@@ -13,13 +13,16 @@ import (
 	"linkedin-jobs/internal/profile"
 )
 
+var doctorPing bool
+
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
-	Short: "Diagnose config: LLM ping, resume, settings.yaml completeness, env vars",
+	Short: "Diagnose config: LLM provider, resume, settings.yaml completeness, env vars",
 	Long: `Verify everything the CLI needs is in place.
 
 Checks (in order):
-  1. LLM provider resolves and answers a tiny "hello" call
+  1. LLM provider resolves (base URL + model). With --ping, also sends a tiny
+     "hello" call to confirm the API key works end-to-end.
   2. Resume loaded from RESUME.md
   3. settings.yaml present and complete (every documented key set)
   4. All known env vars reported (keys printed, secret values redacted)
@@ -30,7 +33,7 @@ Exits 1 if any check fails, 0 if all pass.`,
 		fmt.Println("linkedin-jobs doctor")
 		fmt.Println()
 
-		// 1. LLM provider + live ping.
+		// 1. LLM provider (+ optional live ping).
 		fmt.Println("== LLM ==")
 		cfg := loadCfg()
 		p, err := llm.Resolve(cfg)
@@ -41,20 +44,24 @@ Exits 1 if any check fails, 0 if all pass.`,
 		} else {
 			fmt.Printf("  [✓] provider resolved: source=%s model=%s base=%s key=%s\n",
 				p.Source, p.Model, p.BaseURL, p.Redacted())
-			// Reasoning models (e.g. GLM-5.2) spend tokens on internal
-			// thinking before emitting visible content, so give the call
-			// enough room to actually produce an answer.
-			reply, err := llm.Chat(p,
-				"You are a connectivity health check.",
-				"Reply with exactly one word: hello",
-				128, 0)
-			if err != nil {
-				ok = false
-				fmt.Printf("  [✗] LLM call failed: %v\n", err)
-			} else if reply = strings.TrimSpace(reply); reply == "" {
-				fmt.Printf("  [~] LLM responded with empty content (API reachable, but model returned no text)\n")
+			if doctorPing {
+				// Reasoning models (e.g. GLM-5.2) spend tokens on internal
+				// thinking before emitting visible content, so give the call
+				// enough room to actually produce an answer.
+				reply, err := llm.Chat(p,
+					"You are a connectivity health check.",
+					"Reply with exactly one word: hello",
+					128, 0)
+				if err != nil {
+					ok = false
+					fmt.Printf("  [✗] LLM call failed: %v\n", err)
+				} else if reply = strings.TrimSpace(reply); reply == "" {
+					fmt.Printf("  [~] LLM responded with empty content (API reachable, but model returned no text)\n")
+				} else {
+					fmt.Printf("  [✓] LLM responded: %q\n", reply)
+				}
 			} else {
-				fmt.Printf("  [✓] LLM responded: %q\n", reply)
+				fmt.Println("  [·] ping skipped (--ping to send a hello call)")
 			}
 		}
 		fmt.Println()
@@ -205,5 +212,6 @@ func checkSettings(path string) ([]string, error) {
 }
 
 func init() {
+	doctorCmd.Flags().BoolVar(&doctorPing, "ping", false, "send a live \"hello\" call to the resolved LLM (default: only check base URL + model)")
 	rootCmd.AddCommand(doctorCmd)
 }
