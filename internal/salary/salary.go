@@ -146,16 +146,19 @@ func PassesFilter(s *Salary, min float64) bool {
 }
 
 // descriptionSalaryRE matches a compensation range stated in a job description
-// body, requiring an explicit currency signal: either a non-$ currency prefix
-// (CA$/CAD/US$/USD/EUR…) on the first amount, or a trailing ISO code. A bare
-// "$low - $high" with no currency hint is intentionally NOT matched, since that
-// is usually an ambiguous badge-style figure and we only want the authoritative
-// currency-stated data.
+// body, requiring an explicit currency signal. The first amount may carry an
+// optional trailing ISO code (e.g. "$125,000 USD - $165,000 USD"), so the range
+// is still recognized when each amount is individually suffixed with its
+// currency. Beyond that, a range qualifies via either a non-$ currency prefix
+// (CA$/CAD/US$/USD/EUR…) on the first amount, or a trailing ISO code on the
+// second amount. A bare "$low - $high" with no currency hint anywhere is
+// intentionally NOT matched, since that is usually an ambiguous badge-style
+// figure and we only want the authoritative currency-stated data.
 var descriptionSalaryRE = regexp.MustCompile(
 	`(?i)(?:` +
-		`(?:CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥)\s?[\d,]+(?:\.\d+)?[kKmM]?\s*[-–—]\s*(?:CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥|\$)?\s?[\d,]+(?:\.\d+)?[kKmM]?(?:\s+(?:CAD|USD|EUR|GBP|AUD|INR|JPY))?` +
+		`(?:CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥)\s?[\d,]+(?:\.\d+)?[kKmM]?(?:\s+(?:CAD|USD|EUR|GBP|AUD|INR|JPY))?\s*[-–—]\s*(?:CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥|\$)?\s?[\d,]+(?:\.\d+)?[kKmM]?(?:\s+(?:CAD|USD|EUR|GBP|AUD|INR|JPY))?` +
 		`|` +
-		`(?:CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥|\$)?\s?[\d,]+(?:\.\d+)?[kKmM]?\s*[-–—]\s*(?:CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥|\$)?\s?[\d,]+(?:\.\d+)?[kKmM]?\s+(?:CAD|USD|EUR|GBP|AUD|INR|JPY)` +
+		`(?:CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥|\$)?\s?[\d,]+(?:\.\d+)?[kKmM]?(?:\s+(?:CAD|USD|EUR|GBP|AUD|INR|JPY))?\s*[-–—]\s*(?:CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥|\$)?\s?[\d,]+(?:\.\d+)?[kKmM]?\s+(?:CAD|USD|EUR|GBP|AUD|INR|JPY)` +
 		`)`)
 
 // InDescription scans a job description for an authoritative compensation range

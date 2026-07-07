@@ -159,3 +159,25 @@ func TestInDescriptionWithDefault_NoDefaultSkipsLabeledBare(t *testing.T) {
 		t.Errorf("expected nil when no default currency, got %+v", s)
 	}
 }
+
+func TestInDescription_TrailingISOOnEachAmount(t *testing.T) {
+	// "$125,000 USD - $165,000 USD" — each amount carries its own trailing ISO
+	// code, with the dash between amount-1's "USD" and amount-2's "$". This is
+	// the authoritative employer-stated range and must override the LinkedIn
+	// salary badge (which frequently shows a different, generic band).
+	desc := "About the role.\nSalary Range US: $125,000 USD - $165,000 USD\nWe offer equity."
+
+	s := InDescription(desc)
+	if s == nil {
+		t.Fatal("expected a salary from the per-amount trailing-ISO range")
+	}
+	if s.Low == nil || *s.Low != 125000 {
+		t.Errorf("low = %v, want 125000", s.Low)
+	}
+	if s.High == nil || *s.High != 165000 {
+		t.Errorf("high = %v, want 165000", s.High)
+	}
+	if s.Currency != "USD" {
+		t.Errorf("currency = %q, want USD", s.Currency)
+	}
+}

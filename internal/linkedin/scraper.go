@@ -18,19 +18,6 @@ const guestSearchURL = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobP
 
 var jobIDRE = regexp.MustCompile(`jobPosting:(\d+)`)
 
-// descriptionSalaryRE matches a compensation range stated in the job description
-// body, requiring an explicit currency signal: either a non-$ currency prefix
-// (CA$/CAD/US$/USD/EUR…) on the first amount, or a trailing ISO code. A bare
-// "$low - $high" with no currency hint is intentionally NOT matched, since that
-// is usually the same ambiguous badge figure and we only want to override the
-// badge with authoritative, currency-stated data.
-var descriptionSalaryRE = regexp.MustCompile(
-	`(?i)(?:` +
-		`(?:CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥)\s?[\d,]+(?:\.\d+)?[kKmM]?\s*[-–—]\s*(?:CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥|\$)?\s?[\d,]+(?:\.\d+)?[kKmM]?(?:\s+(?:CAD|USD|EUR|GBP|AUD|INR|JPY))?` + // explicit-prefix first amount
-		`|` +
-		`(?:CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥|\$)?\s?[\d,]+(?:\.\d+)?[kKmM]?\s*[-–—]\s*(?:CA\$|C\$|CAD|US\$|USD|EUR|GBP|AUD|INR|JPY|€|£|¥|\$)?\s?[\d,]+(?:\.\d+)?[kKmM]?\s+(?:CAD|USD|EUR|GBP|AUD|INR|JPY)` + // trailing ISO code on the range
-		`)`)
-
 // Search runs an anonymous job search and returns parsed job cards (no
 // salary/description — call FetchDetail for those).
 func (c *Client) Search(keywords, location string, pages int) ([]*models.JobPosting, error) {
