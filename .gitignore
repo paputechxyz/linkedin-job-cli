@@ -3,5 +3,6 @@ linkedin_jobs.db-*
 linkedin_cookie.txt
 *.bak
 /linkedin-jobs
+.build-hash
 RESUME.md
 .DS_Store
