@@ -285,8 +285,15 @@ func (c *Client) FetchDetail(j *models.JobPosting) error {
 		return err
 	}
 
-	// 1. Salary badge (HTML). Low-confidence fallback — LinkedIn's badge is
-	// often a different/default band or a generic placeholder.
+	// 1. Salary badge (HTML). LinkedIn's badge is a low-confidence, frequently
+	// rounded/generic band that the description body may not corroborate. Its
+	// currency is always captured so the description-body parser (step 3) can
+	// inherit the locale when a labeled bare-$ range appears. The badge range
+	// itself is retained as a fallback: when the description has no salary, we
+	// surface the badge figure tagged "badge" so the UI shows an "est. salary"
+	// rather than nothing.
+	var badgeCurrency string
+	var badgeSal *salary.Salary
 	var salaryText string
 	doc.Find(".main-job-card__salary-info").EachWithBreak(func(_ int, s *goquery.Selection) bool {
 		t := strings.TrimSpace(s.Text())
@@ -305,11 +312,8 @@ func (c *Client) FetchDetail(j *models.JobPosting) error {
 	})
 	if salaryText != "" {
 		if parsed := salary.Parse(salaryText); parsed != nil {
-			j.SalaryRaw = parsed.Raw
-			j.SalaryLow = parsed.Low
-			j.SalaryHigh = parsed.High
-			j.SalaryCurrency = parsed.Currency
-			j.SalarySource = "badge"
+			badgeCurrency = parsed.Currency
+			badgeSal = parsed
 		}
 	}
 
@@ -370,16 +374,25 @@ func (c *Client) FetchDetail(j *models.JobPosting) error {
 		}
 	}
 
-	// 3. Description-body salary is authoritative (carries the localized band +
-	// currency). Override the badge when present and mark it high-confidence.
-	// A bare "$lo - $hi" range introduced by a "Salary:" label also overrides,
-	// inheriting the badge's currency so we don't lose the locale signal.
-	if descSal := salary.InDescriptionWithDefault(j.Description, j.SalaryCurrency); descSal != nil {
+	// 3. Salary resolution. Description-body salary is authoritative: it carries
+	// the localized band + currency actually posted by the employer, so it is
+	// marked high-confidence ("description"). A bare "$lo - $hi" range
+	// introduced by a "Salary:" label is also accepted, inheriting the badge's
+	// currency so we don't lose the locale signal. When the description has no
+	// salary, fall back to the page-chrome badge range tagged "badge" —
+	// low-confidence but better than nothing (the UI renders it as "est.").
+	if descSal := salary.InDescriptionWithDefault(j.Description, badgeCurrency); descSal != nil {
 		j.SalaryRaw = descSal.Raw
 		j.SalaryLow = descSal.Low
 		j.SalaryHigh = descSal.High
 		j.SalaryCurrency = descSal.Currency
 		j.SalarySource = models.SalarySourceDescription
+	} else if badgeSal != nil {
+		j.SalaryRaw = badgeSal.Raw
+		j.SalaryLow = badgeSal.Low
+		j.SalaryHigh = badgeSal.High
+		j.SalaryCurrency = badgeSal.Currency
+		j.SalarySource = models.SalarySourceBadge
 	}
 
 	j.FetchedAt = store.NowISO()

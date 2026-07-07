@@ -76,6 +76,11 @@ func (j *JobPosting) HasSalary() bool {
 // the authoritative, localized band. All other origins are treated as estimates.
 const SalarySourceDescription = "description"
 
+// SalarySourceBadge marks a salary scraped from LinkedIn's page-chrome salary
+// badge. It is a low-confidence, frequently rounded/generic band the employer
+// may not have stated directly, so it is surfaced in the UI as "est. salary".
+const SalarySourceBadge = "badge"
+
 // IsSalaryEstimated reports whether the salary is low-confidence: it came from
 // the page badge or another heuristic rather than the description body.
 func (j *JobPosting) IsSalaryEstimated() bool {

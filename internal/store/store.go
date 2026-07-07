@@ -205,7 +205,7 @@ func backfillSalarySource(db *sql.DB) error {
 		if !r.high.Valid {
 			continue // no salary -> nothing to attribute
 		}
-		source := "badge" // default for pre-feature data: low confidence
+		source := models.SalarySourceBadge // default for pre-feature data: low confidence
 		if r.low.Valid {
 			if s := salary.InDescription(r.desc); s != nil && s.Low != nil && s.High != nil &&
 				*s.Low == r.low.Float64 && *s.High == r.high.Float64 &&
