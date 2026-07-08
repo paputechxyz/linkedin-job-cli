@@ -5,7 +5,7 @@ stats:
   top_companies_limit: 5        # `stats` command + serve UI; also `stats --top N`
 
 filter:
-  auto_filter: true              # hard preference filter on fetch; set false to disable
+  auto_filter: true              # true means no LLM call if failing hard filter, capped score; false means always call LLM
 
 scoring:
   reason_threshold: 70           # fit_reason only emitted at/above this score (0-100)
