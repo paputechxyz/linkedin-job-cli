@@ -63,7 +63,7 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 		c := linkedin.New(cfg)
 		// Best-effort: a session enables the Voyager-API fallbacks (description
 		// body + workplace type) that the anonymous guest page omits. Non-fatal
-		// when no session is configured — search/url still work anonymously.
+		// when no session is configured — search still works anonymously.
 		attachSession(c)
 		c.FetchDetailsBatch(jobs, opts.detailDelay, func(done, total int) {
 			fmt.Fprintf(os.Stderr, "\r  %d/%d", done, total)

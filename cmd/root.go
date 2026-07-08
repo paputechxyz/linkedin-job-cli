@@ -27,9 +27,10 @@ LinkedIn session, searches the public job board, parses salaries, enriches and
 fit-scores postings with an LLM, and persists everything to a local SQLite
 store with offline full-text search.
 
-Recommended jobs (the headline command) need a logged-in session — export your
-LinkedIn cookies to LJ_COOKIE or LJ_COOKIES_FILE:
+Recommended jobs (the headline command) and url use a logged-in session —
+export your LinkedIn cookies to LJ_COOKIE or LJ_COOKIES_FILE:
     linkedin-jobs recommended      # pull your personalized feed
+    linkedin-jobs url "<url>"      # score every job on a pasted search URL
 
 Anonymous search works without a session:
     linkedin-jobs search "Staff Engineer" Toronto --min-salary 200k`,

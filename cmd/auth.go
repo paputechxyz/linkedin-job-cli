@@ -24,8 +24,8 @@ var authCmd = &cobra.Command{
 	Use:   "auth",
 	Short: "Inspect your LinkedIn session",
 	Long: `Check whether a usable LinkedIn session is available for the 'recommended'
-command. Sessions come from your own cookie header — set LJ_COOKIE (a raw
-Cookie header string) or LJ_COOKIES_FILE (path to a file with one). The
+and 'url' commands. Sessions come from your own cookie header — set LJ_COOKIE
+(a raw Cookie header string) or LJ_COOKIES_FILE (path to a file with one). The
 csrf-token is derived from your JSESSIONID cookie.`,
 }
 

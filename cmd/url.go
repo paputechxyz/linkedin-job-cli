@@ -21,17 +21,18 @@ var (
 
 var urlCmd = &cobra.Command{
 	Use:   "url <linkedin-search-url>",
-	Short: "Score every job on a LinkedIn search/collection URL (paste from browser or job-alert email)",
+	Short: "Score every job on a LinkedIn search/collection URL (authenticated; paste from browser or job-alert email)",
 	Args:  cobra.ExactArgs(1),
 	Long: `Fetches a LinkedIn search or collection URL (e.g. a job-alert email link, a
 saved-search URL, or a URL pasted from the browser) and runs the jobs it
 refers to through the same pipeline as 'recommended' / 'search'.
 
 Strategy, in priority order:
-  - URL has keywords= → replay its filters (geoId, distance, f_TPR, …) against
-    the paginated seeMoreJobPostings API so --top can pull more than the first
-    page (this is the same XHR the browser fires when you scroll the left
-    panel of /jobs/search/).
+  - URL has keywords= → when signed in, replay its filters against the
+    authenticated Voyager jobCards API (the XHR the browser fires when you
+    scroll /jobs/search/) so --top pulls every page; otherwise replay against
+    the paginated seeMoreJobPostings API. The signed-in path returns the full
+    result set (the anonymous endpoint caps early, e.g. 10 of 32).
   - URL only has explicit job IDs (originToLandingJobPostings from a job-alert
     email, or currentJobId) and no keywords → those IDs are used directly.
   - Otherwise → fetch the URL HTML and parse job cards.
@@ -41,8 +42,9 @@ listing didn't provide them. Salary + description are fetched per-job, the user
 gates (--remote/--hybrid/--min-salary) drop mismatches in-memory, and survivors
 are enriched + fit-scored against your profile.
 
-Auth: uses your captured session when available (more reliable for signed-in
-pages); falls back to anonymous otherwise.
+Auth: authenticated via your captured browser session (see 'auth status'). A
+session is recommended — without one, URL fetches fall back to a limited
+anonymous endpoint that caps early.
 
 Examples:
   linkedin-jobs url "https://www.linkedin.com/jobs/search/?keywords=Staff%20Engineer&geoId=101788145" --top 50 --min-salary 200k
@@ -55,9 +57,11 @@ Examples:
 			die("--salary-currency requires --min-salary.")
 		}
 		rawURL := args[0]
-		// Session is optional here: a session makes signed-in pages return
-		// complete results, but anonymous fetch still works for the public
-		// search page. attachSession failing is therefore non-fatal.
+		// url is an authenticated command: a session drives the Voyager
+		// jobCards search path, which returns the full result set the signed-in
+		// browser sees. Without a session it degrades to a limited anonymous
+		// endpoint that caps early, so attachSession failure is non-fatal but
+		// worth surfacing via auth status rather than hard-exiting.
 		c, _ := newClient(true)
 		fmt.Fprintf(os.Stderr, "Fetching jobs from URL…\n")
 		jobs, err := c.SearchURL(rawURL, urlTop)

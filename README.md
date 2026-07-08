@@ -11,7 +11,8 @@ offline full-text search.
   LinkedIn browser session (your cookie; no password stored).
 - **`search`** — anonymous public job-board search (no login required).
 - **`url`** — paste any LinkedIn search/collection URL (job-alert email link,
-  saved search, browser URL) and score every job on that page.
+  saved search, browser URL) and score every job on that page; authenticated via
+  your session (like `recommended`) so `--top` pulls the full result set.
 - **`hr`** — paste a job URL and get the best person to reach out to (ranked
   contacts + reasoning + a tailored hook + company-scoped LinkedIn search links).
 - **Salary parsing** — handles `CA$173,000.00 - CA$220,000.00`, `$212,500/yr`,
@@ -41,9 +42,9 @@ go build -o linkedin-jobs .
 go install .
 ```
 
-## Auth (for `recommended` only)
+## Auth (for `recommended` and `url`)
 
-`recommended` needs your LinkedIn session. `search` works without it.
+`recommended` and `url` use your LinkedIn session. `search` works without it.
 
 Export your LinkedIn cookies (e.g. a browser cookie-exporter extension, or
 DevTools → Network → the request `Cookie` header) and point the CLI at them:
@@ -79,16 +80,17 @@ linkedin-jobs search "Staff Engineer" Toronto --min-salary 200k
 linkedin-jobs search "Senior Developer" "Remote, US" --top 3   # cap at 3 jobs
 ```
 
-### URL (score every job on a pasted page)
+### URL (authenticated)
 
 Paste a LinkedIn search/collection URL — typically a job-alert email link or a
-URL copied from the browser. For URLs with a `keywords=` param (i.e. a real
-search), the URL's filters are replayed against the paginated
-`seeMoreJobPostings` API so `--top` can pull more than the first page — the
-same XHR the browser fires when you scroll the left panel. For URLs that only
-carry explicit job IDs (`originToLandingJobPostings` from a job-alert email
-with no keywords, or `currentJobId`), those IDs are used directly. All the
-usual gates and scoring flags apply.
+URL copied from the browser. For URLs with a `keywords=` param, the URL's
+filters are replayed against the authenticated Voyager `jobCards` API — the
+same XHR the browser fires when you scroll `/jobs/search/` — so `--top` pulls
+every page (the anonymous `seeMoreJobPostings` endpoint caps early, e.g. 10 of
+32). For URLs that only carry explicit job IDs
+(`originToLandingJobPostings` from a job-alert email with no keywords, or
+`currentJobId`), those IDs are used directly. All the usual gates and scoring
+flags apply.
 
 ```bash
 linkedin-jobs url "https://www.linkedin.com/jobs/search/?currentJobId=4415889466&originToLandingJobPostings=4415889466%2C4434154740&keywords=Staff%20Engineer"
@@ -96,8 +98,9 @@ linkedin-jobs url "https://www.linkedin.com/jobs/search/?keywords=Staff%20Engine
 linkedin-jobs url "https://www.linkedin.com/jobs/collections/recommended/?start=0" --remote
 ```
 
-Uses your captured session when available (more reliable for signed-in pages);
-falls back to anonymous otherwise.
+Authenticated via your captured browser session (see `auth status`); without a
+session it falls back to the limited anonymous endpoint. Salary and full
+description are fetched per-job from the public detail page.
 
 ### HR (who to reach out to about a job)
 

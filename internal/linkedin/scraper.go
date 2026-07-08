@@ -63,10 +63,14 @@ func (c *Client) Search(keywords, location string, pages int) ([]*models.JobPost
 // URL (e.g. a job-alert email link, a saved-search URL, or a URL pasted from
 // the browser). Strategy, in priority order:
 //
-//  1. URL has a `keywords` query param — replay it against the paginated
-//     guest seeMoreJobPostings API so `top` can pull more than the first page
-//     (this is the same XHR the browser fires when you scroll the left panel).
-//     geoId/distance/f_TPR filters from the URL are preserved.
+//  1. URL has a `keywords` query param — when a session is available, replay
+//     its filters against the authenticated Voyager jobCards API
+//     (voyagerJobsDashJobCards), the same XHR the signed-in browser fires when
+//     scrolling /jobs/search/. It returns the full result set the signed-in
+//     user sees (the anonymous guest endpoint returns a smaller/different set
+//     and caps early, e.g. 10 of 32), so `top` can pull every page. Without a
+//     session, fall back to the paginated guest seeMoreJobPostings API.
+//     geoId/distance/f_TPR filters from the URL are preserved either way.
 //  2. URL carries explicit job IDs (originToLandingJobPostings from a job-alert
 //     email, or currentJobId) and NO keywords — those IDs are used directly.
 //  3. Otherwise, fetch the URL HTML and parse cards via the same selectors as
@@ -83,6 +87,15 @@ func (c *Client) Search(keywords, location string, pages int) ([]*models.JobPost
 func (c *Client) SearchURL(rawURL string, top int) ([]*models.JobPosting, error) {
 	rawURL = strings.ReplaceAll(rawURL, "\\", "")
 	if u, err := url.Parse(rawURL); err == nil && u.Query().Has("keywords") {
+		// Prefer the authenticated Voyager jobCards API when signed in: it
+		// returns the same set the browser sees. On any miss (no session,
+		// non-200, empty result, decorationId bump) fall back to the guest
+		// endpoint so the command still works anonymously.
+		if c.HasSession() {
+			if jobs, err := c.jobsFromVoyagerSearch(rawURL, top); err == nil && len(jobs) > 0 {
+				return jobs, nil
+			}
+		}
 		return c.jobsFromSearchURL(rawURL, top)
 	}
 	if ids := jobIDsFromURL(rawURL); len(ids) > 0 {
