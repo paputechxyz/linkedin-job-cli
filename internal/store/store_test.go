@@ -277,3 +277,42 @@ func jobIDs(jobs []*models.JobPosting) []string {
 	}
 	return out
 }
+
+// TestList_OnsiteFilter verifies the Onsite flag matches both the normalized
+// remote_type vocabulary ("onsite") and the hyphenated "On-site" form that
+// appears in raw location text, and ORs with Remote/Hybrid when combined.
+func TestList_OnsiteFilter(t *testing.T) {
+	st := tmpDB(t)
+	remote := sampleJob("remote")
+	remote.RemoteType = "remote"
+	onsite := sampleJob("onsite")
+	onsite.RemoteType = "onsite"
+	hyphenated := sampleJob("hyphenated")
+	hyphenated.RemoteType = ""
+	hyphenated.Location = "New York, NY (On-site)"
+	for _, j := range []*models.JobPosting{remote, onsite, hyphenated} {
+		if err := st.Upsert(j); err != nil {
+			t.Fatalf("Upsert %s: %v", j.ID, err)
+		}
+	}
+
+	got, err := st.List(Filters{Onsite: true})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	want := map[string]bool{"onsite": true, "hyphenated": true}
+	if len(got) != 2 {
+		t.Fatalf("want 2 on-site jobs, got %v", jobIDs(got))
+	}
+	for _, j := range got {
+		if !want[j.ID] {
+			t.Errorf("unexpected job %q in on-site filter", j.ID)
+		}
+	}
+
+	// OR: --remote --onsite keeps all three.
+	got, _ = st.List(Filters{Remote: true, Onsite: true})
+	if len(got) != 3 {
+		t.Errorf("remote+onsite OR: want 3 jobs, got %v", jobIDs(got))
+	}
+}

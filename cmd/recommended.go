@@ -13,6 +13,7 @@ var (
 	recSalaryCurrency   string
 	recRemote           bool
 	recHybrid           bool
+	recOnsite           bool
 	recNoDetail         bool
 	recNoScore          bool
 	recNoFilter         bool
@@ -25,7 +26,7 @@ var recommendedCmd = &cobra.Command{
 	Long: `Fetches the authenticated 'Recommended for you' job collection using your
 captured browser session (see 'auth status'). Requires a session. Pulls up to
 --top jobs, fetches salary + description, applies the user gates
-(--remote/--hybrid/--min-salary; jobs failing any active gate are dropped
+(--remote/--hybrid/--onsite/--min-salary; jobs failing any active gate are dropped
 in-memory and never stored or scored), summarizes, stores, and displays the
 survivors.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -55,6 +56,7 @@ survivors.`,
 			minSalaryCurrency: currency,
 			remote:            recRemote,
 			hybrid:            recHybrid,
+			onsite:            recOnsite,
 			noDetail:          recNoDetail,
 			noScore:           recNoScore,
 			noFilter:          recNoFilter,
@@ -72,7 +74,8 @@ func init() {
 	recommendedCmd.Flags().StringVar(&recMinSalary, "min-salary", "", "only keep jobs paying at or above this (e.g. 200k)")
 	recommendedCmd.Flags().StringVar(&recSalaryCurrency, "salary-currency", "", "currency for --min-salary (ISO 4217, e.g. CAD); enables FX-aware filtering")
 	recommendedCmd.Flags().BoolVar(&recRemote, "remote", false, "only keep remote-friendly jobs")
-	recommendedCmd.Flags().BoolVar(&recHybrid, "hybrid", false, "only keep hybrid-friendly jobs (combine with --remote for OR)")
+	recommendedCmd.Flags().BoolVar(&recHybrid, "hybrid", false, "only keep hybrid-friendly jobs (combine with --remote/--onsite for OR)")
+	recommendedCmd.Flags().BoolVar(&recOnsite, "onsite", false, "only keep on-site jobs (combine with --remote/--hybrid for OR)")
 	recommendedCmd.Flags().BoolVar(&recNoDetail, "no-detail", false, "skip detail page fetching (faster; no salary/description)")
 	recommendedCmd.Flags().BoolVar(&recNoScore, "no-score", false, "skip LLM enrichment+fit-scoring")
 	recommendedCmd.Flags().BoolVar(&recNoFilter, "no-filter", false, "skip the hard preference filter")

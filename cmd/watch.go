@@ -15,6 +15,7 @@ var (
 	watchSalaryCurrency string
 	watchRemote         bool
 	watchHybrid         bool
+	watchOnsite         bool
 	watchNoDetail       bool
 	watchForceOW        bool
 )
@@ -27,7 +28,7 @@ var watchCmd = &cobra.Command{
 brand-new job IDs (never seen) are fetched, summarized, stored, and displayed —
 handy as a recurring "what's new" check. --top N caps how many jobs are pulled
 from LinkedIn each run. Jobs failing any active user gate (--remote/--hybrid/
---min-salary) are dropped in-memory after the detail fetch and never stored or
+--onsite/--min-salary) are dropped in-memory after the detail fetch and never stored or
 scored.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		minSal := parseMinSalary(watchMinSalary)
@@ -86,6 +87,7 @@ scored.`,
 			minSalaryCurrency: currency,
 			remote:            watchRemote,
 			hybrid:            watchHybrid,
+			onsite:            watchOnsite,
 			noDetail:          watchNoDetail,
 			forceOverwrite:    watchForceOW,
 			detailDelay:       resolveDetailDelay(),
@@ -101,7 +103,8 @@ func init() {
 	watchCmd.Flags().StringVar(&watchMinSalary, "min-salary", "", "only keep jobs paying at or above this")
 	watchCmd.Flags().StringVar(&watchSalaryCurrency, "salary-currency", "", "currency for --min-salary (ISO 4217, e.g. CAD); enables FX-aware filtering")
 	watchCmd.Flags().BoolVar(&watchRemote, "remote", false, "only remote-friendly jobs")
-	watchCmd.Flags().BoolVar(&watchHybrid, "hybrid", false, "only hybrid-friendly jobs (combine with --remote for OR)")
+	watchCmd.Flags().BoolVar(&watchHybrid, "hybrid", false, "only hybrid-friendly jobs (combine with --remote/--onsite for OR)")
+	watchCmd.Flags().BoolVar(&watchOnsite, "onsite", false, "only on-site jobs (combine with --remote/--hybrid for OR)")
 	watchCmd.Flags().BoolVar(&watchNoDetail, "no-detail", false, "skip detail page fetching")
 	watchCmd.Flags().BoolVar(&watchForceOW, "force-overwrite", false, "re-parse and re-score jobs already in the DB (bypass the new-only pre-filter and dedup; overwrites existing values)")
 	rootCmd.AddCommand(watchCmd)

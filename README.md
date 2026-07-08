@@ -184,8 +184,9 @@ linkedin-jobs profile show            # show resume + active knobs
 # edit preference knobs by hand in settings.yaml (profile: section)
 ```
 
-When you fetch jobs (`recommended` / `search` / `watch`), each job flows through
-five gates — only the last costs an LLM token:
+When you fetch jobs (`recommended` / `search` / `url` / `watch`), a batch-level
+pre-score gate runs first (see [below](#pre-score-gate)), then each surviving job
+flows through five gates — only the last costs an LLM token:
 
 1. **Persist full description** (always saved, for dedup memory).
 2. **Dedup** — a content-hash of company + title + full description. Re-fetched
@@ -207,6 +208,62 @@ linkedin-jobs score --all             # re-score everything after a profile edit
 
 Token-frugality flags: `--no-score` (skip the LLM), `--no-filter` (skip the hard
 filter), `--no-detail` (skip salary/description fetch).
+
+### Pre-score gate
+
+A deterministic, **batch-level** filter triggered by the `--remote`, `--hybrid`,
+`--onsite`, and `--min-salary` CLI flags. It runs after the detail fetch but
+**before** anything is stored or scored, so it costs **zero LLM tokens**: failing
+jobs are dropped in-memory and never reach the DB. Each drop is logged to stderr
+with the title, company, and a human-readable reason (e.g.
+`dropped "Senior Eng" @ Acme: salary $150,000 below CA$200,000 floor`).
+
+- **No LLM** — purely deterministic; runs before the per-job scoring pipeline.
+  Omit all four flags and the gate is a no-op.
+- **`--remote` / `--hybrid` / `--onsite`** — a job is kept when its location or
+  `remote_type` contains the token; the flags **OR** together, so
+  `--remote --hybrid` keeps jobs matching either. On-site matches both
+  `remote_type=onsite` and the hyphenated `On-site` form common in raw location
+  text.
+- **`--min-salary`** — a floor on the job's **max** salary (inclusive: "could
+  this job pay ≥ min?"). Shorthand parsing accepts `200k`, `$200,000`, `1.5m`.
+  Empty or `0` disables it.
+  - **Salary source:** parsed from the **description body first** (the
+    authoritative, currency-stated range the employer posted), falling back to
+    LinkedIn's page-chrome **salary badge** (a low-confidence "est." band). The
+    gate is source-agnostic — either source can clear the floor.
+  - **Currency-aware:** a job with no currency signal is treated as `USD`. Pair
+    the floor with `--salary-currency CAD` to FX-convert the job's max salary
+    into the floor's currency before comparing (live ECB reference rates via the
+    Frankfurter API, cached per day, with a small offline fallback table). If a
+    rate is unavailable it falls back to a raw numeric compare rather than
+    dropping. `--salary-currency` requires `--min-salary`.
+  - **No salary data → dropped** when a floor is active (a floor implies "only
+    show jobs I know pay enough").
+
+```bash
+linkedin-jobs recommended --remote --hybrid --min-salary 200k --salary-currency CAD
+```
+
+#### Pre-score gate vs. `settings.yaml` profile knobs
+
+Both are deterministic and LLM-free, but they differ in scope, effect, and
+persistence. The pre-score gate **drops** jobs; the profile knobs **score-cap**
+them (the "hard filter" in step 3 of the pipeline above).
+
+| Aspect              | Pre-score gate (CLI flags)                              | `settings.yaml` `profile:` knobs                          |
+|---------------------|---------------------------------------------------------|-----------------------------------------------------------|
+| Trigger             | Per-invocation flags                                    | Persistent; applied every run                             |
+| Effect on mismatch  | **Drops** — never stored, never scored                  | **Caps score** — stored + visible, ranked low (cap reason) |
+| When it runs        | Batch-level, before persist                             | Per-job, after persist; also feeds the rubric scorer      |
+| Job with no salary  | Dropped (when a floor is set)                           | Passes ("unknown is not a mismatch")                      |
+| Scope               | Work arrangement, salary floor                          | + locations, preferred/avoided tech                       |
+| Disable             | Omit the flag                                           | `filter.auto_filter: false`, or `--no-filter`             |
+
+Reach for the **pre-score gate** for one-off hard cuts ("only remote jobs paying
+≥ CA$200k *this run*"). Reach for **profile knobs** for standing preferences you
+want applied every run, where mismatches stay visible but sink to the bottom of
+your shortlist.
 
 ### LLM configuration
 

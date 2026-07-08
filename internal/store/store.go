@@ -440,6 +440,7 @@ type Filters struct {
 	Location          string
 	Remote            bool
 	Hybrid            bool
+	Onsite            bool
 	Status            string
 	Source            string
 	MinScore          int  // 0 = no score filter
@@ -476,14 +477,19 @@ func (s *Store) List(f Filters) ([]*models.JobPosting, error) {
 		q += ` AND LOWER(location) LIKE ?`
 		args = append(args, "%"+toLowerCase(f.Location)+"%")
 	}
-	if f.Remote || f.Hybrid {
-		// OR: when both flags are set, a job matching either token passes.
+	if f.Remote || f.Hybrid || f.Onsite {
+		// OR: when multiple flags are set, a job matching any token passes.
+		// On-site is normalized to "onsite" in remote_type, but raw location
+		// text often carries the hyphenated "On-site", so both forms are matched.
 		var ors []string
 		if f.Remote {
 			ors = append(ors, `LOWER(COALESCE(location,'') || ' ' || COALESCE(remote_type,'')) LIKE '%remote%'`)
 		}
 		if f.Hybrid {
 			ors = append(ors, `LOWER(COALESCE(location,'') || ' ' || COALESCE(remote_type,'')) LIKE '%hybrid%'`)
+		}
+		if f.Onsite {
+			ors = append(ors, `LOWER(COALESCE(location,'') || ' ' || COALESCE(remote_type,'')) LIKE '%on-site%' OR LOWER(COALESCE(location,'') || ' ' || COALESCE(remote_type,'')) LIKE '%onsite%'`)
 		}
 		q += " AND (" + strings.Join(ors, " OR ") + ")"
 	}

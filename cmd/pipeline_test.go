@@ -110,6 +110,39 @@ func TestGateDropReason_RemoteOrHybridBothWanted(t *testing.T) {
 	}
 }
 
+func TestGateDropReason_OnsiteGatePasses(t *testing.T) {
+	// RemoteType is the normalized "onsite" vocabulary value.
+	j := &models.JobPosting{Title: "X", Company: "Y", RemoteType: "onsite", Location: "NY"}
+	if got := gateDropReason(j, ingestOptions{onsite: true}); got != "" {
+		t.Errorf("onsite job should pass --onsite gate, got %q", got)
+	}
+}
+
+func TestGateDropReason_OnsiteGateMatchesHyphenatedLocation(t *testing.T) {
+	// Raw location text often carries the hyphenated "On-site"; the gate
+	// accepts both forms even when RemoteType is unset.
+	j := &models.JobPosting{Title: "X", Company: "Y", Location: "New York, NY (On-site)"}
+	if got := gateDropReason(j, ingestOptions{onsite: true}); got != "" {
+		t.Errorf("on-site location should pass --onsite gate, got %q", got)
+	}
+}
+
+func TestGateDropReason_OnsiteGateFailsRemoteJob(t *testing.T) {
+	j := &models.JobPosting{
+		Title:      "X",
+		Company:    "Y",
+		Location:   "Remote, US",
+		RemoteType: "remote",
+	}
+	got := gateDropReason(j, ingestOptions{onsite: true})
+	if !strings.Contains(got, "not onsite") {
+		t.Errorf("want 'not onsite' in reason, got %q", got)
+	}
+	if !strings.Contains(got, "remote_type=remote") {
+		t.Errorf("want remote_type=remote in reason, got %q", got)
+	}
+}
+
 func TestGateDropReason_SalaryGateTakesPrecedenceOverWorkArrangement(t *testing.T) {
 	// When both salary + remote gates are active and BOTH would fail, the
 	// salary reason is reported first (it's checked first in applyGates).

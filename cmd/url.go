@@ -13,6 +13,7 @@ var (
 	urlSalaryCurrency string
 	urlRemote         bool
 	urlHybrid         bool
+	urlOnsite         bool
 	urlNoDetail       bool
 	urlNoScore        bool
 	urlNoFilter       bool
@@ -39,7 +40,7 @@ Strategy, in priority order:
 
 Title/company/location are filled from JSON-LD on the detail page when the
 listing didn't provide them. Salary + description are fetched per-job, the user
-gates (--remote/--hybrid/--min-salary) drop mismatches in-memory, and survivors
+gates (--remote/--hybrid/--onsite/--min-salary) drop mismatches in-memory, and survivors
 are enriched + fit-scored against your profile.
 
 Auth: authenticated via your captured browser session (see 'auth status'). A
@@ -76,6 +77,7 @@ Examples:
 			minSalaryCurrency: currency,
 			remote:            urlRemote,
 			hybrid:            urlHybrid,
+			onsite:            urlOnsite,
 			noDetail:          urlNoDetail,
 			noScore:           urlNoScore,
 			noFilter:          urlNoFilter,
@@ -93,7 +95,8 @@ func init() {
 	urlCmd.Flags().StringVar(&urlMinSalary, "min-salary", "", "only keep jobs paying at or above this (e.g. 200k)")
 	urlCmd.Flags().StringVar(&urlSalaryCurrency, "salary-currency", "", "currency for --min-salary (ISO 4217, e.g. CAD); enables FX-aware filtering")
 	urlCmd.Flags().BoolVar(&urlRemote, "remote", false, "only keep remote-friendly jobs")
-	urlCmd.Flags().BoolVar(&urlHybrid, "hybrid", false, "only keep hybrid-friendly jobs (combine with --remote for OR)")
+	urlCmd.Flags().BoolVar(&urlHybrid, "hybrid", false, "only keep hybrid-friendly jobs (combine with --remote/--onsite for OR)")
+	urlCmd.Flags().BoolVar(&urlOnsite, "onsite", false, "only keep on-site jobs (combine with --remote/--hybrid for OR)")
 	urlCmd.Flags().BoolVar(&urlNoDetail, "no-detail", false, "skip detail page fetching")
 	urlCmd.Flags().BoolVar(&urlNoScore, "no-score", false, "skip LLM enrichment+fit-scoring")
 	urlCmd.Flags().BoolVar(&urlNoFilter, "no-filter", false, "skip the hard preference filter")

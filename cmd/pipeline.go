@@ -21,7 +21,7 @@ import (
 )
 
 // ingestOptions controls the shared fetch → gate → dedup → hard-filter → score → display pipeline.
-// Gates (--remote/--hybrid/--min-salary) run AFTER detail fetch (so salary and
+// Gates (--remote/--hybrid/--onsite/--min-salary) run AFTER detail fetch (so salary and
 // RemoteType are populated) but BEFORE persist+score: failing jobs are dropped
 // in-memory, never stored, and never sent to the LLM.
 type ingestOptions struct {
@@ -29,6 +29,7 @@ type ingestOptions struct {
 	minSalaryCurrency string // "" = legacy raw numeric compare; else ISO 4217 (e.g. CAD) for FX-aware filtering
 	remote            bool
 	hybrid            bool
+	onsite            bool
 	noDetail          bool
 	noScore           bool
 	noFilter          bool
@@ -71,13 +72,13 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 		fmt.Fprintln(os.Stderr)
 	}
 
-	// 1b. Apply user gates (--remote/--hybrid/--min-salary). Runs after the detail
+	// 1b. Apply user gates (--remote/--hybrid/--onsite/--min-salary). Runs after the detail
 	// fetch so salary and RemoteType are populated, but before persist + score.
 	// Jobs failing any active gate are dropped in-memory: never stored, never LLM'd.
 	beforeGate := len(jobs)
 	jobs = applyGates(jobs, opts)
 	if beforeGate != len(jobs) {
-		fmt.Fprintf(os.Stderr, "Gates: %d/%d passed (remote/hybrid/salary); %d dropped pre-store.\n", len(jobs), beforeGate, beforeGate-len(jobs))
+		fmt.Fprintf(os.Stderr, "Gates: %d/%d passed (remote/hybrid/onsite/salary); %d dropped pre-store.\n", len(jobs), beforeGate, beforeGate-len(jobs))
 	}
 
 	// 2. Compute dedup hash + persist ALL surviving jobs (save-all; dedup memory).
@@ -244,15 +245,15 @@ func enrichAndScoreJob(st *store.Store, j *models.JobPosting, prof *models.Profi
 }
 
 // applyGates drops jobs that fail any active user gate (--remote/--hybrid/
-// --min-salary). Runs after the detail fetch (salary + RemoteType are now
+// --onsite/--min-salary). Runs after the detail fetch (salary + RemoteType are now
 // populated) and before persist+score: failing jobs are dropped in-memory and
 // never reach the DB or the LLM. --salary-currency is not itself a gate; it
 // only supplies the unit for the --min-salary floor (FX-converted via fx.Convert).
-// --remote and --hybrid OR together when both are set.
+// --remote, --hybrid, and --onsite OR together when more than one is set.
 //
 // Each dropped job is logged to stderr with its title, company, and a
 // human-readable reason so the user can see WHY a given job vanished (e.g.
-// "salary $150,000 below CA$200,000 floor" or "not remote/hybrid
+// "salary $150,000 below CA$200,000 floor" or "not remote/hybrid/onsite
 // (remote_type=onsite)").
 func applyGates(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting {
 	out := make([]*models.JobPosting, 0, len(jobs))
@@ -296,18 +297,25 @@ func gateDropReason(j *models.JobPosting, opts ingestOptions) string {
 			}
 		}
 	}
-	// Work arrangement (--remote / --hybrid OR together).
-	if opts.remote || opts.hybrid {
+	// Work arrangement (--remote / --hybrid / --onsite OR together).
+	if opts.remote || opts.hybrid || opts.onsite {
 		blob := strings.ToLower(j.Location + " " + j.RemoteType)
 		matchRemote := strings.Contains(blob, "remote")
 		matchHybrid := strings.Contains(blob, "hybrid")
-		if !((opts.remote && matchRemote) || (opts.hybrid && matchHybrid)) {
+		// RemoteType is normalized to "onsite", but raw Location text often
+		// carries the hyphenated "On-site" — accept either form (mirrors
+		// linkedin.DetectRemote's normalization).
+		matchOnsite := strings.Contains(blob, "on-site") || strings.Contains(blob, "onsite")
+		if !((opts.remote && matchRemote) || (opts.hybrid && matchHybrid) || (opts.onsite && matchOnsite)) {
 			var wanted []string
 			if opts.remote {
 				wanted = append(wanted, "remote")
 			}
 			if opts.hybrid {
 				wanted = append(wanted, "hybrid")
+			}
+			if opts.onsite {
+				wanted = append(wanted, "onsite")
 			}
 			rt := j.RemoteType
 			if rt == "" {

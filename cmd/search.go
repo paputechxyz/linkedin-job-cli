@@ -13,6 +13,7 @@ var (
 	searchSalaryCurrency  string
 	searchRemote          bool
 	searchHybrid          bool
+	searchOnsite          bool
 	searchNoDetail        bool
 	searchNoScore         bool
 	searchNoFilter        bool
@@ -26,7 +27,7 @@ var searchCmd = &cobra.Command{
 	Long: `Searches LinkedIn's public (logged-out) job board and ingests results through
 the same pipeline as 'recommended'. Works without a session; no login needed.
 --top N caps the number of jobs processed end-to-end (detail fetch + LLM score).
-Jobs failing any active user gate (--remote/--hybrid/--min-salary) are dropped
+Jobs failing any active user gate (--remote/--hybrid/--onsite/--min-salary) are dropped
 in-memory after the detail fetch and never stored or scored.
 
 Examples:
@@ -67,6 +68,7 @@ Examples:
 			minSalaryCurrency: currency,
 			remote:            searchRemote,
 			hybrid:            searchHybrid,
+			onsite:            searchOnsite,
 			noDetail:          searchNoDetail,
 			noScore:           searchNoScore,
 			noFilter:          searchNoFilter,
@@ -84,7 +86,8 @@ func init() {
 	searchCmd.Flags().StringVar(&searchMinSalary, "min-salary", "", "only keep jobs paying at or above this (e.g. 200k)")
 	searchCmd.Flags().StringVar(&searchSalaryCurrency, "salary-currency", "", "currency for --min-salary (ISO 4217, e.g. CAD); enables FX-aware filtering")
 	searchCmd.Flags().BoolVar(&searchRemote, "remote", false, "only keep remote-friendly jobs")
-	searchCmd.Flags().BoolVar(&searchHybrid, "hybrid", false, "only keep hybrid-friendly jobs (combine with --remote for OR)")
+	searchCmd.Flags().BoolVar(&searchHybrid, "hybrid", false, "only keep hybrid-friendly jobs (combine with --remote/--onsite for OR)")
+	searchCmd.Flags().BoolVar(&searchOnsite, "onsite", false, "only keep on-site jobs (combine with --remote/--hybrid for OR)")
 	searchCmd.Flags().BoolVar(&searchNoDetail, "no-detail", false, "skip detail page fetching")
 	searchCmd.Flags().BoolVar(&searchNoScore, "no-score", false, "skip LLM enrichment+fit-scoring")
 	searchCmd.Flags().BoolVar(&searchNoFilter, "no-filter", false, "skip the hard preference filter")

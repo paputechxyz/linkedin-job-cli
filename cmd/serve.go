@@ -273,6 +273,7 @@ func (ws *webServer) query(q url.Values) ([]*models.JobPosting, string, error) {
 		MinScore:          softInt(q.Get("min_score")),
 		Remote:            q.Get("remote") == "1",
 		Hybrid:            q.Get("hybrid") == "1",
+		Onsite:            q.Get("onsite") == "1",
 		SortByScore:       q.Get("sort") != "salary", // default: fit score
 		SinceSearched:     normalizeSinceSearched(q.Get("since_searched")),
 	}
@@ -294,7 +295,7 @@ type formVals struct {
 	Q, Company, Title, Location, Status, Source string
 	MinSalary, MinSalaryCurrency, MinScore      string
 	Sort                                        string
-	Remote, Hybrid                              bool
+	Remote, Hybrid, Onsite                       bool
 	PageSize                                    int
 	SinceSearched                               string
 }
@@ -324,6 +325,7 @@ func readForm(q url.Values) formVals {
 		Sort:              sort,
 		Remote:            q.Get("remote") == "1",
 		Hybrid:            q.Get("hybrid") == "1",
+		Onsite:            q.Get("onsite") == "1",
 		PageSize:          validPageSize(q.Get("page_size")),
 		SinceSearched:     q.Get("since_searched"),
 	}
@@ -378,6 +380,9 @@ func (f formVals) toQueryValues() url.Values {
 	if f.Hybrid {
 		v.Set("hybrid", "1")
 	}
+	if f.Onsite {
+		v.Set("onsite", "1")
+	}
 	return v
 }
 
@@ -398,7 +403,7 @@ func (f formVals) PageSizeOrDefault() int {
 var filterParamKeys = []string{
 	"q", "company", "title", "location", "status", "source",
 	"min_salary", "salary_currency", "min_score", "sort",
-	"remote", "hybrid", "page_size", "since_searched",
+	"remote", "hybrid", "onsite", "page_size", "since_searched",
 }
 
 // hasFilterParams reports whether the URL carries any filter form params.
@@ -1472,6 +1477,7 @@ const pageHTML = `<!DOCTYPE html>
         <div class="checks">
           <label class="check"><input type="checkbox" id="remote" name="remote" value="1"{{if .F.Remote}} checked{{end}}> remote</label>
           <label class="check"><input type="checkbox" id="hybrid" name="hybrid" value="1"{{if .F.Hybrid}} checked{{end}}> hybrid</label>
+          <label class="check"><input type="checkbox" id="onsite" name="onsite" value="1"{{if .F.Onsite}} checked{{end}}> on-site</label>
         </div>
         <div class="actions">
           <button class="btn btn-primary" type="submit">Apply</button>
