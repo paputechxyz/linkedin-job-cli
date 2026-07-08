@@ -6,3 +6,4 @@ linkedin_cookie.txt
 .build-hash
 RESUME.md
 .DS_Store
+*.har
