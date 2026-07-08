@@ -13,7 +13,6 @@ type Settings struct {
 	Stats   StatsSettings   `yaml:"stats"`
 	Filter  FilterSettings  `yaml:"filter"`
 	Scoring ScoringSettings `yaml:"scoring"`
-	Enrich  EnrichSettings  `yaml:"enrich"`
 	Profile ProfileSettings `yaml:"profile"`
 }
 
@@ -57,10 +56,6 @@ type ScoringWeights struct {
 	RemoteTiebreak      int `yaml:"remote_tiebreak"`
 }
 
-type EnrichSettings struct {
-	AutoEnrichOnSave bool `yaml:"auto_enrich_on_save"`
-}
-
 // DefaultSettings returns the built-in defaults used when the YAML file is
 // absent or a key is omitted.
 func DefaultSettings() Settings {
@@ -68,7 +63,6 @@ func DefaultSettings() Settings {
 		Stats:   StatsSettings{TopCompaniesLimit: 50},
 		Filter:  FilterSettings{AutoFilter: true},
 		Scoring: DefaultScoringSettings(),
-		Enrich:  EnrichSettings{AutoEnrichOnSave: false},
 	}
 }
 
@@ -92,34 +86,40 @@ func DefaultScoringSettings() ScoringSettings {
 	}
 }
 
-// ConfigDir returns the directory holding secret/sensitive config that should
-// stay global per user: $LJ_CONFIG_DIR if set, otherwise ~/.linkedin-jobs.
-// Used for config.json (LLM provider credentials).
-func ConfigDir() string {
-	if d := os.Getenv("LJ_CONFIG_DIR"); d != "" {
-		return d
-	}
+// HomeDir returns the per-user home for all CLI state: the SQLite DB, the FX
+// rate cache, and (when no settings.yaml/RESUME.md is found in the working
+// directory) the user-content files. Everything lives under ~/.linkedin-jobs.
+// The directory is created lazily by callers that write into it.
+func HomeDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		home = "."
+		return "."
 	}
 	return filepath.Join(home, ".linkedin-jobs")
 }
 
 // ProjectDir returns the directory holding project-local, hand-editable user
-// content (settings.yaml incl. the profile: knobs, RESUME.md): $LJ_CONFIG_DIR
-// if set, otherwise the current working directory. These files describe *this*
-// job-search project (your resume, your preference knobs, your tunables) and so
-// travel with the repo/folder you run the CLI from, unlike secrets in
-// ConfigDir() which stay global.
+// content (settings.yaml incl. the profile: knobs, RESUME.md). Resolution:
+// the current working directory when it already holds a settings.yaml or
+// RESUME.md (the dev case — edit them alongside the source); otherwise
+// HomeDir() so a built binary run from anywhere still finds its config.
+//
+// These files describe *this* job-search project (your resume, your preference
+// knobs, your tunables) and travel together; both SettingsPath and
+// profile.ResumePath read from the same resolved directory.
 func ProjectDir() string {
-	if d := os.Getenv("LJ_CONFIG_DIR"); d != "" {
-		return d
+	cwd, err := os.Getwd()
+	if err == nil {
+		if pathExists(filepath.Join(cwd, "settings.yaml")) || pathExists(filepath.Join(cwd, "RESUME.md")) {
+			return cwd
+		}
 	}
-	if cwd, err := os.Getwd(); err == nil {
-		return cwd
-	}
-	return "."
+	return HomeDir()
+}
+
+func pathExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }
 
 // SettingsPath returns the resolved path to settings.yaml. An absolute path in

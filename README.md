@@ -159,10 +159,11 @@ POST endpoints guarded by a per-session CSRF token.
 ### Profile + fit scoring
 
 Paste your resume and set preference knobs once; they drive both scoring and
-filtering. Your resume is plain markdown **in your project root** (the directory
-you run the CLI from; override with `LJ_CONFIG_DIR`) so it travels with this
-job-search folder and you can edit it by hand at any time. Preference knobs live
-under the `profile:` section of `settings.yaml`:
+filtering. `RESUME.md` and `settings.yaml` live in your **project root** when
+one is already present there (so they travel with this job-search folder and
+you can edit them by hand); otherwise they live in `~/.linkedin-jobs/` (the
+built-binary default). Preference knobs live under the `profile:` section of
+`settings.yaml`:
 
 - `RESUME.md` — your resume (free text); sent to your LLM as candidate context
 - `settings.yaml` → `profile:` — structured knobs for the hard filter + rubric:
@@ -265,38 +266,39 @@ your shortlist.
 
 ### LLM configuration
 
-Bring your own key — no provider key ships. The fastest setup is the wizard,
-which reuses credentials you already have:
-
-```bash
-linkedin-jobs config llm              # connect: opencode / Claude / custom
-linkedin-jobs config show             # resolved provider (key redacted) + settings
-linkedin-jobs config path
-```
-
-Resolution order (first match wins): persisted `config.json` → `LJ_LLM_*` /
-`OPENAI_API_KEY` env → `ANTHROPIC_API_KEY` env → opencode's stored credentials.
-Explicit env vars win over opencode discovery so you can override the discovered
-provider without running the wizard. The opencode preset reuses the provider
-configured in opencode (e.g. your GLM Coding Plan key → `glm-5.2`); the Claude
-preset targets Anthropic's OpenAI-compatible endpoint.
-
-Or set env vars directly:
+Bring your own key — no provider key ships, and nothing is persisted to disk.
+Set an env var (or rely on opencode discovery):
 
 ```bash
 export OPENAI_API_KEY="sk-..."                 # or LJ_LLM_API_KEY
 export LJ_LLM_MODEL="gpt-4o-mini"              # optional, default gpt-4o-mini
 # For Ollama / vLLM / Azure:
 export LJ_LLM_BASE_URL="http://localhost:11434/v1"
+# Or Anthropic Claude:
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+Resolution order (first match wins): `LJ_LLM_*` / `OPENAI_API_KEY` env →
+`ANTHROPIC_API_KEY` env → opencode's stored credentials. Explicit env vars win
+over opencode discovery so you can override the discovered provider. The
+opencode path reuses the provider configured in opencode (e.g. your GLM Coding
+Plan key → `glm-5.2`); `ANTHROPIC_API_KEY` targets Anthropic's
+OpenAI-compatible endpoint.
+
+```bash
+linkedin-jobs config show             # resolved provider (key redacted) + settings
+linkedin-jobs config path             # settings/resume/db file locations
+linkedin-jobs doctor                  # diagnose provider + settings completeness
 ```
 
 No key? Scoring is skipped with a clear message; all other commands still work.
 
 ### Settings
 
-Optional `settings.yaml` **in your project root** (override the dir with
-`LJ_CONFIG_DIR`). This is the same project-local location as `RESUME.md`;
-secrets (`config.json`) still live globally in `~/.linkedin-jobs/`:
+Optional `settings.yaml` in your **project root** when one is already present
+there, otherwise in `~/.linkedin-jobs/`. This is the same location as
+`RESUME.md`; everything (DB, settings, resume, FX cache) lives under
+`~/.linkedin-jobs/` for the built binary:
 
 ```yaml
 stats:
@@ -305,8 +307,6 @@ filter:
   auto_filter: true              # set false to disable the hard filter
 scoring:
   reason_threshold: 70           # fit_reason included at/above this score
-enrich:
-  auto_enrich_on_save: false     # tag saved does not auto-score by default
 profile:                         # preference knobs for the hard filter + rubric
   work_arrangement: [remote, hybrid]
   min_salary: 200000
@@ -324,8 +324,7 @@ scores reflect your actual context or ran context-free.
 
 | Variable          | Purpose                                            | Default                          |
 |-------------------|----------------------------------------------------|----------------------------------|
-| `LJ_DB_PATH`      | SQLite database path                               | `~/linkedin-jobs/linkedin_jobs.db` |
-| `LJ_CONFIG_DIR`   | directory for `settings.yaml` (incl. `profile:` knobs) and `RESUME.md` (also `config.json` secrets) | project root (CWD); `~/.linkedin-jobs/` for `config.json` when unset |
+| `LJ_DB_PATH`      | SQLite database path                               | `~/.linkedin-jobs/linkedin_jobs.db` |
 | `LJ_LLM_DELAY_SECONDS` | seconds to pause between successive LLM scoring calls (avoids 429s) | `2.0` |
 | `ANTHROPIC_API_KEY` | Claude provider (auto-detected by config)        | —                                |
 | `LJ_COOKIES_FILE` | path to a file with a raw `Cookie:` header          | —                                |
@@ -333,6 +332,10 @@ scores reflect your actual context or ran context-free.
 | `OPENAI_API_KEY`  | LLM key (or `LJ_LLM_API_KEY`)                      | —                                |
 | `LJ_LLM_BASE_URL` | OpenAI-compatible base URL (or `OPENAI_BASE_URL`)  | `https://api.openai.com/v1`      |
 | `LJ_LLM_MODEL`    | model name                                          | `gpt-4o-mini`                    |
+
+> `settings.yaml` and `RESUME.md` resolve to the project root (CWD) when one is
+> already present there, otherwise to `~/.linkedin-jobs/`. There is no separate
+> config-dir env var and no persisted provider file — set an env var for the LLM.
 
 ## Project structure
 

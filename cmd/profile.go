@@ -17,8 +17,9 @@ import (
 var profileCmd = &cobra.Command{
 	Use:   "profile",
 	Short: "Manage your resume and preference knobs (drive fit scoring & hard filtering)",
-	Long: `Your candidate context lives in two places (in the project directory,
-override with LJ_CONFIG_DIR):
+	Long: `Your candidate context lives in two files (resolved under the project
+directory — the CWD when settings.yaml/RESUME.md already lives there, else
+~/.linkedin-jobs):
 
     RESUME.md          — your resume (free text); sent to your LLM when scoring
     settings.yaml      — preference knobs under the ` + "`profile:`" + ` section

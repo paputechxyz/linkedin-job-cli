@@ -5,17 +5,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 
 	"linkedin-jobs/internal/config"
 )
 
-func clearProviderEnv(t *testing.T) (string, string) {
+func clearProviderEnv(t *testing.T) string {
 	t.Helper()
-	cfgDir := t.TempDir()
 	home := t.TempDir()
-	t.Setenv("LJ_CONFIG_DIR", cfgDir)
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("LJ_LLM_API_KEY", "")
@@ -24,7 +21,7 @@ func clearProviderEnv(t *testing.T) (string, string) {
 	} else {
 		t.Setenv("USERPROFILE", home)
 	}
-	return cfgDir, home
+	return home
 }
 
 func writeJSON(t *testing.T, path string, v interface{}) {
@@ -38,21 +35,8 @@ func writeJSON(t *testing.T, path string, v interface{}) {
 	}
 }
 
-func TestResolve_FromConfigFile(t *testing.T) {
-	clearProviderEnv(t)
-	writeJSON(t, filepath.Join(config.ConfigDir(), "config.json"),
-		configFile{BaseURL: "https://example.com/v1", APIKey: "sk-config", Model: "m"})
-	p, err := Resolve(config.Config{})
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	if p.Source != "config" || p.APIKey != "sk-config" || p.BaseURL != "https://example.com/v1" {
-		t.Errorf("unexpected provider: %+v", p)
-	}
-}
-
 func TestResolve_FromOpencode(t *testing.T) {
-	_, home := clearProviderEnv(t)
+	home := clearProviderEnv(t)
 	writeJSON(t, filepath.Join(home, ".local", "share", "opencode", "auth.json"),
 		map[string]map[string]string{"zai-coding-plan": {"type": "api", "key": "zai-secret"}})
 	writeJSON(t, filepath.Join(home, ".config", "opencode", "opencode.json"),
@@ -78,10 +62,9 @@ func TestResolve_FromOpencode(t *testing.T) {
 }
 
 // TestResolve_LLMEnvBeatsOpencode confirms explicit LJ_LLM_* env vars override
-// opencode discovery (otherwise users cannot override the discovered provider
-// without running the wizard).
+// opencode discovery (otherwise users cannot override the discovered provider).
 func TestResolve_LLMEnvBeatsOpencode(t *testing.T) {
-	_, home := clearProviderEnv(t)
+	home := clearProviderEnv(t)
 	writeJSON(t, filepath.Join(home, ".local", "share", "opencode", "auth.json"),
 		map[string]map[string]string{"zai-coding-plan": {"type": "api", "key": "opencode-secret"}})
 	p, err := Resolve(config.Config{
@@ -100,7 +83,7 @@ func TestResolve_LLMEnvBeatsOpencode(t *testing.T) {
 // TestResolve_AnthropicEnvBeatsOpencode confirms ANTHROPIC_API_KEY also wins
 // over opencode discovery.
 func TestResolve_AnthropicEnvBeatsOpencode(t *testing.T) {
-	_, home := clearProviderEnv(t)
+	home := clearProviderEnv(t)
 	writeJSON(t, filepath.Join(home, ".local", "share", "opencode", "auth.json"),
 		map[string]map[string]string{"zai-coding-plan": {"type": "api", "key": "opencode-secret"}})
 	t.Setenv("ANTHROPIC_API_KEY", "ant-key")
@@ -151,39 +134,6 @@ func TestResolve_Unconfigured(t *testing.T) {
 	_, err := Resolve(config.Config{})
 	if err != ErrNoProvider {
 		t.Fatalf("want ErrNoProvider, got %v", err)
-	}
-}
-
-func TestSave_RoundTripAndMode(t *testing.T) {
-	cfgDir, _ := clearProviderEnv(t)
-	in := &Provider{BaseURL: "https://example.com/v1", APIKey: "sk-roundtrip", Model: "m"}
-	if err := Save(in); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-	info, err := os.Stat(filepath.Join(cfgDir, "config.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	mode := info.Mode().Perm()
-	if mode != 0o600 {
-		t.Errorf("config file mode = %o, want 0600", mode)
-	}
-	p, ok := fromConfigFile()
-	if !ok || p.APIKey != "sk-roundtrip" || p.BaseURL != "https://example.com/v1" {
-		t.Errorf("round-trip failed: %+v ok=%v", p, ok)
-	}
-}
-
-func TestNewAnthropicProvider(t *testing.T) {
-	p := NewAnthropicProvider("claude-key")
-	if p.Headers["x-api-key"] != "claude-key" {
-		t.Errorf("x-api-key not injected: %+v", p.Headers)
-	}
-	if p.Headers["anthropic-version"] == "" {
-		t.Errorf("anthropic-version missing")
-	}
-	if !strings.HasPrefix(p.BaseURL, "https://api.anthropic.com") {
-		t.Errorf("base URL=%q", p.BaseURL)
 	}
 }
 

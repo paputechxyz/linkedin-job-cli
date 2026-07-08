@@ -15,9 +15,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"linkedin-jobs/internal/config"
 )
 
-// CacheFile holds the on-disk rate cache, defaults to ~/linkedin-jobs/fx_cache.json
+// CacheFile holds the on-disk rate cache, defaults to ~/.linkedin-jobs/fx_cache.json
 // (next to the global DB). Tests may override it.
 var CacheFile = defaultCacheFile()
 
@@ -50,11 +52,7 @@ var (
 )
 
 func defaultCacheFile() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "fx_cache.json"
-	}
-	return filepath.Join(home, "linkedin-jobs", "fx_cache.json")
+	return filepath.Join(config.HomeDir(), "fx_cache.json")
 }
 
 // Normalize upper-cases and trims a currency code (e.g. "cad" -> "CAD").

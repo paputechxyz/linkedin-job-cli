@@ -6,8 +6,16 @@ import (
 	"testing"
 )
 
+// settingsFile points LoadSettings at an isolated temp path for the duration of
+// the test (so the real settings.yaml in the repo root is never read). The path
+// need not exist — a missing file yields defaults.
+func settingsFile(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "settings.yaml")
+}
+
 func TestLoadSettings_DefaultWhenAbsent(t *testing.T) {
-	t.Setenv("LJ_CONFIG_DIR", t.TempDir())
+	t.Setenv("LJ_SETTINGS_FILE", settingsFile(t))
 	s, err := LoadSettings()
 	if err != nil {
 		t.Fatalf("LoadSettings: %v", err)
@@ -21,16 +29,13 @@ func TestLoadSettings_DefaultWhenAbsent(t *testing.T) {
 	if s.Scoring.ReasonThreshold != 70 {
 		t.Errorf("default reason_threshold = %d, want 70", s.Scoring.ReasonThreshold)
 	}
-	if s.Enrich.AutoEnrichOnSave {
-		t.Errorf("default auto_enrich_on_save should be false")
-	}
 }
 
 func TestLoadSettings_FileOverridesKeepsDefaults(t *testing.T) {
-	d := t.TempDir()
-	t.Setenv("LJ_CONFIG_DIR", d)
-	os.WriteFile(filepath.Join(d, "settings.yaml"),
+	p := settingsFile(t)
+	os.WriteFile(p,
 		[]byte("stats:\n  top_companies_limit: 25\nscoring:\n  reason_threshold: 80\n"), 0o644)
+	t.Setenv("LJ_SETTINGS_FILE", p)
 	s, err := LoadSettings()
 	if err != nil {
 		t.Fatalf("LoadSettings: %v", err)
@@ -48,9 +53,9 @@ func TestLoadSettings_FileOverridesKeepsDefaults(t *testing.T) {
 }
 
 func TestLoadSettings_ZeroOrInvalidLimitFallsBack(t *testing.T) {
-	d := t.TempDir()
-	t.Setenv("LJ_CONFIG_DIR", d)
-	os.WriteFile(filepath.Join(d, "settings.yaml"), []byte("stats:\n  top_companies_limit: 0\n"), 0o644)
+	p := settingsFile(t)
+	os.WriteFile(p, []byte("stats:\n  top_companies_limit: 0\n"), 0o644)
+	t.Setenv("LJ_SETTINGS_FILE", p)
 	s, _ := LoadSettings()
 	if s.Stats.TopCompaniesLimit != 50 {
 		t.Errorf("zero limit should fall back to 50, got %d", s.Stats.TopCompaniesLimit)

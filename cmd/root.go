@@ -45,7 +45,7 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&cfgFlag.path, "db", "", "path to the SQLite DB file (default: ~/linkedin-jobs/linkedin_jobs.db or $LJ_DB_PATH)")
+	rootCmd.PersistentFlags().StringVar(&cfgFlag.path, "db", "", "path to the SQLite DB file (default: ~/.linkedin-jobs/linkedin_jobs.db or $LJ_DB_PATH)")
 	// --json is added per-command where supported, but we also expose a global.
 	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON (agent-native output)")
 }

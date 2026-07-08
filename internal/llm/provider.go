@@ -23,19 +23,7 @@ type Provider struct {
 }
 
 // ErrNoProvider means no provider could be resolved.
-var ErrNoProvider = errors.New("no LLM provider configured: run `linkedin-jobs config`, or set OPENAI_API_KEY / LJ_LLM_* / ANTHROPIC_API_KEY")
-
-// configFile is the on-disk shape of ~/.linkedin-jobs/config.json.
-type configFile struct {
-	BaseURL string `json:"base_url"`
-	APIKey  string `json:"api_key"`
-	Model   string `json:"model"`
-}
-
-// ConfigPath returns the resolved path to the provider config file.
-func ConfigPath() string {
-	return filepath.Join(config.ConfigDir(), "config.json")
-}
+var ErrNoProvider = errors.New("no LLM provider configured: set OPENAI_API_KEY / LJ_LLM_* / ANTHROPIC_API_KEY")
 
 // providerPreset maps a known provider id to its OpenAI-compatible endpoint.
 // injectKeyHeader names a header that should carry the API key in addition to
@@ -64,19 +52,14 @@ func (p *Provider) Apply(req *http.Request) {
 }
 
 // Resolve resolves a provider in priority order (most-explicit first):
-//  1. persisted config file (explicit user action via wizard)
-//  2. LJ_LLM_* / OPENAI_* env (explicit env override)
-//  3. ANTHROPIC_API_KEY env (explicit, Anthropic-compat)
-//  4. opencode stored credentials (implicit discovery)
-//  5. ErrNoProvider
+//  1. LJ_LLM_* / OPENAI_* env (explicit env override)
+//  2. ANTHROPIC_API_KEY env (explicit, Anthropic-compat)
+//  3. opencode stored credentials (implicit discovery)
+//  4. ErrNoProvider
 //
-// Resolution is non-interactive; the interactive wizard lives in the `config`
-// command. cfg supplies the env-layer values.
+// Resolution is env-driven only — there is no persisted provider file. cfg
+// supplies the env-layer values.
 func Resolve(cfg config.Config) (*Provider, error) {
-	if p, ok := fromConfigFile(); ok {
-		p.Source = "config"
-		return p, nil
-	}
 	if cfg.LLMAPIKey != "" {
 		return &Provider{
 			BaseURL: cfg.LLMBaseURL,
@@ -94,18 +77,6 @@ func Resolve(cfg config.Config) (*Provider, error) {
 		return p, nil
 	}
 	return nil, ErrNoProvider
-}
-
-func fromConfigFile() (*Provider, bool) {
-	data, err := os.ReadFile(ConfigPath())
-	if err != nil {
-		return nil, false
-	}
-	var cf configFile
-	if err := json.Unmarshal(data, &cf); err != nil || cf.APIKey == "" {
-		return nil, false
-	}
-	return &Provider{BaseURL: cf.BaseURL, APIKey: cf.APIKey, Model: cf.Model}, true
 }
 
 // FromOpencode reads opencode's stored credentials + model config and maps them
@@ -195,18 +166,6 @@ func buildProvider(p providerPreset, key string) *Provider {
 	return &Provider{BaseURL: p.baseURL, APIKey: key, Model: p.model, Headers: headers}
 }
 
-// Save persists a provider to config.json with mode 0600 (secret at rest).
-func Save(p *Provider) error {
-	if err := os.MkdirAll(config.ConfigDir(), 0o700); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(configFile{BaseURL: p.BaseURL, APIKey: p.APIKey, Model: p.Model}, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(ConfigPath(), append(data, '\n'), 0o600)
-}
-
 // Redacted returns the API key with only the last 4 chars visible, for display.
 func (p *Provider) Redacted() string {
 	k := p.APIKey
@@ -214,12 +173,4 @@ func (p *Provider) Redacted() string {
 		return strings.Repeat("*", len(k))
 	}
 	return strings.Repeat("*", len(k)-4) + k[len(k)-4:]
-}
-
-// NewAnthropicProvider builds a Provider for an Anthropic/Claude key using the
-// Anthropic OpenAI-compatible endpoint. Used by the connect wizard.
-func NewAnthropicProvider(key string) *Provider {
-	p := buildProvider(presets["anthropic"], key)
-	p.Source = "config"
-	return p
 }

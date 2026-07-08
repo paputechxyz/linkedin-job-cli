@@ -40,7 +40,7 @@ Exits 1 if any check fails, 0 if all pass.`,
 		if err != nil {
 			ok = false
 			fmt.Printf("  [✗] no provider resolved: %v\n", err)
-			fmt.Println("      fix: linkedin-jobs config llm  (or set OPENAI_API_KEY / LJ_LLM_* / ANTHROPIC_API_KEY)")
+			fmt.Println("      fix: set OPENAI_API_KEY / LJ_LLM_* / ANTHROPIC_API_KEY (or rely on opencode discovery)")
 		} else {
 			fmt.Printf("  [✓] provider resolved: source=%s model=%s base=%s key=%s\n",
 				p.Source, p.Model, p.BaseURL, p.Redacted())
@@ -117,7 +117,6 @@ Exits 1 if any check fails, 0 if all pass.`,
 
 var doctorEnvKeys = []string{
 	"LJ_DB_PATH",
-	"LJ_CONFIG_DIR",
 	"LJ_COOKIES_FILE",
 	"LJ_COOKIE",
 	"OPENAI_API_KEY",
@@ -133,7 +132,6 @@ var settingsTopSchema = map[string][]string{
 	"stats":   {"top_companies_limit"},
 	"filter":  {"auto_filter"},
 	"scoring": {"reason_threshold", "baseline", "deal_breaker_cap", "deal_breakers", "weights"},
-	"enrich":  {"auto_enrich_on_save"},
 	"profile": {"work_arrangement", "min_salary", "min_salary_currency", "locations", "preferred_tech", "avoided_tech"},
 }
 

@@ -72,24 +72,12 @@ func envFloat(key string, def float64) float64 {
 	return f
 }
 
-func cwd() string {
-	d, err := os.Getwd()
-	if err != nil {
-		return "."
-	}
-	return d
-}
-
-// defaultDBPath returns the global DB location at ~/linkedin-jobs/linkedin_jobs.db,
+// defaultDBPath returns the global DB location at ~/.linkedin-jobs/linkedin_jobs.db,
 // creating the directory if needed so the CLI behaves the same regardless of CWD.
 func defaultDBPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(cwd(), "linkedin_jobs.db")
-	}
-	dir := filepath.Join(home, "linkedin-jobs")
+	dir := HomeDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return filepath.Join(cwd(), "linkedin_jobs.db")
+		return filepath.Join(dir, "linkedin_jobs.db")
 	}
 	return filepath.Join(dir, "linkedin_jobs.db")
 }

@@ -3,11 +3,12 @@
 // models.Profile consumed by the deterministic scorer, the hard filter, and the
 // LLM enrich prompt.
 //
-// Files used (override each with an env var; otherwise resolved under
-// $LJ_CONFIG_DIR or $CWD):
+// Files used (override each with an env var; otherwise resolved under the
+// project directory — the CWD when settings.yaml/RESUME.md already lives
+// there, else ~/.linkedin-jobs):
 //
-//	$LJ_RESUME_FILE / $CWD/RESUME.md       — resume body (free text), LLM context
-//	$LJ_SETTINGS_FILE / $CWD/settings.yaml — preference knobs (`profile:` section)
+//	$LJ_RESUME_FILE       — resume body (free text), LLM context
+//	$LJ_SETTINGS_FILE     — preference knobs (`profile:` section)
 //
 // Preference knobs (work_arrangement, min_salary, locations, preferred_tech,
 // avoided_tech) drive the deterministic hard filter (internal/filter) and the

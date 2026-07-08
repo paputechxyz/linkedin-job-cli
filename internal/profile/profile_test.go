@@ -8,13 +8,13 @@ import (
 	"linkedin-jobs/internal/config"
 )
 
-// setConfigDir points the profile package at a temp dir for the duration of
-// the test by overriding LJ_CONFIG_DIR.
-func setConfigDir(t *testing.T) string {
+// useTempResume isolates each test by pointing LJ_RESUME_FILE at a temp path so
+// the real RESUME.md in the repo root is never read.
+func useTempResume(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	t.Setenv("LJ_CONFIG_DIR", dir)
-	return dir
+	p := filepath.Join(t.TempDir(), "RESUME.md")
+	t.Setenv("LJ_RESUME_FILE", p)
+	return p
 }
 
 func ptr(f float64) *float64 { return &f }
@@ -23,7 +23,7 @@ func ptr(f float64) *float64 { return &f }
 // absent and no knobs are passed. Load never returns nil now — knobs come from
 // the settings argument, so emptiness is expressed via IsEmpty.
 func TestLoad_NoResumeNoKnobs(t *testing.T) {
-	setConfigDir(t)
+	useTempResume(t)
 	got, err := Load(config.ProfileSettings{})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -34,7 +34,7 @@ func TestLoad_NoResumeNoKnobs(t *testing.T) {
 }
 
 func TestSaveResume_RoundTrip(t *testing.T) {
-	setConfigDir(t)
+	useTempResume(t)
 	if err := SaveResume("  Go engineer, 10y exp  "); err != nil {
 		t.Fatalf("SaveResume: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestSaveResume_RoundTrip(t *testing.T) {
 // TestLoad_KnobsFromSettings verifies the structured knobs map straight through
 // from the settings argument into the profile (the old front-matter path).
 func TestLoad_KnobsFromSettings(t *testing.T) {
-	setConfigDir(t)
+	useTempResume(t)
 	prefs := config.ProfileSettings{
 		WorkArrangement:   []string{"remote", "hybrid"},
 		MinSalary:         ptr(200000),
@@ -92,7 +92,7 @@ func TestLoad_KnobsFromSettings(t *testing.T) {
 // TestLoad_ResumePlusKnobs verifies both channels combine: RESUME.md supplies
 // the free-text body while settings supplies the knobs.
 func TestLoad_ResumePlusKnobs(t *testing.T) {
-	setConfigDir(t)
+	useTempResume(t)
 	if err := SaveResume("staff backend engineer"); err != nil {
 		t.Fatalf("SaveResume: %v", err)
 	}
@@ -109,14 +109,14 @@ func TestLoad_ResumePlusKnobs(t *testing.T) {
 }
 
 func TestClearResume(t *testing.T) {
-	dir := setConfigDir(t)
+	p := useTempResume(t)
 	if err := SaveResume("x"); err != nil {
 		t.Fatal(err)
 	}
 	if err := ClearResume(); err != nil {
 		t.Fatalf("ClearResume: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ResumeFile)); !os.IsNotExist(err) {
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
 		t.Errorf("RESUME.md still exists after ClearResume")
 	}
 	// Clear on a missing file is not an error.
@@ -130,19 +130,12 @@ func TestIsEmpty(t *testing.T) {
 		t.Error("nil profile must be empty")
 	}
 	// A profile built from zero-value settings + no resume is empty.
+	useTempResume(t)
 	got, err := Load(config.ProfileSettings{})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	if !IsEmpty(got) {
 		t.Errorf("zero-value profile must be empty, got %+v", got)
-	}
-}
-
-func TestConfigDirEnvOverride(t *testing.T) {
-	// Sanity: confirming profile package honors LJ_CONFIG_DIR (used by setConfigDir).
-	t.Setenv("LJ_CONFIG_DIR", "/tmp/some-where")
-	if config.ConfigDir() != "/tmp/some-where" {
-		t.Errorf("ConfigDir did not pick up LJ_CONFIG_DIR")
 	}
 }
