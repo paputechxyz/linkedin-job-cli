@@ -354,21 +354,27 @@ func (c *Client) FetchDetail(j *models.JobPosting) error {
 
 	// 2b. LinkedIn's detail page is now a React Server Components SPA: the
 	// initial HTML often omits the description body, and the guest page omits
-	// the workplace type (Remote/Hybrid/On-site) entirely. Detect what we can
-	// from text first; when a CSRF-bearing session is available and either the
-	// description or the workplace type is still missing, recover both from the
-	// authenticated Voyager jobPostings API in a single call.
+	// the workplace type (Remote/Hybrid/On-site) entirely. DetectRemote gives a
+	// best-effort guess from prose, but it false-positives on listings whose
+	// description merely mentions "hybrid" in passing. The authenticated
+	// Voyager jobPostings API returns the authoritative workplaceTypes badge,
+	// so when a CSRF-bearing session is available we call it and let its
+	// remoteType override the heuristic; it also recovers the description body
+	// when the SPA shell shipped none.
 	j.RemoteType = DetectRemote(j.Location + " " + j.Description)
-	if c.HasSession() && (strings.TrimSpace(j.Description) == "" || j.RemoteType == "unknown") {
+	if c.HasSession() {
 		desc, rt, err := c.fetchJobPostingViaAPI(j.ID)
 		if err == nil {
 			if strings.TrimSpace(j.Description) == "" && desc != "" {
 				j.Description = desc
-				if j.RemoteType == "unknown" {
+				// Only re-run the heuristic if the API exposed no workplace
+				// type — otherwise the authoritative badge wins below.
+				if rt == "" {
 					j.RemoteType = DetectRemote(j.Location + " " + j.Description)
 				}
 			}
-			if j.RemoteType == "unknown" && rt != "" {
+			// Authoritative workplace badge overrides DetectRemote's guess.
+			if rt != "" {
 				j.RemoteType = rt
 			}
 		}
