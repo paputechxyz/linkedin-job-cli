@@ -16,7 +16,6 @@ var (
 	watchRemote         bool
 	watchHybrid         bool
 	watchOnsite         bool
-	watchNoDetail       bool
 	watchForceOW        bool
 )
 
@@ -88,7 +87,6 @@ scored.`,
 			remote:            watchRemote,
 			hybrid:            watchHybrid,
 			onsite:            watchOnsite,
-			noDetail:          watchNoDetail,
 			forceOverwrite:    watchForceOW,
 			detailDelay:       resolveDetailDelay(),
 			scoreDelay:        resolveLLMDelay(),
@@ -105,7 +103,6 @@ func init() {
 	watchCmd.Flags().BoolVar(&watchRemote, "remote", false, "only remote-friendly jobs")
 	watchCmd.Flags().BoolVar(&watchHybrid, "hybrid", false, "only hybrid-friendly jobs (combine with --remote/--onsite for OR)")
 	watchCmd.Flags().BoolVar(&watchOnsite, "onsite", false, "only on-site jobs (combine with --remote/--hybrid for OR)")
-	watchCmd.Flags().BoolVar(&watchNoDetail, "no-detail", false, "skip detail page fetching")
 	watchCmd.Flags().BoolVar(&watchForceOW, "force-overwrite", false, "re-parse and re-score jobs already in the DB (bypass the new-only pre-filter and dedup; overwrites existing values)")
 	rootCmd.AddCommand(watchCmd)
 }

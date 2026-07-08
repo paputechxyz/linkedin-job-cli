@@ -14,9 +14,7 @@ var (
 	urlRemote         bool
 	urlHybrid         bool
 	urlOnsite         bool
-	urlNoDetail       bool
 	urlNoScore        bool
-	urlNoFilter       bool
 	urlForceOW        bool
 )
 
@@ -78,9 +76,7 @@ Examples:
 			remote:            urlRemote,
 			hybrid:            urlHybrid,
 			onsite:            urlOnsite,
-			noDetail:          urlNoDetail,
 			noScore:           urlNoScore,
-			noFilter:          urlNoFilter,
 			forceOverwrite:    urlForceOW,
 			detailDelay:       resolveDetailDelay(),
 			scoreDelay:        resolveLLMDelay(),
@@ -97,9 +93,7 @@ func init() {
 	urlCmd.Flags().BoolVar(&urlRemote, "remote", false, "only keep remote-friendly jobs")
 	urlCmd.Flags().BoolVar(&urlHybrid, "hybrid", false, "only keep hybrid-friendly jobs (combine with --remote/--onsite for OR)")
 	urlCmd.Flags().BoolVar(&urlOnsite, "onsite", false, "only keep on-site jobs (combine with --remote/--hybrid for OR)")
-	urlCmd.Flags().BoolVar(&urlNoDetail, "no-detail", false, "skip detail page fetching")
 	urlCmd.Flags().BoolVar(&urlNoScore, "no-score", false, "skip LLM enrichment+fit-scoring")
-	urlCmd.Flags().BoolVar(&urlNoFilter, "no-filter", false, "skip the hard preference filter")
 	urlCmd.Flags().BoolVar(&urlForceOW, "force-overwrite", false, "re-parse and re-score jobs already in the DB (bypass dedup; overwrites existing values)")
 	rootCmd.AddCommand(urlCmd)
 }

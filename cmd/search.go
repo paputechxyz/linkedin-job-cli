@@ -14,9 +14,7 @@ var (
 	searchRemote          bool
 	searchHybrid          bool
 	searchOnsite          bool
-	searchNoDetail        bool
 	searchNoScore         bool
-	searchNoFilter        bool
 	searchForceOW         bool
 )
 
@@ -69,9 +67,7 @@ Examples:
 			remote:            searchRemote,
 			hybrid:            searchHybrid,
 			onsite:            searchOnsite,
-			noDetail:          searchNoDetail,
 			noScore:           searchNoScore,
-			noFilter:          searchNoFilter,
 			forceOverwrite:    searchForceOW,
 			detailDelay:       resolveDetailDelay(),
 			scoreDelay:        resolveLLMDelay(),
@@ -88,9 +84,7 @@ func init() {
 	searchCmd.Flags().BoolVar(&searchRemote, "remote", false, "only keep remote-friendly jobs")
 	searchCmd.Flags().BoolVar(&searchHybrid, "hybrid", false, "only keep hybrid-friendly jobs (combine with --remote/--onsite for OR)")
 	searchCmd.Flags().BoolVar(&searchOnsite, "onsite", false, "only keep on-site jobs (combine with --remote/--hybrid for OR)")
-	searchCmd.Flags().BoolVar(&searchNoDetail, "no-detail", false, "skip detail page fetching")
 	searchCmd.Flags().BoolVar(&searchNoScore, "no-score", false, "skip LLM enrichment+fit-scoring")
-	searchCmd.Flags().BoolVar(&searchNoFilter, "no-filter", false, "skip the hard preference filter")
 	searchCmd.Flags().BoolVar(&searchForceOW, "force-overwrite", false, "re-parse and re-score jobs already in the DB (bypass dedup; overwrites existing values)")
 	rootCmd.AddCommand(searchCmd)
 }

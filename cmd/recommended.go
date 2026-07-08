@@ -14,9 +14,7 @@ var (
 	recRemote           bool
 	recHybrid           bool
 	recOnsite           bool
-	recNoDetail         bool
 	recNoScore          bool
-	recNoFilter         bool
 	recForceOW          bool
 )
 
@@ -57,9 +55,7 @@ survivors.`,
 			remote:            recRemote,
 			hybrid:            recHybrid,
 			onsite:            recOnsite,
-			noDetail:          recNoDetail,
 			noScore:           recNoScore,
-			noFilter:          recNoFilter,
 			forceOverwrite:    recForceOW,
 			detailDelay:       resolveDetailDelay(),
 			scoreDelay:        resolveLLMDelay(),
@@ -76,9 +72,7 @@ func init() {
 	recommendedCmd.Flags().BoolVar(&recRemote, "remote", false, "only keep remote-friendly jobs")
 	recommendedCmd.Flags().BoolVar(&recHybrid, "hybrid", false, "only keep hybrid-friendly jobs (combine with --remote/--onsite for OR)")
 	recommendedCmd.Flags().BoolVar(&recOnsite, "onsite", false, "only keep on-site jobs (combine with --remote/--hybrid for OR)")
-	recommendedCmd.Flags().BoolVar(&recNoDetail, "no-detail", false, "skip detail page fetching (faster; no salary/description)")
 	recommendedCmd.Flags().BoolVar(&recNoScore, "no-score", false, "skip LLM enrichment+fit-scoring")
-	recommendedCmd.Flags().BoolVar(&recNoFilter, "no-filter", false, "skip the hard preference filter")
 	recommendedCmd.Flags().BoolVar(&recForceOW, "force-overwrite", false, "re-parse and re-score jobs already in the DB (bypass dedup; overwrites existing values)")
 	rootCmd.AddCommand(recommendedCmd)
 }

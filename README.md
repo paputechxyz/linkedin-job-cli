@@ -34,12 +34,11 @@ offline full-text search.
 
 ## Install
 
-Requires Go 1.26+.
+Requires Go 1.26+. Build the binary locally so you control which version is on
+your `PATH` (and can keep multiple builds around):
 
 ```bash
 go build -o linkedin-jobs .
-# or, once published:
-go install .
 ```
 
 ## Auth (for `recommended` and `url`)
@@ -206,8 +205,7 @@ linkedin-jobs enrich --all            # backfill all unenriched jobs
 linkedin-jobs score --all             # re-score everything after a profile edit
 ```
 
-Token-frugality flags: `--no-score` (skip the LLM), `--no-filter` (skip the hard
-filter), `--no-detail` (skip salary/description fetch).
+Token-frugality flag: `--no-score` (skip the LLM).
 
 ### Pre-score gate
 
@@ -258,7 +256,7 @@ them (the "hard filter" in step 3 of the pipeline above).
 | When it runs        | Batch-level, before persist                             | Per-job, after persist; also feeds the rubric scorer      |
 | Job with no salary  | Dropped (when a floor is set)                           | Passes ("unknown is not a mismatch")                      |
 | Scope               | Work arrangement, salary floor                          | + locations, preferred/avoided tech                       |
-| Disable             | Omit the flag                                           | `filter.auto_filter: false`, or `--no-filter`             |
+| Disable             | Omit the flag                                           | `filter.auto_filter: false`                              |
 
 Reach for the **pre-score gate** for one-off hard cuts ("only remote jobs paying
 ≥ CA$200k *this run*"). Reach for **profile knobs** for standing preferences you

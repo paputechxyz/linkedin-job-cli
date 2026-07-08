@@ -30,9 +30,7 @@ type ingestOptions struct {
 	remote            bool
 	hybrid            bool
 	onsite            bool
-	noDetail          bool
 	noScore           bool
-	noFilter          bool
 	forceOverwrite    bool // bypass dedup: re-parse + re-score + overwrite jobs already in the DB
 	detailDelay       float64
 	scoreDelay        float64 // pause between successive LLM scoring calls (avoids 429s)
@@ -59,18 +57,16 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 	fmt.Fprintf(os.Stderr, "Found %d jobs.\n", len(jobs))
 
 	// 1. Details (salary + full description) — ensures R1 full descriptions are saved.
-	if !opts.noDetail {
-		fmt.Fprintln(os.Stderr, "Fetching job details (salary + description)…")
-		c := linkedin.New(cfg)
-		// Best-effort: a session enables the Voyager-API fallbacks (description
-		// body + workplace type) that the anonymous guest page omits. Non-fatal
-		// when no session is configured — search still works anonymously.
-		attachSession(c)
-		c.FetchDetailsBatch(jobs, opts.detailDelay, func(done, total int) {
-			fmt.Fprintf(os.Stderr, "\r  %d/%d", done, total)
-		})
-		fmt.Fprintln(os.Stderr)
-	}
+	fmt.Fprintln(os.Stderr, "Fetching job details (salary + description)…")
+	c := linkedin.New(cfg)
+	// Best-effort: a session enables the Voyager-API fallbacks (description
+	// body + workplace type) that the anonymous guest page omits. Non-fatal
+	// when no session is configured — search still works anonymously.
+	attachSession(c)
+	c.FetchDetailsBatch(jobs, opts.detailDelay, func(done, total int) {
+		fmt.Fprintf(os.Stderr, "\r  %d/%d", done, total)
+	})
+	fmt.Fprintln(os.Stderr)
 
 	// 1b. Apply user gates (--remote/--hybrid/--onsite/--min-salary). Runs after the detail
 	// fetch so salary and RemoteType are populated, but before persist + score.
@@ -114,7 +110,7 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 		// Token-frugality gate: jobs that fail the hard filter are still visible
 		// (the new cap-not-hide semantics), but they skip the LLM enrich call
 		// because their final score is already known (the cap).
-		if !opts.noFilter && settings.Filter.AutoFilter && !filter.PassesHardFilter(j, profileData) {
+		if settings.Filter.AutoFilter && !filter.PassesHardFilter(j, profileData) {
 			res := score.Compute(j, profileData, weights)
 			reason := score.FitReason(res)
 			if err := st.SetScore(j.ID, res.Score, reason, res.CapReason); err != nil {
