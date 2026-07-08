@@ -38,7 +38,7 @@ Requires Go 1.26+. Build the binary locally so you control which version is on
 your `PATH` (and can keep multiple builds around):
 
 ```bash
-go build -o linkedin-jobs .
+just build
 ```
 
 ## Auth (for `recommended` and `url`)
