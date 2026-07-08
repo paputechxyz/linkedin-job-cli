@@ -320,17 +320,6 @@ When scoring runs, the CLI prints which profile context it loaded (resume from
 `RESUME.md`, knobs from `settings.yaml`), so you can tell at a glance whether
 scores reflect your actual context or ran context-free.
 
-## How recommended works
-
-LinkedIn serves personalized recommendations through an authenticated
-[persisted-query GraphQL](https://www.linkedin.com/voyager/api/graphql) call
-(queryId `voyagerJobsDashJobCards.e5b6b761ede078dabe8ad857aa42c220`), paginated
-25 at a time. The CLI replays that call using your session cookies + a
-`csrf-token` derived from your `JSESSIONID` cookie, then decodes the normalized
-entity graph (`included[].JobPostingCard`) into job cards. Salary and full
-description are fetched per-job from the public detail page (JSON-LD
-`JobPosting`) — the same anonymous path `search` uses.
-
 ## Configuration & env
 
 | Variable          | Purpose                                            | Default                          |
@@ -366,8 +355,4 @@ internal/
 
 ## Notes
 
-- LinkedIn may rate-limit aggressive scraping. Detail fetches use a polite
-  delay (default 0.8s, configurable). LLM scoring calls are paced too
-  (`LJ_LLM_DELAY_SECONDS`, default 2.0) to avoid provider rate limits (HTTP 429).
-- Salary data is only present on jobs where the employer provided it.
 - This tool is for personal job-search use. Respect LinkedIn's Terms of Service.
