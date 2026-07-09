@@ -618,6 +618,15 @@ func (s *Store) Stats(topCompaniesLimit int) (*Stats, error) {
 	return st, nil
 }
 
+// Count returns the total number of jobs in the database.
+func (s *Store) Count() (int64, error) {
+	var n int64
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM jobs`).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // DeleteAll removes all jobs (and FTS). Returns count removed.
 func (s *Store) DeleteAll() (int64, error) {
 	res, err := s.db.Exec(`DELETE FROM jobs`)

@@ -10,8 +10,8 @@ import (
 	"linkedin-jobs/internal/store"
 )
 
-var scoreJobCmd = &cobra.Command{
-	Use:   "score-job <job-id>",
+var jobCmd = &cobra.Command{
+	Use:   "job <job-id>",
 	Short: "Fetch + fit-score a single LinkedIn job by its numeric ID",
 	Args:  cobra.ExactArgs(1),
 	Long: `Fetches a single LinkedIn job posting by its numeric job ID and runs it
@@ -20,7 +20,7 @@ and hard-filter behavior all come from your settings.yaml. The job is always
 (re-)fetched and (re-)scored.
 
 Example:
-  linkedin-jobs score-job 4434368088`,
+  linkedin-jobs job 4434368088`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
 		job := &models.JobPosting{
@@ -42,5 +42,5 @@ Example:
 }
 
 func init() {
-	rootCmd.AddCommand(scoreJobCmd)
+	rootCmd.AddCommand(jobCmd)
 }

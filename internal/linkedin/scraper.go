@@ -317,7 +317,7 @@ func (c *Client) FetchDetail(j *models.JobPosting) error {
 	// 2. JSON-LD JobPosting — source for description AND any missing card
 	// metadata (title/company/location). Cards from the listing page already
 	// carry these, but jobs built from a bare ID (e.g. via the `url` command's
-	// originToLandingJobPostings path, or the `score-job` command) only have an
+	// originToLandingJobPostings path, or the `job` command) only have an
 	// ID + view URL. LinkedIn now ships the detail page as a React SPA that
 	// frequently omits the JobPosting JSON-LD block, so when JSON-LD misses we
 	// fall back to the rendered topcard__ elements for title/company/location.

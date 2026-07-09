@@ -134,7 +134,8 @@ linkedin-jobs stats --top 25
 linkedin-jobs tag 4430749190 applied --note "referred by Sam"
 linkedin-jobs export --format csv -o jobs.csv
 linkedin-jobs watch "Staff Engineer" Toronto --top 10  # only jobs new since last run
-linkedin-jobs clear
+linkedin-jobs count
+linkedin-jobs purge
 ```
 
 ### Web UI (local browser)

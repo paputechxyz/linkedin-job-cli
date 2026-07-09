@@ -7,14 +7,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var clearYes bool
+var purgeYes bool
 
-var clearCmd = &cobra.Command{
-	Use:   "clear",
+var purgeCmd = &cobra.Command{
+	Use:   "purge",
 	Short: "Delete all jobs from the local database",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg := loadCfg()
-		if !clearYes {
+		if !purgeYes {
 			fmt.Fprintf(os.Stderr, "Delete ALL jobs from %s? [y/N] ", cfg.DBPath)
 			var resp string
 			fmt.Fscanln(os.Stdin, &resp)
@@ -38,6 +38,6 @@ var clearCmd = &cobra.Command{
 }
 
 func init() {
-	clearCmd.Flags().BoolVar(&clearYes, "yes", false, "skip the confirmation prompt")
-	rootCmd.AddCommand(clearCmd)
+	purgeCmd.Flags().BoolVar(&purgeYes, "yes", false, "skip the confirmation prompt")
+	rootCmd.AddCommand(purgeCmd)
 }
