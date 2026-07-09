@@ -305,30 +305,14 @@ func (c *Client) FetchDetail(j *models.JobPosting) error {
 	// itself is retained as a fallback: when the description has no salary, we
 	// surface the badge figure tagged "badge" so the UI shows an "est. salary"
 	// rather than nothing.
-	var badgeCurrency string
-	var badgeSal *salary.Salary
-	var salaryText string
-	doc.Find(".main-job-card__salary-info").EachWithBreak(func(_ int, s *goquery.Selection) bool {
-		t := strings.TrimSpace(s.Text())
-		if t == "" {
-			return true
-		}
-		upper := strings.ToUpper(t)
-		if strings.Contains(t, "$") || strings.Contains(upper, "CAD") || strings.Contains(upper, "USD") {
-			salaryText = t
-			return false
-		}
-		if salaryText == "" {
-			salaryText = t
-		}
-		return true
-	})
-	if salaryText != "" {
-		if parsed := salary.Parse(salaryText); parsed != nil {
-			badgeCurrency = parsed.Currency
-			badgeSal = parsed
-		}
-	}
+	//
+	// The lookup is scoped to the main job's own region: a detail page also
+	// renders "Similar jobs" / "People also viewed" sidebars whose cards reuse
+	// the same `.main-job-card__salary-info` class, and naively grabbing the
+	// first match on the page misattributes a *different* posting's salary to
+	// the job being viewed. Matches inside a `.similar-jobs` section or any
+	// `.aside-section-container` sidebar are therefore skipped.
+	badgeCurrency, badgeSal := extractSalaryBadge(doc)
 
 	// 2. JSON-LD JobPosting — source for description AND any missing card
 	// metadata (title/company/location). Cards from the listing page already
@@ -416,6 +400,46 @@ func (c *Client) FetchDetail(j *models.JobPosting) error {
 
 	j.FetchedAt = store.NowISO()
 	return nil
+}
+
+// similarJobsAncestor matches any container that renders *other* postings on a
+// detail page — the "Similar jobs" rail and the "People also viewed" /
+// "Similar searches" aside sidebars. Salary badges inside these belong to a
+// different job and must not be attributed to the one being viewed.
+const similarJobsAncestor = ".similar-jobs, .aside-section-container, .people-also-viewed"
+
+// extractSalaryBadge reads the page-chrome salary badge scoped to the main
+// job's own region. It returns the parsed badge (and its currency) or nil when
+// the posting carries no badge of its own. See FetchDetail's step-1 comment for
+// why the scope excludes the similar-jobs/aside sidebars.
+func extractSalaryBadge(doc *goquery.Document) (currency string, sal *salary.Salary) {
+	var salaryText string
+	doc.Find(".main-job-card__salary-info").EachWithBreak(func(_ int, s *goquery.Selection) bool {
+		if s.Closest(similarJobsAncestor).Length() > 0 {
+			return true
+		}
+		t := strings.TrimSpace(s.Text())
+		if t == "" {
+			return true
+		}
+		upper := strings.ToUpper(t)
+		if strings.Contains(t, "$") || strings.Contains(upper, "CAD") || strings.Contains(upper, "USD") {
+			salaryText = t
+			return false
+		}
+		if salaryText == "" {
+			salaryText = t
+		}
+		return true
+	})
+	if salaryText == "" {
+		return "", nil
+	}
+	parsed := salary.Parse(salaryText)
+	if parsed == nil {
+		return "", nil
+	}
+	return parsed.Currency, parsed
 }
 
 // extractDescription pulls the job description body, trying JSON-LD first
