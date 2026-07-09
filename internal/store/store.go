@@ -627,6 +627,15 @@ func (s *Store) Count() (int64, error) {
 	return n, nil
 }
 
+// CountFiltered returns the number of jobs tagged status='filtered'.
+func (s *Store) CountFiltered() (int64, error) {
+	var n int64
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM jobs WHERE status='filtered'`).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // DeleteAll removes all jobs (and FTS). Returns count removed.
 func (s *Store) DeleteAll() (int64, error) {
 	res, err := s.db.Exec(`DELETE FROM jobs`)
@@ -635,6 +644,21 @@ func (s *Store) DeleteAll() (int64, error) {
 	}
 	n, _ := res.RowsAffected()
 	s.db.Exec(`DELETE FROM jobs_fts`)
+	return n, nil
+}
+
+// DeleteFiltered removes every job tagged status='filtered' (and its FTS
+// entry). FTS rows are deleted first, while the jobs table still holds the IDs
+// to select against. Returns count removed.
+func (s *Store) DeleteFiltered() (int64, error) {
+	if _, err := s.db.Exec(`DELETE FROM jobs_fts WHERE id IN (SELECT id FROM jobs WHERE status='filtered')`); err != nil {
+		return 0, err
+	}
+	res, err := s.db.Exec(`DELETE FROM jobs WHERE status='filtered'`)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
 	return n, nil
 }
 

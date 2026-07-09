@@ -7,15 +7,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var purgeYes bool
+var (
+	purgeYes      bool
+	purgeFiltered bool
+)
 
 var purgeCmd = &cobra.Command{
 	Use:   "purge",
-	Short: "Delete all jobs from the local database",
+	Short: "Delete jobs from the local database",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg := loadCfg()
+		scope := "ALL"
+		if purgeFiltered {
+			scope = "FILTERED"
+		}
 		if !purgeYes {
-			fmt.Fprintf(os.Stderr, "Delete ALL jobs from %s? [y/N] ", cfg.DBPath)
+			fmt.Fprintf(os.Stderr, "Delete %s jobs from %s? [y/N] ", scope, cfg.DBPath)
 			var resp string
 			fmt.Fscanln(os.Stdin, &resp)
 			if resp != "y" && resp != "Y" && resp != "yes" {
@@ -28,7 +35,12 @@ var purgeCmd = &cobra.Command{
 			die("failed to open DB: %v", err)
 		}
 		defer st.Close()
-		n, err := st.DeleteAll()
+		var n int64
+		if purgeFiltered {
+			n, err = st.DeleteFiltered()
+		} else {
+			n, err = st.DeleteAll()
+		}
 		if err != nil {
 			die("delete failed: %v", err)
 		}
@@ -39,5 +51,6 @@ var purgeCmd = &cobra.Command{
 
 func init() {
 	purgeCmd.Flags().BoolVar(&purgeYes, "yes", false, "skip the confirmation prompt")
+	purgeCmd.Flags().BoolVar(&purgeFiltered, "filtered", false, "delete only jobs tagged status=filtered")
 	rootCmd.AddCommand(purgeCmd)
 }
