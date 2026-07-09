@@ -204,7 +204,7 @@ flows through five gates — only the last costs an LLM token:
 ```bash
 linkedin-jobs enrich 4430749190       # enrich+score one job
 linkedin-jobs enrich --all            # backfill all unenriched jobs
-linkedin-jobs score --all             # re-score everything after a profile edit
+linkedin-jobs rescore-all          # re-enrich + re-score every job after a profile edit
 ```
 
 Token-frugality flag: `--no-score` (skip the LLM).

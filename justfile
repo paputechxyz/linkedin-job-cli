@@ -38,8 +38,8 @@ build:
 serve:
     linkedin-jobs serve
 
-score-all:
-    linkedin-jobs score --all --local
+rescore-all:
+    linkedin-jobs rescore-all
 
 rec:
     linkedin-jobs recommended --remote --hybrid --top 25 --min-salary 200000 --salary-currency CAD
