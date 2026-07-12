@@ -52,3 +52,41 @@ score-job job_id:
 
 hr target_url:
     linkedin-jobs hr '{{target_url}}'
+
+# Install the Hermes skill (symlinks ~/.hermes/skills/productivity/linkedin-jobs -> ./hermes-skill).
+install-skill:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    TARGET="$HOME/.hermes/skills/productivity/linkedin-jobs"
+    SOURCE="$(pwd)/hermes-skill"
+    mkdir -p "$(dirname "$TARGET")"
+    if [ -L "$TARGET" ]; then
+        CURRENT="$(readlink "$TARGET")"
+        if [ "$CURRENT" = "$SOURCE" ]; then
+            echo "-> skill already installed at $TARGET"
+            exit 0
+        fi
+        echo "-> replacing stale symlink at $TARGET"
+        rm "$TARGET"
+    elif [ -e "$TARGET" ]; then
+        echo "-> $TARGET exists and is not a symlink; refusing to overwrite" >&2
+        exit 1
+    fi
+    ln -s "$SOURCE" "$TARGET"
+    echo "-> skill installed: $TARGET -> $SOURCE"
+    echo "   Start a new Hermes session to discover the skill."
+
+# Remove the Hermes skill symlink.
+uninstall-skill:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    TARGET="$HOME/.hermes/skills/productivity/linkedin-jobs"
+    if [ -L "$TARGET" ]; then
+        rm "$TARGET"
+        echo "-> skill removed: $TARGET"
+    elif [ -e "$TARGET" ]; then
+        echo "-> $TARGET exists and is not a symlink; refusing to remove" >&2
+        exit 1
+    else
+        echo "-> nothing to remove at $TARGET"
+    fi
