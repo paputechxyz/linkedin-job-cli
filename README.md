@@ -41,6 +41,24 @@ your `PATH` (and can keep multiple builds around):
 just build
 ```
 
+## Hermes Skill
+
+The CLI ships with a [Hermes](https://hermes-agent.ai) skill that wraps every
+command so the Hermes agent can invoke it on your behalf — fetching jobs,
+scoring fit, finding contacts, managing your pipeline, and more.
+
+```bash
+just install-skill      # symlink ~/.hermes/skills/productivity/linkedin-jobs -> ./hermes-skill
+just uninstall-skill    # remove the symlink
+```
+
+Start a **new Hermes session** after installing — the skill loader initializes
+at session start and won't discover a newly installed skill mid-session.
+
+The skill lives in `hermes-skill/` (`SKILL.md` + `references/`). It documents
+when to use each command, prerequisite checks, approval gates for destructive
+operations, workflow recipes, and common pitfalls.
+
 ## Auth (for `recommended` and `url`)
 
 `recommended` and `url` use your LinkedIn session. `search` works without it.
