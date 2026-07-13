@@ -36,9 +36,11 @@ Wraps the `linkedin-jobs` Go CLI so the Hermes agent can fetch, score, and manag
 Run these checks before any domain command on first use. The CLI binary must be built and on `PATH`.
 
 1. **Binary check:** `linkedin-jobs version` — if missing, run `just build` in the repo at `~/Documents/workspace.nosync/personal/linkedin-job-cli`.
-2. **Auth check:** `linkedin-jobs auth status` — reports whether a LinkedIn session is available. `recommended` and `url` require a session; `search` and `hr` work anonymously.
-3. **LLM check:** `linkedin-jobs doctor` — diagnoses provider, resume, and settings completeness. Scoring is optional (skipped gracefully without a key); all read commands work regardless.
+2. **Doctor check (primary):** `linkedin-jobs doctor` — single command that diagnoses LLM provider, resume, settings.yaml completeness, AND prints every `LJ_*` env var (set or unset, secrets redacted). This is the canonical way to verify the LinkedIn cookie is wired up: look for the `LJ_COOKIES_FILE` line under `== Environment ==`. If it shows `(unset)`, the session is missing — see Pitfall #1 before doing anything else.
+3. **Auth check (secondary, optional):** `linkedin-jobs auth status` — quick boolean ("Session available" vs "No session") once you already know `LJ_COOKIES_FILE` is set. `doctor` is preferred for first-time setup; `auth status` is fine for a fast re-check mid-session.
 4. **Profile check:** `linkedin-jobs config path` — shows where `RESUME.md` and `settings.yaml` live. `linkedin-jobs profile show` to see the current resume + preference knobs.
+
+**Cookie path comes from `LJ_COOKIES_FILE`.** Never assume a path — always read it from the environment. The CLI resolves cookies in this priority: `LJ_COOKIE` (raw header string) → `LJ_COOKIES_FILE` (path to a file containing a raw `Cookie:` header or Netscape cookies.txt).
 
 ## Command Map
 
@@ -104,10 +106,10 @@ These operations require explicit user confirmation before executing. Never auto
 Named scenarios mapping user intents to concrete command sequences. Always use `--json` for read commands and summarize results — never dump raw JSON to the user.
 
 ### 1. Pull my feed
-`auth status` → `recommended --json --top 25` → summarize top-N by fit score → offer to `tag` strong matches `saved`.
+`doctor` → confirm `LJ_COOKIES_FILE` is set under `== Environment ==` (if unset, stop and tell the user — see Pitfall #1; **do not fall back to `search`**) → `recommended --json --top 25` → summarize top-N by fit score → offer to `tag` strong matches `saved`. **Always prefer `recommended` over `search` for personalized results.** `search` is a fallback for users with no session, not a default.
 
-### 2. Search anonymous
-`search "Staff Engineer" Toronto --json --top 25` → summarize results.
+### 2. Search anonymous (only when no session is available)
+`search "Staff Engineer" Toronto --json --top 25` → summarize results. **Only use this when the user has explicitly opted out of cookies** — see Pitfall #1. Default to Recipe #1 (`recommended`) whenever `LJ_COOKIES_FILE` is set.
 
 ### 3. Score a URL
 `url "<url>" --json` → summarize. Requires auth session.
@@ -141,7 +143,13 @@ Named scenarios mapping user intents to concrete command sequences. Always use `
 
 ## Common Pitfalls
 
-1. **Login-gated commands.** `recommended` and `url` require a LinkedIn session (`LJ_COOKIE` / `LJ_COOKIES_FILE`). `search`, `hr`, `watch`, and `job` work anonymously. Always run `auth status` first — if no session, fall back to anonymous commands and tell the user how to enable cookies.
+1. **Login-gated commands.** `recommended` and `url` require a LinkedIn session (`LJ_COOKIE` / `LJ_COOKIES_FILE`). `search`, `hr`, `watch`, and `job` work anonymously. **Always run `doctor` first** and look at the `LJ_COOKIES_FILE` line under `== Environment ==`.
+
+   **Do NOT silently fall back to anonymous `search` when the session is missing.** This is the single most common failure mode: the agent sees "no session", decides `recommended` is unavailable, and downgrades the user to a global anonymous search that returns irrelevant jobs in distant locations. That is the wrong behavior. The user's cookies are almost always present on the host — what's missing is the `LJ_COOKIES_FILE` env var in the agent's process. When `doctor` shows `LJ_COOKIES_FILE = (unset)`:
+     1. Stop and tell the user: "Your LinkedIn cookie file isn't visible to me — `LJ_COOKIES_FILE` is unset in my environment."
+     2. Ask the user to either export `LJ_COOKIES_FILE=/path/to/their/linkedin_cookie.txt` in the agent's shell, or paste the path so you can prefix the command: `LJ_COOKIES_FILE=<path> linkedin-jobs recommended ...`.
+     3. Re-run `doctor` to confirm `LJ_COOKIES_FILE` now resolves, THEN proceed with `recommended`.
+     4. Only fall back to anonymous `search` if the user explicitly says "just search anonymously" or "I don't have cookies." Never decide that for them.
 
 2. **`--json` is not universal.** `auth status`, `config show`, `config path`, `doctor`, `version`, `purge`, `rescore-all`, and `serve` always emit human-readable text. `enrich --all` produces no stdout. `export` uses `--format json` (not `--json`). Parse text output from these commands, not JSON.
 
@@ -166,10 +174,12 @@ Named scenarios mapping user intents to concrete command sequences. Always use `
 ## Verification Checklist
 
 - [ ] `linkedin-jobs version` succeeds (binary on PATH)
-- [ ] `linkedin-jobs auth status` reports session state (or falls back to anonymous)
-- [ ] `linkedin-jobs doctor` shows no blocking issues
+- [ ] `linkedin-jobs doctor` shows `LJ_COOKIES_FILE` resolving to a real path under `== Environment ==` (not `(unset)`)
+- [ ] If `LJ_COOKIES_FILE` is unset, the agent stopped and asked the user for the path — it did NOT silently fall back to anonymous `search`
+- [ ] `linkedin-jobs doctor` shows no blocking issues (LLM provider resolved, resume present, settings complete)
 - [ ] `linkedin-jobs config path` shows expected file locations
 - [ ] `--json` used for all read commands; text parsed for non-JSON commands
 - [ ] Approval gates respected for `purge`, `enrich --all`, `rescore-all`, `tag applied`, `profile clear`
 - [ ] No cookie values echoed in output
 - [ ] `serve` started with localhost binding only (never `--addr 0.0.0.0`)
+- [ ] For personalized job discovery, `recommended` was used (not anonymous `search`) whenever a session was available
