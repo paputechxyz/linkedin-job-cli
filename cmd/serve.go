@@ -274,7 +274,8 @@ func (ws *webServer) query(q url.Values) ([]*models.JobPosting, string, error) {
 		Remote:            q.Get("remote") == "1",
 		Hybrid:            q.Get("hybrid") == "1",
 		Onsite:            q.Get("onsite") == "1",
-		SortByScore:       q.Get("sort") != "salary", // default: fit score
+		SortBySearched:    q.Get("sort") == "searched",
+		SortByScore:       q.Get("sort") != "salary" && q.Get("sort") != "searched", // default: fit score
 		SinceSearched:     normalizeSinceSearched(q.Get("since_searched")),
 	}
 	// FX-aware floor can't be done in SQL: defer it to Go.
@@ -1458,6 +1459,7 @@ const pageHTML = `<!DOCTYPE html>
           <label for="sort">Sort</label>
           <select id="sort" name="sort">
             <option value="score"{{if eq .F.Sort "score"}} selected{{end}}>fit score</option>
+            <option value="searched"{{if eq .F.Sort "searched"}} selected{{end}}>recently searched</option>
             <option value="salary"{{if eq .F.Sort "salary"}} selected{{end}}>salary</option>
           </select>
         </div>
