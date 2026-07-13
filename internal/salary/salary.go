@@ -181,6 +181,40 @@ var labeledBareRangeRE = regexp.MustCompile(
 		`\s*(?:[-–—]|to)\s+` +
 		`\$[\d,]+(?:\.\d+)?[kKmM]?(?:/(?:yr|year|hr|hour|annual|annum|month|week))?`)
 
+// localeCurrencyMap maps a country/region qualifier that appears in a
+// per-region salary section ("Salary Range\nCanada: ...") to its ISO currency
+// code. Used when the description states pay bands per locale but writes the
+// amounts with a bare "$" and no trailing ISO code.
+var localeCurrencyMap = map[string]string{
+	"canada":         "CAD",
+	"us":             "USD",
+	"usa":            "USD",
+	"united states":  "USD",
+	"uk":             "GBP",
+	"united kingdom": "GBP",
+	"india":          "INR",
+	"australia":      "AUD",
+	"japan":          "JPY",
+}
+
+// labeledRangeWithLocaleRE matches a Salary/Compensation heading followed by a
+// country/region qualifier (which supplies the currency), optional intervening
+// prose, and a pay range where the second amount's "$" may be omitted. This
+// handles posts that state per-region bands, e.g.:
+//
+//	Salary Range
+//	Canada: The pay range for this role is $190,500 - 262,000 per year.
+//
+// The locale qualifier is captured so the caller can resolve the currency
+// without needing a LinkedIn salary badge to inherit from.
+var labeledRangeWithLocaleRE = regexp.MustCompile(
+	`(?i)(?:annual\s+|yearly\s+)?(?:base\s+)?(?:salary|compensation)(?:\s+(?:range|band))?` +
+		`\s+(?P<locale>United\s+States|United\s+Kingdom|Canada|Australia|India|Japan|USA|US|UK)\b` +
+		`[\s\S]{0,200}?` +
+		`\$\s*[\d,]+(?:\.\d+)?[kKmM]?(?:/(?:yr|year|hr|hour|annual|annum|month|week))?` +
+		`\s*(?:[-–—]|to)\s*` +
+		`(?:\$)?\s*[\d,]+(?:\.\d+)?[kKmM]?(?:/(?:yr|year|hr|hour|annual|annum|month|week))?`)
+
 // InDescriptionWithDefault extends InDescription with a fallback: when no
 // currency-stated range is found but defaultCurrency is non-empty, it also
 // accepts a range introduced by a "Salary"/"Compensation" label whose amounts
@@ -195,6 +229,24 @@ func InDescriptionWithDefault(desc, defaultCurrency string) *Salary {
 		}
 		if *s.Low < 1000 || *s.High < 1000 {
 			continue
+		}
+		return s
+	}
+	// A labeled range with a country/region qualifier supplies its own
+	// currency from the locale, so it works even when no badge currency was
+	// inherited. Sits between the strict path and the badge-default path
+	// because the locale is a stronger signal than an inherited default.
+	for _, match := range labeledRangeWithLocaleRE.FindAllStringSubmatch(desc, -1) {
+		s := ParseWithDefault(match[0], defaultCurrency)
+		if s == nil || s.Low == nil || s.High == nil {
+			continue
+		}
+		if *s.Low < 1000 || *s.High < 1000 {
+			continue
+		}
+		localeKey := strings.ToLower(strings.Join(strings.Fields(match[1]), " "))
+		if cur := localeCurrencyMap[localeKey]; cur != "" {
+			s.Currency = cur
 		}
 		return s
 	}

@@ -160,6 +160,48 @@ func TestInDescriptionWithDefault_NoDefaultSkipsLabeledBare(t *testing.T) {
 	}
 }
 
+func TestInDescription_LabeledRangeWithLocale(t *testing.T) {
+	// "Salary Range\nCanada: The pay range ... $190,500 - 262,000 per year."
+	// — labeled range with a country qualifier supplying the currency, and
+	// the second amount has no "$". No badge currency is needed because the
+	// locale (Canada) implies CAD. Mirrors a real posting (job 4428732008).
+	desc := "About the role.\nSalary Range\nCanada: The pay range for this role is $190,500 - 262,000 per year.\nWe offer equity."
+
+	s := InDescription(desc)
+	if s == nil {
+		t.Fatal("expected a salary from the labeled range with locale")
+	}
+	if s.Low == nil || *s.Low != 190500 {
+		t.Errorf("low = %v, want 190500", s.Low)
+	}
+	if s.High == nil || *s.High != 262000 {
+		t.Errorf("high = %v, want 262000", s.High)
+	}
+	if s.Currency != "CAD" {
+		t.Errorf("currency = %q, want CAD (from Canada locale)", s.Currency)
+	}
+}
+
+func TestInDescription_LabeledRangeWithLocaleBothDollarSigns(t *testing.T) {
+	// Same shape but with "$" on both amounts — the locale still wins so we
+	// don't fall back to USD by default.
+	desc := "Compensation\nUS: $150,000 - $180,000 per year."
+
+	s := InDescription(desc)
+	if s == nil {
+		t.Fatal("expected a salary")
+	}
+	if s.Low == nil || *s.Low != 150000 {
+		t.Errorf("low = %v, want 150000", s.Low)
+	}
+	if s.High == nil || *s.High != 180000 {
+		t.Errorf("high = %v, want 180000", s.High)
+	}
+	if s.Currency != "USD" {
+		t.Errorf("currency = %q, want USD (from US locale)", s.Currency)
+	}
+}
+
 func TestInDescription_TrailingISOOnEachAmount(t *testing.T) {
 	// "$125,000 USD - $165,000 USD" — each amount carries its own trailing ISO
 	// code, with the dash between amount-1's "USD" and amount-2's "$". This is
