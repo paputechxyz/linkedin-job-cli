@@ -8,18 +8,28 @@ The CLI has two auth modes:
 
 Required for `recommended` and `url`. Uses your captured browser session cookies.
 
-Set cookies via one of:
-- `LJ_COOKIES_FILE=/path/to/cookies.txt` — file containing a raw `Cookie:` header (`name=val; name=val`)
-- `LJ_COOKIE="li_at=...; JSESSIONID=ajax:..."` — raw cookie header string
+**The cookie path is read from the environment — never assume a hardcoded path.** Resolution order (first match wins):
+
+1. `LJ_COOKIE` env var — raw cookie header string (`name=val; name=val`). Highest priority override.
+2. `LJ_COOKIES_FILE` env var — path to a file containing either a raw `Cookie:` header (`name=val; name=val`) or Netscape cookies.txt format.
 
 The CSRF token is derived automatically from the `JSESSIONID` cookie. The CLI checks for `li_at` + `JSESSIONID` cookies.
 
-Check session state:
+**Verify the session with `doctor`, not just `auth status`:**
+
 ```bash
-linkedin-jobs auth status    # reports whether a usable session is available
+linkedin-jobs doctor          # canonical first-run check; prints every LJ_* env var
+                              # (set/unset, secrets redacted). Look for the
+                              # LJ_COOKIES_FILE line under "== Environment ==".
+
+linkedin-jobs auth status     # fast mid-session boolean check. Only meaningful
+                              # AFTER you've confirmed via doctor that
+                              # LJ_COOKIES_FILE is set.
 ```
 
-**Security:** LinkedIn session cookies enable full account takeover. Store `LJ_COOKIES_FILE` with `0600` permissions in a user-only directory. Treat it with the same care as SSH private keys. The agent must never `cat`, `echo`, or transmit the file contents — use `auth status` for session checks only.
+**If `doctor` shows `LJ_COOKIES_FILE = (unset)`:** the session is missing because the env var isn't visible to the agent — not because cookies don't exist on the host. Stop and ask the user for the path (or have them export `LJ_COOKIES_FILE` in the agent's shell). Do **not** silently fall back to anonymous `search`; that yields irrelevant global results and hides the real fix. See SKILL.md Pitfall #1.
+
+**Security:** LinkedIn session cookies enable full account takeover. Store `LJ_COOKIES_FILE` with `0600` permissions in a user-only directory. Treat it with the same care as SSH private keys. The agent must never `cat`, `echo`, or transmit the file contents — use `doctor` / `auth status` for session checks only.
 
 ### Anonymous (no session)
 
