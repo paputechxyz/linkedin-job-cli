@@ -60,6 +60,44 @@ not mid-session. The first time you use it, the skill detects if the
 `~/.local/bin`, and walks you through setup (LLM provider, LinkedIn session,
 resume). Browse it on [skills.sh](https://www.skills.sh/paputechxyz/linkedin-job-cli/linkedin-jobs).
 
+#### Update
+
+Pull the latest skill (and re-trigger the binary self-update on next session):
+
+```bash
+# opencode / Claude Code / Cursor / Codex (global install)
+npx skills update linkedin-jobs -g
+
+# Hermes
+hermes skills update linkedin-jobs
+```
+
+To check what's pending before updating, Hermes users can run
+`hermes skills check linkedin-jobs`. The installed CLI binary also self-updates
+on run when a newer GitHub release is available, so updating the skill alone is
+usually enough.
+
+#### Uninstall
+
+Remove the skill wrapper, then delete the CLI binary the skill placed on
+`PATH`:
+
+```bash
+# 1. Remove the skill
+# opencode / Claude Code / Cursor / Codex (global install)
+npx skills remove linkedin-jobs -g -y
+# Hermes
+hermes skills uninstall linkedin-jobs
+
+# 2. Remove the CLI binary and its data
+rm -f ~/.local/bin/linkedin-jobs
+rm -rf ~/.linkedin-jobs        # config, cache, db, resume
+```
+
+> Config and local data live under `~/.linkedin-jobs`. Drop that directory to
+> wipe everything; leave it to reuse your resume, auth, and pipeline on a future
+> reinstall.
+
 ### CLI binary only
 
 If you don't use an agent, or want the binary on `PATH` yourself:
