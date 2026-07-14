@@ -34,26 +34,53 @@ offline full-text search.
 
 ## Install
 
-Requires Go 1.26+. Build the binary locally so you control which version is on
-your `PATH` (and can keep multiple builds around):
+### Agent skill (recommended)
+
+The CLI ships with an agent skill that wraps every command so your AI agent can
+run it on your behalf — fetching jobs, scoring fit, finding contacts, managing
+your pipeline. Install it for your agent, start a new session, and the skill
+installs the `linkedin-jobs` CLI binary for you on first use (no manual binary
+install needed).
+
+**opencode, Claude Code, Cursor, Codex, and other `~/.agents/skills/` agents:**
 
 ```bash
-just build
+npx skills add paputechxyz/linkedin-job-cli --skill linkedin-jobs --global
 ```
 
-## Hermes Skill
+**Hermes:**
 
-The CLI ships with a [Hermes](https://hermes-agent.ai) skill that wraps every
-command so the Hermes agent can invoke it on your behalf — fetching jobs,
-scoring fit, finding contacts, managing your pipeline, and more.
+```bash
+hermes skills install paputechxyz/linkedin-job-cli/hermes-skill
+```
+
+Start a **new agent session** after installing — skills load at session start,
+not mid-session. The first time you use it, the skill detects if the
+`linkedin-jobs` binary is missing, downloads the latest release into
+`~/.local/bin`, and walks you through setup (LLM provider, LinkedIn session,
+resume). Browse it on [skills.sh](https://www.skills.sh/paputechxyz/linkedin-job-cli/linkedin-jobs).
+
+### CLI binary only
+
+If you don't use an agent, or want the binary on `PATH` yourself:
+
+- **Prebuilt binary** — download the asset for your platform from the
+  [latest release](https://github.com/paputechxyz/linkedin-job-cli/releases/latest),
+  put it on `PATH` (e.g. `~/.local/bin`), and `chmod +x` it. Assets:
+  `linkedin-jobs_{darwin,linux}_{arm64,amd64}` and
+  `linkedin-jobs_windows_amd64.exe`.
+- **From source** — requires Go 1.26+:
+
+  ```bash
+  just build
+  ```
+
+### Local skill development
 
 ```bash
 just install-skill      # symlink ~/.hermes/skills/productivity/linkedin-jobs -> ./hermes-skill
 just uninstall-skill    # remove the symlink
 ```
-
-Start a **new Hermes session** after installing — the skill loader initializes
-at session start and won't discover a newly installed skill mid-session.
 
 The skill lives in `hermes-skill/` (`SKILL.md` + `references/`). It documents
 when to use each command, prerequisite checks, approval gates for destructive

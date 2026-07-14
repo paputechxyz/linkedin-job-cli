@@ -40,11 +40,18 @@ The skill installs the CLI itself — **no repo checkout needed**. Run the First
 Ordered flow. Stop at the first unresolved gate and guide the user through it before continuing.
 
 1. **Ensure the CLI is installed.** Check `command -v linkedin-jobs`.
-   - **Missing → auto-install the latest release binary** (the skill can do this for the user; no repo needed):
+   - **Missing → auto-install the latest release binary** (self-contained; works on macOS/Linux/Windows in any agent shell — no repo checkout, no skill-dir token). Run:
      ```
-     bash ${HERMES_SKILL_DIR}/scripts/install-cli.sh
+     os=$(uname -s | tr '[:upper:]' '[:lower:]'); case "$os" in mingw*|msys*|cygwin*) os=windows;; esac
+     arch=$(uname -m); case "$arch" in x86_64|amd64) arch=amd64;; arm64|aarch64) arch=arm64;; esac
+     ext=""; [ "$os" = windows ] && ext=".exe"
+     mkdir -p ~/.local/bin
+     curl -fL -o ~/.local/bin/linkedin-jobs"$ext" \
+       "https://github.com/paputechxyz/linkedin-job-cli/releases/latest/download/linkedin-jobs_${os}_${arch}${ext}"
+     chmod +x ~/.local/bin/linkedin-jobs"$ext"
+     linkedin-jobs version
      ```
-     The script detects OS/arch, downloads the matching asset from GitHub Releases into `~/.local/bin`, and verifies. If it warns that `~/.local/bin` is not on `PATH`, tell the user to add `export PATH="$HOME/.local/bin:$PATH"` to their shell profile and start a new shell/session — then re-run `command -v linkedin-jobs`. **Do not proceed until `linkedin-jobs version` succeeds.** (If the download 404s, no release has been published yet — see `references/auth-config.md` / ask the maintainer to run `just release`.)
+     This downloads the matching asset from GitHub Releases into `~/.local/bin`. If `command -v linkedin-jobs` still fails afterward, `~/.local/bin` is not on `PATH` — tell the user to add `export PATH="$HOME/.local/bin:$PATH"` to their shell profile and start a new shell/session. **Do not proceed until `linkedin-jobs version` succeeds.** (If the download 404s, no release has been published yet — ask the maintainer to run `just release`.)
    - Confirm: `linkedin-jobs version`.
 
 2. **Diagnose everything:** `linkedin-jobs doctor`. One command reports the LLM provider, resume, `settings.yaml` completeness, and every `LJ_*` env var (set/unset, secrets redacted). It is the single source of truth for what's configured. To verify the LinkedIn session, look for the `LJ_COOKIES_FILE` line under `== Environment ==`.
