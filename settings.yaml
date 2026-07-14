@@ -26,5 +26,3 @@ scoring:
         salary: 6
         startup: 5
         tech_overlap: 4
-stats:
-    top_companies_limit: 5

@@ -173,7 +173,7 @@ linkedin-jobs stats [flags]
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--top` | int | 50 | Number of top companies to show (overrides `settings.yaml` `stats.top_companies_limit`) |
+| `--top` | int | 50 | Number of top companies to show |
 
 `--json`: yes.
 

@@ -11,7 +11,6 @@ import (
 // Settings holds tunable runtime settings loaded from a YAML file. Zero values
 // are replaced by DefaultSettings so callers always get usable numbers.
 type Settings struct {
-	Stats   StatsSettings   `yaml:"stats"`
 	Filter  FilterSettings  `yaml:"filter"`
 	Scoring ScoringSettings `yaml:"scoring"`
 	Profile ProfileSettings `yaml:"profile"`
@@ -28,10 +27,6 @@ type ProfileSettings struct {
 	Locations         []string `yaml:"locations,omitempty"`
 	PreferredTech     []string `yaml:"preferred_tech,omitempty"`
 	AvoidedTech       []string `yaml:"avoided_tech,omitempty"`
-}
-
-type StatsSettings struct {
-	TopCompaniesLimit int `yaml:"top_companies_limit"`
 }
 
 type FilterSettings struct {
@@ -60,7 +55,6 @@ type ScoringWeights struct {
 // absent or a key is omitted.
 func DefaultSettings() Settings {
 	return Settings{
-		Stats:   StatsSettings{TopCompaniesLimit: 50},
 		Filter:  FilterSettings{AutoFilter: true},
 		Scoring: DefaultScoringSettings(),
 	}
@@ -128,10 +122,6 @@ func LoadSettings() (Settings, error) {
 	if err := yaml.Unmarshal(data, &s); err != nil {
 		return DefaultSettings(), err
 	}
-	// Guard: an explicit zero limit would hide all companies; fall back to default.
-	if s.Stats.TopCompaniesLimit <= 0 {
-		s.Stats.TopCompaniesLimit = DefaultSettings().Stats.TopCompaniesLimit
-	}
 	if s.Scoring.ReasonThreshold <= 0 || s.Scoring.ReasonThreshold > 100 {
 		s.Scoring.ReasonThreshold = DefaultSettings().Scoring.ReasonThreshold
 	}
@@ -163,9 +153,6 @@ func LoadSettings() (Settings, error) {
 // yet. Profile starts empty so the user can fill it via `linkedin-jobs setup`.
 const defaultSettingsTemplate = `# linkedin-jobs settings — edit freely, delete a key to fall back to its default.
 # Docs: README → Settings
-
-stats:
-  top_companies_limit: 50       # stats command + serve UI; also stats --top N
 
 filter:
   auto_filter: true             # true = cap score on hard-filter mismatch (no LLM); false = always call LLM

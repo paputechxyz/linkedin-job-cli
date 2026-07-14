@@ -460,8 +460,6 @@ Run `linkedin-jobs setup` to create it interactively. Everything (DB, settings,
 FX cache) lives under `~/.linkedin-jobs/`:
 
 ```yaml
-stats:
-  top_companies_limit: 50        # default 50 (was hardcoded 10); also `stats --top N`
 filter:
   auto_filter: true              # set false to disable the hard filter
 scoring:

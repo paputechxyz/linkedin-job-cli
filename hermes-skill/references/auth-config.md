@@ -118,9 +118,6 @@ linkedin-jobs doctor          # diagnose provider + settings completeness
 Optional `settings.yaml` in `~/.linkedin-jobs/` (override with `$LJ_SETTINGS_FILE`):
 
 ```yaml
-stats:
-  top_companies_limit: 50        # default 50; also `stats --top N`
-
 filter:
   auto_filter: true              # false = always call LLM (no deterministic cap)
 

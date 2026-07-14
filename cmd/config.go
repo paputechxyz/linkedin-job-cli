@@ -31,7 +31,6 @@ var configShowCmd = &cobra.Command{
 		fmt.Printf("API key:  %s\n", p.Redacted())
 		s, _ := config.LoadSettings()
 		fmt.Printf("\nSettings: %s\n", config.SettingsPath())
-		fmt.Printf("  top_companies_limit: %d\n", s.Stats.TopCompaniesLimit)
 		fmt.Printf("  auto_filter:         %v\n", s.Filter.AutoFilter)
 		fmt.Printf("  reason_threshold:    %d\n", s.Scoring.ReasonThreshold)
 		return nil
