@@ -2,7 +2,10 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"runtime"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -22,12 +25,24 @@ func attachSession(c *linkedin.Client) (*auth.Session, error) {
 
 var authCmd = &cobra.Command{
 	Use:   "auth",
-	Short: "Inspect your LinkedIn session",
-	Long: `Check whether a usable LinkedIn session is available for the 'recommended'
-and 'url' commands. Sessions come from your own cookie header — set LJ_COOKIE
-(a raw Cookie header string) or LJ_COOKIES_FILE (path to a file with one). The
-csrf-token is derived from your JSESSIONID cookie.`,
+	Short: "Inspect or capture your LinkedIn session",
+	Long: `Inspect or capture a usable LinkedIn session for the 'recommended'
+and 'url' commands.
+
+  linkedin-jobs auth login    # capture session from Chrome or guided login
+  linkedin-jobs auth status   # check whether the session is usable
+
+Sessions can also come from LJ_COOKIE (a raw Cookie header string) or
+LJ_COOKIES_FILE (path to a file with one). The csrf-token is derived from
+your JSESSIONID cookie.`,
 }
+
+// Injectable for testing.
+var (
+	runtimeGOOS       = runtime.GOOS
+	readChromeCookies = auth.ReadChromeCookies
+	loginViaBrowser   = auth.LoginViaBrowser
+)
 
 var authStatusCmd = &cobra.Command{
 	Use:   "status",
@@ -38,7 +53,8 @@ var authStatusCmd = &cobra.Command{
 			return nil
 		}
 		if !c.HasSession() {
-			fmt.Println("No session. Set LJ_COOKIES_FILE or LJ_COOKIE to a raw Cookie header.")
+			fmt.Println("No session. Run 'linkedin-jobs auth login' to capture one,")
+			fmt.Println("or set LJ_COOKIES_FILE / LJ_COOKIE to a raw Cookie header.")
 			return nil
 		}
 		// HasSession only checks that *some* cookies were captured. A usable
@@ -78,7 +94,81 @@ func sessionSourceLabel(s string) string {
 	return s
 }
 
+var authLoginCmd = &cobra.Command{
+	Use:   "login",
+	Short: "Capture your LinkedIn session from Chrome or a guided browser login",
+	Long: `Capture your LinkedIn session without manually exporting cookies.
+
+First tries to read cookies silently from your Chrome browser's cookie store
+(no browser window opens). If that fails (you're not logged in, or the cookies
+are stale), it launches a Chrome window so you can log in to LinkedIn, then
+captures the session automatically.
+
+The captured session is written to a cookies file that 'recommended' and 'url'
+use automatically. On macOS with Chrome, this is the easiest way to authenticate.
+
+The existing LJ_COOKIE / LJ_COOKIES_FILE env path still takes priority for
+headless and agent use.`,
+	RunE: runAuthLogin,
+}
+
+func runAuthLogin(cmd *cobra.Command, args []string) error {
+	if runtimeGOOS != "darwin" {
+		fmt.Println("Browser capture is only supported on macOS.")
+		fmt.Println("Set LJ_COOKIES_FILE or LJ_COOKIE to a raw Cookie header.")
+		return nil
+	}
+
+	writePath := cookiesWritePath()
+
+	fmt.Println("Reading session from Chrome cookie store...")
+	cookies, err := readChromeCookies()
+	if err == nil && validCookieMap(cookies) {
+		header := auth.AssembleCookieHeader(cookies)
+		if err := auth.WriteCookiesFile(writePath, header); err != nil {
+			return fmt.Errorf("write cookies file: %w", err)
+		}
+		fmt.Printf("Session captured from Chrome (no browser launched). Written to %s\n", writePath)
+		fmt.Println("Run 'linkedin-jobs auth status' to verify.")
+		return nil
+	}
+
+	if err != nil {
+		fmt.Printf("Chrome cookie read failed: %v\n", err)
+	} else {
+		fmt.Println("Chrome cookies incomplete (missing li_at or JSESSIONID).")
+	}
+	fmt.Println("Launching guided browser login...")
+	cookies, err = loginViaBrowser(auth.ChromeProfileDir(), 5*time.Minute)
+	if err != nil {
+		return fmt.Errorf("guided login failed: %w", err)
+	}
+	if !validCookieMap(cookies) {
+		return fmt.Errorf("guided login completed but session is incomplete (missing li_at or JSESSIONID)")
+	}
+
+	header := auth.AssembleCookieHeader(cookies)
+	if err := auth.WriteCookiesFile(writePath, header); err != nil {
+		return fmt.Errorf("write cookies file: %w", err)
+	}
+	fmt.Printf("Session captured via guided login. Written to %s\n", writePath)
+	fmt.Println("Run 'linkedin-jobs auth status' to verify.")
+	return nil
+}
+
+func validCookieMap(cookies map[string]string) bool {
+	return cookies["li_at"] != "" && cookies["JSESSIONID"] != ""
+}
+
+func cookiesWritePath() string {
+	if p := os.Getenv("LJ_COOKIES_FILE"); p != "" {
+		return p
+	}
+	return auth.DefaultCookiesPath()
+}
+
 func init() {
 	authCmd.AddCommand(authStatusCmd)
+	authCmd.AddCommand(authLoginCmd)
 	rootCmd.AddCommand(authCmd)
 }
