@@ -35,6 +35,10 @@ type providerPreset struct {
 	model           string
 }
 
+// defaultModel is the fallback model when a provider is resolved from a
+// redirected ANTHROPIC_BASE_URL and no opencode model is discoverable.
+const defaultModel = "gpt-4o-mini"
+
 var presets = map[string]providerPreset{
 	"zai":             {"https://api.z.ai/api/paas/v4", nil, "", "glm-4.5"},
 	"zai-coding-plan": {"https://api.z.ai/api/coding/paas/v4", nil, "", "glm-5.2"},
@@ -53,7 +57,8 @@ func (p *Provider) Apply(req *http.Request) {
 
 // Resolve resolves a provider in priority order (most-explicit first):
 //  1. LJ_LLM_* / OPENAI_* env (explicit env override)
-//  2. ANTHROPIC_API_KEY env (explicit, Anthropic-compat)
+//  2. ANTHROPIC_API_KEY env (Anthropic preset; honors a redirected
+//     ANTHROPIC_BASE_URL, e.g. an opencode/Hermes session pointing it at z.ai)
 //  3. opencode stored credentials (implicit discovery)
 //  4. ErrNoProvider
 //
@@ -69,6 +74,17 @@ func Resolve(cfg config.Config) (*Provider, error) {
 		}, nil
 	}
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
+		if base := os.Getenv("ANTHROPIC_BASE_URL"); base != "" {
+			model := defaultModel
+			if m := readOpencodeModel(); m != "" {
+				if parts := strings.SplitN(m, "/", 2); len(parts) == 2 && parts[1] != "" {
+					model = parts[1]
+				} else {
+					model = m
+				}
+			}
+			return &Provider{BaseURL: base, APIKey: key, Model: model, Source: "anthropic-env"}, nil
+		}
 		p := buildProvider(presets["anthropic"], key)
 		p.Source = "anthropic-env"
 		return p, nil

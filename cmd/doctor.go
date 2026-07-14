@@ -126,6 +126,7 @@ var doctorEnvKeys = []string{
 	"LJ_LLM_MODEL",
 	"LJ_LLM_DELAY_SECONDS",
 	"ANTHROPIC_API_KEY",
+	"ANTHROPIC_BASE_URL",
 }
 
 var settingsTopSchema = map[string][]string{

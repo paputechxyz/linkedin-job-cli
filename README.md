@@ -65,21 +65,83 @@ operations, workflow recipes, and common pitfalls.
 
 ### Easy way: `auth login` (macOS + Chrome)
 
-If you're already logged into LinkedIn in Chrome, the CLI can grab your session
+If you're already logged into LinkedIn in Chrome, the CLI grabs your session
 automatically — no cookie extensions, no DevTools:
 
 ```bash
 linkedin-jobs auth login
 ```
 
-It first reads cookies silently from your Chrome cookie store (no browser window
-opens). If that fails — you're not logged in, or the cookies are stale — it
-launches a Chrome window so you can log in normally, then captures the session.
-The first `security` keychain prompt is expected; click **Always Allow** so
-future runs are silent.
+#### How it works (two stages)
 
-The captured session is written to `~/.linkedin-jobs/cookies.txt` (or the path
-`LJ_COOKIES_FILE` points at if set).
+**Stage 1 — silent read (no browser window opens):**
+
+1. The CLI locates Chrome's encrypted cookie database
+   (`~/Library/Application Support/Google/Chrome/Default/Network/Cookies`).
+2. Chrome holds a lock on this file while running, so the CLI copies it (plus
+   its WAL sidecars) to a temp directory, then opens the copy read-only.
+3. It retrieves the Chrome "Safe Storage" passphrase from the macOS Keychain
+   via `security find-generic-password`. **The first time, macOS shows a
+   keychain prompt** — click **Always Allow** so every future run is silent.
+4. Each LinkedIn cookie value is decrypted: PBKDF2-HMAC-SHA1 key derivation
+   (salt `saltysalt`, 1003 iterations) → AES-128-CBC decrypt (IV of 16 spaces)
+   → PKCS7 unpad. Chrome 130+ (DB version ≥ 24) prepends a SHA256 host digest
+   that is stripped automatically.
+5. The `li_at` cookie (your auth token) is long-lived and persisted to disk.
+   `JSESSIONID` (the CSRF token source) is session-only and usually **absent**
+   from the DB. When missing, the CLI fetches a fresh one by making a GET to
+   `https://www.linkedin.com/` with `li_at` and reading the `JSESSIONID` from
+   the `Set-Cookie` response.
+6. If both `li_at` and `JSESSIONID` are present, the session is assembled and
+   written. **No browser window ever opens.**
+
+**Stage 2 — guided browser login (fallback):**
+
+If the silent read fails — you're not logged in, Chrome isn't installed, the
+keychain was denied, or the cookies are stale — the CLI launches a **headed**
+Chrome window via the Chrome DevTools Protocol (`chromedp`):
+
+1. A dedicated **managed profile** is used (`~/.linkedin-jobs/chrome-profile/`),
+   not your real Chrome profile, so it never conflicts with your running
+   browser. This profile persists across runs and accumulates LinkedIn trust.
+2. Anti-bot flags reduce automation detection: `headless` disabled,
+   `enable-automation` disabled, `AutomationControlled` blink feature removed.
+3. The window navigates to `https://www.linkedin.com/login`. **You log in
+   normally** — type credentials, handle 2FA, complete any verification
+   challenge LinkedIn throws. The CLI never sees or stores your password.
+4. The CLI polls every 2 seconds (via CDP `Network.getCookies`) for the `li_at`
+   cookie to appear. `li_at` is `HttpOnly`, so it can only be read through the
+   DevTools Protocol, not through JavaScript.
+5. Once `li_at` appears, all `linkedin.com` cookies are captured, the browser
+   closes, and the session is written.
+
+**Timeout:** the guided flow waits up to 5 minutes for you to complete login.
+LinkedIn may challenge a fresh managed profile on first login (email/SMS
+verification, "unusual activity") — complete it in the window and the capture
+proceeds automatically.
+
+#### Where cookies are stored
+
+| `LJ_COOKIES_FILE` env | Write target |
+|---|---|
+| set | that path |
+| unset | `~/.linkedin-jobs/cookies.txt` (created automatically, `0600` perms) |
+
+The written file is a raw `Cookie:` header (`li_at=...; JSESSIONID="ajax:..."; ...`).
+`auth.Resolve` picks it up as a third resolution source (after `LJ_COOKIE` and
+`LJ_COOKIES_FILE`), so `recommended`, `url`, and `auth status` find it
+automatically with no env vars.
+
+#### Refreshing a stale session
+
+Re-run `linkedin-jobs auth login`. The silent read pulls fresh cookies from
+Chrome's current cookie store. If `li_at` itself has expired, the guided
+fallback lets you log in again.
+
+```bash
+linkedin-jobs auth status      # "Session captured but incomplete" → it's stale
+linkedin-jobs auth login       # re-capture
+```
 
 ### Manual way: env vars (headless, agent, CI)
 
