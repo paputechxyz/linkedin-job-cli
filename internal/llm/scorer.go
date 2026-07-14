@@ -10,7 +10,7 @@ import (
 	"linkedin-jobs/internal/models"
 )
 
-const enrichSystem = "You are an expert technical recruiter assistant. Analyze a job posting for an engineering candidate and extract structured facts. The candidate's resume and preferences are provided as context only — do not let them distort objective facts about the posting."
+const enrichSystem = "You are an expert technical recruiter assistant. Analyze a job posting and extract structured facts. Be objective — report what the posting actually says."
 
 const enrichPromptTmpl = `Analyze this job posting and return ONLY a JSON object (no prose, no code fences) with EXACTLY these keys:
 "company_overview": 1-2 sentences on what the company does,
@@ -34,12 +34,6 @@ Company: %s
 Location: %s
 Salary: %s
 
-Candidate resume:
-%s
-
-Candidate preferences:
-%s
-
 Job description:
 %s`
 
@@ -57,11 +51,11 @@ var ErrEmptyDescription = errors.New("job description is empty; cannot enrich")
 // persisting a no-op result. A transport/HTTP failure returns an error so the
 // caller can warn and persist the job unenriched; an unparseable response
 // never errors (it yields a partial Enrichment) per KTD2.
-func Enrich(j *models.JobPosting, p *models.Profile, provider *Provider) (models.Enrichment, error) {
+func Enrich(j *models.JobPosting, provider *Provider) (models.Enrichment, error) {
 	if strings.TrimSpace(j.Description) == "" {
 		return models.Enrichment{}, ErrEmptyDescription
 	}
-	content, err := requestEnrichment(j, p, provider)
+	content, err := requestEnrichment(j, provider)
 	if err != nil {
 		return models.Enrichment{}, err
 	}
@@ -75,27 +69,17 @@ func orNA(s string) string {
 	return s
 }
 
-func enrichPrompt(j *models.JobPosting, p *models.Profile) string {
+func enrichPrompt(j *models.JobPosting) string {
 	desc := j.Description
 	if len(desc) > 4000 {
 		desc = desc[:4000]
 	}
-	resume, prefs := "", ""
-	if p != nil {
-		resume, prefs = p.ResumeText, p.PreferencesText
-	}
-	if len(resume) > 2000 {
-		resume = resume[:2000]
-	}
-	if len(prefs) > 1000 {
-		prefs = prefs[:1000]
-	}
 	return fmt.Sprintf(enrichPromptTmpl, j.Title, orNA(j.Company), orNA(j.Location),
-		j.SalaryDisplay(), orNA(resume), orNA(prefs), desc)
+		j.SalaryDisplay(), desc)
 }
 
-func requestEnrichment(j *models.JobPosting, p *models.Profile, provider *Provider) (string, error) {
-	return Chat(provider, enrichSystem, enrichPrompt(j, p), 4096, 0.2)
+func requestEnrichment(j *models.JobPosting, provider *Provider) (string, error) {
+	return Chat(provider, enrichSystem, enrichPrompt(j), 4096, 0.2)
 }
 
 // truncateForError bounds an error body to 256 bytes and scrubs newlines so a

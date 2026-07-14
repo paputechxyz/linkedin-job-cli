@@ -6,7 +6,6 @@ linkedin_cookie.txt
 /linkedin-jobs.exe
 dist/
 .build-hash
-RESUME.md
 .DS_Store
 *.har
 .vscode/

@@ -49,7 +49,7 @@ type JobPosting struct {
 	// AIIntensity is one of core | mentioned | none ("" = not enriched).
 	AIIntensity string `json:"ai_intensity,omitempty"`
 
-	// Fit scoring against the user's resume + preferences.
+	// Fit scoring against the user's preferences.
 	FitScore  *int  `json:"fit_score,omitempty"` // 0-100, nil = unscored
 	FitReason string `json:"fit_reason,omitempty"`
 	ScoredAt  string `json:"scored_at,omitempty"`

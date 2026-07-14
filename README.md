@@ -18,18 +18,18 @@ offline full-text search.
 - **Salary parsing** — handles `CA$173,000.00 - CA$220,000.00`, `$212,500/yr`,
   `$120k`, USD/CAD.
 - **LLM enrichment + fit scoring** — OpenAI-compatible API extracts structured
-  facts and scores each job 0-100 against your resume + preferences.
+  facts and scores each job 0-100 against your preferences.
 - **SQLite + FTS5** — every fetched job is stored and instantly searchable
   offline across title, company, and description.
 - **Agent-native** — every read command supports `--json`.
 - **Pipeline tracking** — tag jobs `saved` / `applied` / `rejected` with notes.
-- **Fit scoring** — each job is enriched and scored 0-100 against your pasted
-  resume + preferences in a single LLM call, with a fit reason for strong matches.
+- **Fit scoring** — each job is enriched and scored 0-100 against your
+  preference knobs in a single LLM call, with a fit reason for strong matches.
 - **Token-frugal** — duplicates (content-hash) and clear preference mismatches
   are detected with zero LLM calls; only genuine new candidates are scored.
-- **Profile** — your resume is an editable markdown file (`RESUME.md`) and
-  preference knobs live under the `profile:` section of `settings.yaml`; those
-  knobs also drive a deterministic hard filter that auto-tags non-matches.
+- **Profile** — preference knobs live under the `profile:` section of
+  `settings.yaml`; those knobs also drive a deterministic hard filter that
+  auto-tags non-matches.
 - **Export** — JSON / CSV / Markdown.
 
 ## Install
@@ -286,14 +286,12 @@ POST endpoints guarded by a per-session CSRF token.
 
 ### Profile + fit scoring
 
-Paste your resume and set preference knobs once; they drive both scoring and
-filtering. `RESUME.md` and `settings.yaml` live in your **project root** when
-one is already present there (so they travel with this job-search folder and
-you can edit them by hand); otherwise they live in `~/.linkedin-jobs/` (the
-built-binary default). Preference knobs live under the `profile:` section of
-`settings.yaml`:
+Set preference knobs once; they drive both scoring and filtering. `settings.yaml`
+lives in your **project root** when one is already present there (so it travels
+with this job-search folder and you can edit it by hand); otherwise it lives in
+`~/.linkedin-jobs/` (the built-binary default). Preference knobs live under the
+`profile:` section of `settings.yaml`:
 
-- `RESUME.md` — your resume (free text); sent to your LLM as candidate context
 - `settings.yaml` → `profile:` — structured knobs for the hard filter + rubric:
 
   ```yaml
@@ -307,8 +305,7 @@ built-binary default). Preference knobs live under the `profile:` section of
   ```
 
 ```bash
-linkedin-jobs profile resume          # paste resume text, end with Ctrl-D
-linkedin-jobs profile show            # show resume + active knobs
+linkedin-jobs profile show            # show active knobs
 # edit preference knobs by hand in settings.yaml (profile: section)
 ```
 
@@ -415,7 +412,7 @@ OpenAI-compatible endpoint.
 
 ```bash
 linkedin-jobs config show             # resolved provider (key redacted) + settings
-linkedin-jobs config path             # settings/resume/db file locations
+linkedin-jobs config path             # settings/db file locations
 linkedin-jobs doctor                  # diagnose provider + settings completeness
 ```
 
@@ -424,9 +421,8 @@ No key? Scoring is skipped with a clear message; all other commands still work.
 ### Settings
 
 Optional `settings.yaml` in your **project root** when one is already present
-there, otherwise in `~/.linkedin-jobs/`. This is the same location as
-`RESUME.md`; everything (DB, settings, resume, FX cache) lives under
-`~/.linkedin-jobs/` for the built binary:
+there, otherwise in `~/.linkedin-jobs/`. Everything (DB, settings, FX cache)
+lives under `~/.linkedin-jobs/` for the built binary:
 
 ```yaml
 stats:
@@ -444,9 +440,9 @@ profile:                         # preference knobs for the hard filter + rubric
   avoided_tech: [C#, .NET, Ruby]   # caps score at scoring.deal_breaker_cap
 ```
 
-When scoring runs, the CLI prints which profile context it loaded (resume from
-`RESUME.md`, knobs from `settings.yaml`), so you can tell at a glance whether
-scores reflect your actual context or ran context-free.
+When scoring runs, the CLI prints which profile context it loaded (knobs from
+`settings.yaml`), so you can tell at a glance whether scores reflect your actual
+context or ran context-free.
 
 ## Configuration & env
 
@@ -461,9 +457,9 @@ scores reflect your actual context or ran context-free.
 | `LJ_LLM_BASE_URL` | OpenAI-compatible base URL (or `OPENAI_BASE_URL`)  | `https://api.openai.com/v1`      |
 | `LJ_LLM_MODEL`    | model name                                          | `gpt-4o-mini`                    |
 
-> `settings.yaml` and `RESUME.md` resolve to the project root (CWD) when one is
-> already present there, otherwise to `~/.linkedin-jobs/`. There is no separate
-> config-dir env var and no persisted provider file — set an env var for the LLM.
+> `settings.yaml` resolves to the project root (CWD) when one is already present
+> there, otherwise to `~/.linkedin-jobs/`. There is no separate config-dir env
+> var and no persisted provider file — set an env var for the LLM.
 
 ## Project structure
 
@@ -478,7 +474,7 @@ internal/
   linkedin/                HTTP client, anonymous scraper, recommended graphql
   llm/                     OpenAI-compatible provider resolution + enrich/score
   models/                  JobPosting, Profile, Enrichment
-  profile/                resume + preferences as editable markdown files
+  profile/                preference knobs (settings.yaml profile: section)
   render/                  table / detail / JSON / stats output
   salary/                  salary parsing + filtering
   store/                   SQLite + FTS5 persistence + content-hash dedup

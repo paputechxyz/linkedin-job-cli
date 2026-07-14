@@ -87,8 +87,8 @@ func DefaultScoringSettings() ScoringSettings {
 }
 
 // HomeDir returns the per-user home for all CLI state: the SQLite DB, the FX
-// rate cache, and (when no settings.yaml/RESUME.md is found in the working
-// directory) the user-content files. Everything lives under ~/.linkedin-jobs.
+// rate cache, and (when no settings.yaml is found in the working directory) the
+// user-content files. Everything lives under ~/.linkedin-jobs.
 // The directory is created lazily by callers that write into it.
 func HomeDir() string {
 	home, err := os.UserHomeDir()
@@ -99,18 +99,18 @@ func HomeDir() string {
 }
 
 // ProjectDir returns the directory holding project-local, hand-editable user
-// content (settings.yaml incl. the profile: knobs, RESUME.md). Resolution:
-// the current working directory when it already holds a settings.yaml or
-// RESUME.md (the dev case — edit them alongside the source); otherwise
-// HomeDir() so a built binary run from anywhere still finds its config.
+// content (settings.yaml incl. the profile: knobs). Resolution: the current
+// working directory when it already holds a settings.yaml (the dev case — edit
+// it alongside the source); otherwise HomeDir() so a built binary run from
+// anywhere still finds its config.
 //
-// These files describe *this* job-search project (your resume, your preference
-// knobs, your tunables) and travel together; both SettingsPath and
-// profile.ResumePath read from the same resolved directory.
+// These files describe *this* job-search project (your preference knobs, your
+// tunables) and travel together; SettingsPath reads from the same resolved
+// directory.
 func ProjectDir() string {
 	cwd, err := os.Getwd()
 	if err == nil {
-		if pathExists(filepath.Join(cwd, "settings.yaml")) || pathExists(filepath.Join(cwd, "RESUME.md")) {
+		if pathExists(filepath.Join(cwd, "settings.yaml")) {
 			return cwd
 		}
 	}

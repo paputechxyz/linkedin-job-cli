@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -96,7 +95,7 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 		} else {
 			provider = p
 			// Surface profile state so the user can tell whether scores will
-			// reflect their actual resume/preferences or run context-free.
+			// reflect their actual preference knobs or run context-free.
 			fmt.Fprintln(os.Stderr, profileStatus(profileData))
 		}
 	}
@@ -150,19 +149,12 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 }
 
 // profileStatus renders a one-line summary of what profile context scoring will
-// use: the resume body (free text, from RESUME.md) plus a count of the
-// structured preference knobs active in settings.yaml. Reports the project dir
-// the loader looked in.
+// use: a count of the structured preference knobs active in settings.yaml.
+// Reports the project dir the loader looked in.
 func profileStatus(p *models.Profile) string {
 	dir := profileDir()
 	if profile.IsEmpty(p) {
-		return fmt.Sprintf("Profile: no RESUME.md and no profile knobs in %s (scoring without candidate context).", dir)
-	}
-	parts := make([]string, 0, 2)
-	if p.ResumeText != "" {
-		parts = append(parts, fmt.Sprintf("resume (%d chars)", len(p.ResumeText)))
-	} else {
-		parts = append(parts, "no resume")
+		return fmt.Sprintf("Profile: no profile knobs in %s (scoring without candidate context).", dir)
 	}
 	knobs := 0
 	if len(p.PrefWorkArrangement) > 0 {
@@ -180,17 +172,12 @@ func profileStatus(p *models.Profile) string {
 	if len(p.PrefAvoidedTech) > 0 {
 		knobs++
 	}
-	parts = append(parts, fmt.Sprintf("%d preference knob(s) from settings.yaml", knobs))
-	return fmt.Sprintf("Profile: loaded %s", strings.Join(parts, ", "))
+	return fmt.Sprintf("Profile: loaded %d preference knob(s) from settings.yaml", knobs)
 }
 
 // profileDir returns the directory the profile loader looked in, for display.
-// Mirrors profile.ResumePath's location without re-deriving the filename.
 func profileDir() string {
-	if abs, err := filepath.Abs(profile.ResumePath()); err == nil {
-		return filepath.Dir(abs)
-	}
-	return filepath.Dir(profile.ResumePath())
+	return config.ProjectDir()
 }
 
 // enrichAndScoreJob runs the LLM enrichment call, persists the extracted facts,
@@ -198,7 +185,7 @@ func profileDir() string {
 // picks a score — it only extracts facts; score.Compute derives the number.
 // Shared by ingest, the enrich command, and score --all.
 func enrichAndScoreJob(st *store.Store, j *models.JobPosting, prof *models.Profile, provider *llm.Provider, weights score.Weights) error {
-	e, err := llm.Enrich(j, prof, provider)
+	e, err := llm.Enrich(j, provider)
 	if err != nil {
 		return err
 	}
