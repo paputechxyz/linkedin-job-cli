@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"linkedin-jobs/internal/models"
 )
 
 // scoreForTest builds a jobView the way toJobView does, deriving the score tier
@@ -507,4 +509,101 @@ func TestRenderNoPagerWhenSinglePage(t *testing.T) {
 	if !strings.Contains(out, `<strong>5</strong> job`) {
 		t.Error("simple count should render on a single page")
 	}
+}
+
+func TestIsJobID(t *testing.T) {
+	cases := map[string]bool{
+		"":            false,
+		"123":         false, // too short
+		"1234":        false, // too short (boundary)
+		"12345":       true,  // 5 digits = minimum
+		"4428732008":  true,  // real LinkedIn job id
+		"4428732008a": false, // trailing letter
+		"staff":       false,
+		"  4428732008 ": false, // spaces fail the digit check (caller TrimSpaces first)
+	}
+	for in, want := range cases {
+		if got := isJobID(in); got != want {
+			t.Errorf("isJobID(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+// TestQueryByIDLookup verifies the search box routes a bare numeric id to a
+// direct store lookup (mode "id"), falls back to FTS when the id isn't stored,
+// and still runs FTS for non-numeric terms.
+func TestQueryByIDLookup(t *testing.T) {
+	st := openTempStore(t)
+	ws := &webServer{st: st}
+
+	// Seed two jobs: one with the id the user will type, one to pollute FTS.
+	const targetID = "4428732008"
+	if err := st.Upsert(&models.JobPosting{
+		ID: targetID, Title: "Staff Engineer", Company: "Acme",
+		Location: "Remote", Description: "Go services",
+	}); err != nil {
+		t.Fatalf("upsert target: %v", err)
+	}
+	if err := st.Upsert(&models.JobPosting{
+		ID: "5000000001", Title: "Backend Dev", Company: "Globex",
+		Location: "Toronto", Description: "Python services",
+	}); err != nil {
+		t.Fatalf("upsert other: %v", err)
+	}
+
+	t.Run("numeric id hits direct lookup", func(t *testing.T) {
+		v := url.Values{"q": {targetID}}
+		jobs, mode, err := ws.query(v)
+		if err != nil {
+			t.Fatalf("query: %v", err)
+		}
+		if mode != "id" {
+			t.Errorf("mode = %q, want %q", mode, "id")
+		}
+		if len(jobs) != 1 || jobs[0].ID != targetID {
+			t.Errorf("got %d jobs, want exactly 1 with id %s", len(jobs), targetID)
+		}
+	})
+
+	t.Run("unknown numeric id falls through to search (empty result)", func(t *testing.T) {
+		v := url.Values{"q": {"9999999999"}}
+		jobs, mode, err := ws.query(v)
+		if err != nil {
+			t.Fatalf("query: %v", err)
+		}
+		if mode != "search" {
+			t.Errorf("mode = %q, want %q (fallthrough)", mode, "search")
+		}
+		if len(jobs) != 0 {
+			t.Errorf("got %d jobs for unknown id, want 0", len(jobs))
+		}
+	})
+
+	t.Run("non-numeric term runs FTS", func(t *testing.T) {
+		v := url.Values{"q": {"Python"}}
+		jobs, mode, err := ws.query(v)
+		if err != nil {
+			t.Fatalf("query: %v", err)
+		}
+		if mode != "search" {
+			t.Errorf("mode = %q, want %q", mode, "search")
+		}
+		if len(jobs) != 1 || jobs[0].Company != "Globex" {
+			t.Errorf("FTS expected to find the Python job, got %+v", jobs)
+		}
+	})
+
+	t.Run("empty q runs list mode", func(t *testing.T) {
+		v := url.Values{}
+		jobs, mode, err := ws.query(v)
+		if err != nil {
+			t.Fatalf("query: %v", err)
+		}
+		if mode != "list" {
+			t.Errorf("mode = %q, want %q", mode, "list")
+		}
+		if len(jobs) != 2 {
+			t.Errorf("got %d jobs, want 2", len(jobs))
+		}
+	})
 }
