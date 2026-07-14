@@ -57,8 +57,7 @@ hermes skills install paputechxyz/linkedin-job-cli/hermes-skill
 Start a **new agent session** after installing — skills load at session start,
 not mid-session. The first time you use it, the skill detects if the
 `linkedin-jobs` binary is missing, downloads the latest release into
-`~/.local/bin`, and walks you through setup (LLM provider, LinkedIn session,
-resume). Browse it on [skills.sh](https://www.skills.sh/paputechxyz/linkedin-job-cli/linkedin-jobs).
+`~/.local/bin`, and walks you through setup (LLM provider, LinkedIn session). Browse it on [skills.sh](https://www.skills.sh/paputechxyz/linkedin-job-cli/linkedin-jobs).
 
 #### Update
 
@@ -91,12 +90,11 @@ hermes skills uninstall linkedin-jobs
 
 # 2. Remove the CLI binary and its data
 rm -f ~/.local/bin/linkedin-jobs
-rm -rf ~/.linkedin-jobs        # config, cache, db, resume
+rm -rf ~/.linkedin-jobs        # config, cache, db
 ```
 
 > Config and local data live under `~/.linkedin-jobs`. Drop that directory to
-> wipe everything; leave it to reuse your resume, auth, and pipeline on a future
-> reinstall.
+> wipe everything;
 
 ### CLI binary only
 
