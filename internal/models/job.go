@@ -22,38 +22,38 @@ type JobPosting struct {
 	// (low confidence, amber). "" means unknown/pre-feature.
 	SalarySource string `json:"salary_source,omitempty"`
 	Description  string `json:"description,omitempty"`
-	Summary        string   `json:"summary,omitempty"`
-	LLMSummary     string   `json:"llm_summary,omitempty"`
-	RemoteType     string   `json:"remote_type,omitempty"`
-	Status         string   `json:"status,omitempty"`
-	Notes          string   `json:"notes,omitempty"`
-	Source         string   `json:"source,omitempty"`    // "recommended" | "search"
-	ListedAt       int64    `json:"listed_at,omitempty"` // epoch ms
-	SearchedAt     string   `json:"searched_at,omitempty"`
-	FetchedAt      string   `json:"fetched_at,omitempty"`
+	Summary      string `json:"summary,omitempty"`
+	LLMSummary   string `json:"llm_summary,omitempty"`
+	RemoteType   string `json:"remote_type,omitempty"`
+	Status       string `json:"status,omitempty"`
+	Notes        string `json:"notes,omitempty"`
+	Source       string `json:"source,omitempty"`    // "recommended" | "search"
+	ListedAt     int64  `json:"listed_at,omitempty"` // epoch ms
+	SearchedAt   string `json:"searched_at,omitempty"`
+	FetchedAt    string `json:"fetched_at,omitempty"`
 
 	// Structured enrichment (LLM-extracted). Zero values mean "not enriched."
-	CompanyOverview  string `json:"company_overview,omitempty"`
-	Industry         string `json:"industry,omitempty"`
-	TechStack        string `json:"tech_stack,omitempty"`
-	Seniority        string `json:"seniority,omitempty"`
-	EmploymentType   string `json:"employment_type,omitempty"`
-	YearsExperience  *int   `json:"years_experience,omitempty"`
-	CompanySizeBand  string `json:"company_size_band,omitempty"`
-	CompanyStage     string `json:"company_stage,omitempty"`
-	IsFoundingRole   bool   `json:"is_founding_role,omitempty"`
-	VisaSponsorship  string `json:"visa_sponsorship,omitempty"`
-	EnrichedAt       string `json:"enriched_at,omitempty"`
+	CompanyOverview string `json:"company_overview,omitempty"`
+	Industry        string `json:"industry,omitempty"`
+	TechStack       string `json:"tech_stack,omitempty"`
+	Seniority       string `json:"seniority,omitempty"`
+	EmploymentType  string `json:"employment_type,omitempty"`
+	YearsExperience *int   `json:"years_experience,omitempty"`
+	CompanySizeBand string `json:"company_size_band,omitempty"`
+	CompanyStage    string `json:"company_stage,omitempty"`
+	IsFoundingRole  bool   `json:"is_founding_role,omitempty"`
+	VisaSponsorship string `json:"visa_sponsorship,omitempty"`
+	EnrichedAt      string `json:"enriched_at,omitempty"`
 
 	// Compensation extras (LLM-extracted booleans, used by the rubric scorer).
-	HasBonus          bool `json:"has_bonus,omitempty"`
-	HasEquity         bool `json:"has_equity,omitempty"`
+	HasBonus           bool `json:"has_bonus,omitempty"`
+	HasEquity          bool `json:"has_equity,omitempty"`
 	HasRetirementMatch bool `json:"has_retirement_match,omitempty"`
 	// AIIntensity is one of core | mentioned | none ("" = not enriched).
 	AIIntensity string `json:"ai_intensity,omitempty"`
 
 	// Fit scoring against the user's preferences.
-	FitScore  *int  `json:"fit_score,omitempty"` // 0-100, nil = unscored
+	FitScore  *int   `json:"fit_score,omitempty"` // 0-100, nil = unscored
 	FitReason string `json:"fit_reason,omitempty"`
 	ScoredAt  string `json:"scored_at,omitempty"`
 	// ScoreCapReason records why the score was capped (e.g. "salary_under_floor",

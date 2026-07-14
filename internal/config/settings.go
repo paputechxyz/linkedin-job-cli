@@ -43,12 +43,12 @@ type ScoringSettings struct {
 // ScoringWeights tunes the rubric dimensions. All default to the values in
 // DefaultSettings(); any weight set to 0 disables that dimension.
 type ScoringWeights struct {
-	Salary              int `yaml:"salary"`
-	TechOverlap         int `yaml:"tech_overlap"`
-	Startup             int `yaml:"startup"`
-	AIIntensity         int `yaml:"ai_intensity"`
-	CompensationExtras  int `yaml:"compensation_extras"`
-	RemoteTiebreak      int `yaml:"remote_tiebreak"`
+	Salary             int `yaml:"salary"`
+	TechOverlap        int `yaml:"tech_overlap"`
+	Startup            int `yaml:"startup"`
+	AIIntensity        int `yaml:"ai_intensity"`
+	CompensationExtras int `yaml:"compensation_extras"`
+	RemoteTiebreak     int `yaml:"remote_tiebreak"`
 }
 
 // DefaultSettings returns the built-in defaults used when the YAML file is

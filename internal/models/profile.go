@@ -8,7 +8,7 @@ import "strings"
 // locations) and the rubric scorer (preferred_tech, avoided_tech). Fit scoring
 // relies entirely on these knobs.
 type Profile struct {
-	PrefWorkArrangement   []string `json:"pref_work_arrangement,omitempty"`  // remote|hybrid|onsite; any subset
+	PrefWorkArrangement   []string `json:"pref_work_arrangement,omitempty"` // remote|hybrid|onsite; any subset
 	PrefMinSalary         *float64 `json:"pref_min_salary,omitempty"`
 	PrefMinSalaryCurrency string   `json:"pref_min_salary_currency,omitempty"` // ISO 4217 (e.g. CAD); "" = raw numeric compare
 	PrefLocations         []string `json:"pref_locations,omitempty"`           // preferred location tokens

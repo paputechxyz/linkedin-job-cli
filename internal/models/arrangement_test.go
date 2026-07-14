@@ -4,7 +4,7 @@ import "testing"
 
 func TestHasWorkArrangementPreference(t *testing.T) {
 	cases := []struct {
-		name string
+		name  string
 		prefs []string
 		want  bool
 	}{

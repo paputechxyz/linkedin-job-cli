@@ -51,14 +51,14 @@ type Dimension struct {
 // from settings without re-importing config here.
 func FromSettings(s config.ScoringSettings) Weights {
 	return Weights{
-		Baseline:            s.Baseline,
-		DealBreakerCap:      s.DealBreakerCap,
-		Salary:              s.Weights.Salary,
-		TechOverlap:         s.Weights.TechOverlap,
-		Startup:             s.Weights.Startup,
-		AIIntensity:         s.Weights.AIIntensity,
-		CompensationExtras:  s.Weights.CompensationExtras,
-		RemoteTiebreak:      s.Weights.RemoteTiebreak,
+		Baseline:           s.Baseline,
+		DealBreakerCap:     s.DealBreakerCap,
+		Salary:             s.Weights.Salary,
+		TechOverlap:        s.Weights.TechOverlap,
+		Startup:            s.Weights.Startup,
+		AIIntensity:        s.Weights.AIIntensity,
+		CompensationExtras: s.Weights.CompensationExtras,
+		RemoteTiebreak:     s.Weights.RemoteTiebreak,
 	}
 }
 
@@ -78,12 +78,12 @@ type Weights struct {
 // capReason constants — recorded in jobs.score_cap_reason and rendered in
 // fit_reason so the user sees why a score landed where it did.
 const (
-	CapNone                  = ""
-	CapDealBreakerTech       = "deal_breaker_tech"
-	CapSalaryUnderFloor      = "salary_under_floor"       // ≤10% under
+	CapNone                   = ""
+	CapDealBreakerTech        = "deal_breaker_tech"
+	CapSalaryUnderFloor       = "salary_under_floor"        // ≤10% under
 	CapSalaryUnderFloorSevere = "salary_under_floor_severe" // >10% under
-	CapNonRemote             = "non_remote"
-	CapLocationMiss          = "location_miss"
+	CapNonRemote              = "non_remote"
+	CapLocationMiss           = "location_miss"
 )
 
 // capValue is the score assigned when the corresponding cap reason fires.

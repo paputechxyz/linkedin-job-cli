@@ -98,9 +98,9 @@ func TestPassesHardFilter_NoPreference(t *testing.T) {
 		{"all_three", []string{"remote", "hybrid", "onsite"}},
 	}
 	jobs := []struct {
-		name    string
-		loc     string
-		remote  string
+		name   string
+		loc    string
+		remote string
 	}{
 		{"remote", "Remote, US", ""},
 		{"hybrid", "Hybrid - NYC", ""},
@@ -121,11 +121,11 @@ func TestPassesHardFilter_NoPreference(t *testing.T) {
 
 func TestPassesHardFilter_ArrangementPreferences(t *testing.T) {
 	cases := []struct {
-		name    string
-		prefs   []string
-		loc     string
-		remote  string
-		want    bool
+		name   string
+		prefs  []string
+		loc    string
+		remote string
+		want   bool
 	}{
 		// Single-arrangement prefs
 		{"remote_pref_remote_job", []string{"remote"}, "Remote, US", "", true},

@@ -215,8 +215,8 @@ func TestCompute_SalaryTiers(t *testing.T) {
 	w := defaultWeights()
 	max := w.Salary
 	cases := []struct {
-		name   string
-		amount float64
+		name    string
+		amount  float64
 		wantPct float64 // fraction of max salary weight
 	}{
 		{"at_floor", 200000, 1.0 / 3.0},
@@ -324,9 +324,9 @@ func TestCompute_CompensationExtrasSums(t *testing.T) {
 	w := defaultWeights()
 	max := w.CompensationExtras
 	cases := []struct {
-		name                   string
-		bonus, eq, ret         bool
-		want                   int
+		name           string
+		bonus, eq, ret bool
+		want           int
 	}{
 		{"none", false, false, false, 0},
 		{"bonus_only", true, false, false, 1},
@@ -456,17 +456,17 @@ func TestCompute_WorkArrangement(t *testing.T) {
 func TestCompute_AllSignalsCombined(t *testing.T) {
 	hi := 280000.0
 	j := &models.JobPosting{
-		SalaryHigh:          &hi,
-		SalaryCurrency:      "CAD",
-		Location:            "Remote, Canada",
-		RemoteType:          "Remote",
-		TechStack:           "Java, Python, Go, Kafka, Postgres, Redis",
-		CompanyStage:        "seed",
-		CompanySizeBand:     "11-50",
-		AIIntensity:         "core",
-		HasBonus:            true,
-		HasEquity:           true,
-		HasRetirementMatch:  true,
+		SalaryHigh:         &hi,
+		SalaryCurrency:     "CAD",
+		Location:           "Remote, Canada",
+		RemoteType:         "Remote",
+		TechStack:          "Java, Python, Go, Kafka, Postgres, Redis",
+		CompanyStage:       "seed",
+		CompanySizeBand:    "11-50",
+		AIIntensity:        "core",
+		HasBonus:           true,
+		HasEquity:          true,
+		HasRetirementMatch: true,
 	}
 	w := defaultWeights()
 	r := Compute(j, fullProfile(), w)
