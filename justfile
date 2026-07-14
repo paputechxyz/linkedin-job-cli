@@ -35,6 +35,18 @@ build:
     go build -ldflags "$LDFLAGS" -o linkedin-jobs .
     go install -ldflags "$LDFLAGS" .
 
+# Remove the linkedin-jobs binary from $GOBIN (or $GOPATH/bin).
+uninstall:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    BIN="${GOBIN:-$(go env GOPATH)/bin}/linkedin-jobs"
+    if [ -e "$BIN" ]; then
+        rm "$BIN"
+        echo "-> removed $BIN"
+    else
+        echo "-> nothing to remove at $BIN"
+    fi
+
 serve:
     linkedin-jobs serve
 
