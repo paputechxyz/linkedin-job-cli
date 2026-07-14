@@ -8,12 +8,58 @@ The CLI has two auth modes:
 
 Required for `recommended` and `url`. Uses your captured browser session cookies.
 
-**The cookie path is read from the environment — never assume a hardcoded path.** Resolution order (first match wins):
+**Resolution order** (first match wins):
 
 1. `LJ_COOKIE` env var — raw cookie header string (`name=val; name=val`). Highest priority override.
 2. `LJ_COOKIES_FILE` env var — path to a file containing either a raw `Cookie:` header (`name=val; name=val`) or Netscape cookies.txt format.
+3. `~/.linkedin-jobs/cookies.txt` — default file, written automatically by `auth login`. This is the most common source for interactive use.
 
 The CSRF token is derived automatically from the `JSESSIONID` cookie. The CLI checks for `li_at` + `JSESSIONID` cookies.
+
+### Browser-based login (`auth login`)
+
+**macOS + Chrome only.** The easiest way to set up a session — no manual cookie export needed.
+
+```bash
+linkedin-jobs auth login
+```
+
+**Stage 1 — silent read (no browser window opens):**
+
+The CLI reads cookies directly from Chrome's encrypted cookie database on disk:
+
+1. Locates `~/Library/Application Support/Google/Chrome/Default/Network/Cookies`.
+2. Copies it to a temp dir (Chrome locks the file while running; WAL sidecars included).
+3. Retrieves the Chrome "Safe Storage" passphrase from the macOS Keychain (`security find-generic-password`). **First run triggers a keychain prompt** — the user clicks "Always Allow" for silent future runs.
+4. Decrypts each LinkedIn cookie: PBKDF2-HMAC-SHA1 (salt `saltysalt`, 1003 iterations) → AES-128-CBC (IV of 16 spaces) → PKCS7 unpad. Chrome 130+ (DB v24) prepends a SHA256 host digest that is stripped automatically.
+5. `li_at` (auth token) is persisted to disk and usually present. `JSESSIONID` (CSRF source) is session-only and often absent — when missing, the CLI fetches a fresh one via HTTP GET to `https://www.linkedin.com/` with `li_at` and reads it from `Set-Cookie`.
+6. If both are present → session assembled and written. **No browser opens.**
+
+**Stage 2 — guided browser login (fallback):**
+
+If the silent read fails (not logged in, Chrome missing, keychain denied, stale cookies), the CLI launches a headed Chrome via chromedp:
+
+1. Uses a **managed profile** at `~/.linkedin-jobs/chrome-profile/` (not the user's real Chrome profile, so no conflict with their running browser). Persists across runs for LinkedIn trust accumulation.
+2. Anti-bot hardening: headless disabled, `enable-automation` off, `AutomationControlled` blink feature removed.
+3. Navigates to `https://www.linkedin.com/login`. **The user logs in normally** (credentials, 2FA, challenges). The CLI never sees the password.
+4. Polls every 2s via CDP `Network.getCookies` for `li_at` (HttpOnly — only readable via DevTools Protocol, not JS). Timeout: 5 minutes.
+5. On detection: captures all `linkedin.com` cookies, closes browser, writes session.
+
+LinkedIn may challenge a fresh managed profile on first login (email/SMS verification). The user completes it in the window; capture proceeds automatically.
+
+**Write target:** `LJ_COOKIES_FILE` env path if set, otherwise `~/.linkedin-jobs/cookies.txt` (0600 perms). Written as a raw `Cookie:` header.
+
+**Refreshing:** re-run `auth login` when `auth status` reports an incomplete/stale session.
+
+### Manual cookie setup (headless, non-macOS, CI)
+
+For environments without a browser, export cookies manually and set an env var:
+
+```bash
+export LJ_COOKIES_FILE=/path/to/cookies.txt   # raw "name=val; name=val" header or Netscape cookies.txt
+# or:
+export LJ_COOKIE="li_at=...; JSESSIONID=ajax:..."
+```
 
 **Verify the session with `doctor`, not just `auth status`:**
 
@@ -24,12 +70,12 @@ linkedin-jobs doctor          # canonical first-run check; prints every LJ_* env
 
 linkedin-jobs auth status     # fast mid-session boolean check. Only meaningful
                               # AFTER you've confirmed via doctor that
-                              # LJ_COOKIES_FILE is set.
+                              # the session is set up.
 ```
 
-**If `doctor` shows `LJ_COOKIES_FILE = (unset)`:** the session is missing because the env var isn't visible to the agent — not because cookies don't exist on the host. Stop and ask the user for the path (or have them export `LJ_COOKIES_FILE` in the agent's shell). Do **not** silently fall back to anonymous `search`; that yields irrelevant global results and hides the real fix. See SKILL.md Pitfall #1.
+**If `doctor` shows no session:** recommend `auth login` on macOS. For non-macOS or headless, the user must export `LJ_COOKIES_FILE` or `LJ_COOKIE` in the agent's shell. Do **not** silently fall back to anonymous `search`; that yields irrelevant global results. See SKILL.md Pitfall #1.
 
-**Security:** LinkedIn session cookies enable full account takeover. Store `LJ_COOKIES_FILE` with `0600` permissions in a user-only directory. Treat it with the same care as SSH private keys. The agent must never `cat`, `echo`, or transmit the file contents — use `doctor` / `auth status` for session checks only.
+**Security:** LinkedIn session cookies enable full account takeover. The cookies file has `0600` permissions in a user-only directory. Treat it with the same care as SSH private keys. The agent must never `cat`, `echo`, or transmit the file contents — use `doctor` / `auth status` for session checks only.
 
 ### Anonymous (no session)
 
@@ -131,6 +177,8 @@ linkedin-jobs profile clear     # delete the resume file
 When a `settings.yaml` or `RESUME.md` already exists in the project root (CWD), the CLI uses the project root. Otherwise, everything lives under `~/.linkedin-jobs/`:
 
 - `~/.linkedin-jobs/linkedin_jobs.db` — SQLite database
+- `~/.linkedin-jobs/cookies.txt` — LinkedIn session cookies (written by `auth login`, 0600 perms)
+- `~/.linkedin-jobs/chrome-profile/` — managed Chrome profile for guided login (created on first `auth login` fallback)
 - `~/.linkedin-jobs/settings.yaml` — settings
 - `~/.linkedin-jobs/RESUME.md` — resume
 - `~/.linkedin-jobs/fx_cache.json` — FX rate cache (daily)
