@@ -1,5 +1,6 @@
 # Build the linkedin-jobs binary into the project root.
-# Bumps VERSION automatically when Go source files change.
+# Bumps VERSION automatically when Go source files change, and mirrors it
+# into hermes-skill/SKILL.md so the CLI and skill versions never drift.
 build:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -29,6 +30,20 @@ build:
         echo "$HASH"       > .build-hash
         VERSION="$NEW_VERSION"
         echo "-> source changed, bumped VERSION -> $VERSION"
+    fi
+
+    # Mirror VERSION into hermes-skill/SKILL.md so the skill frontmatter and
+    # the CLI never drift apart. Idempotent — only rewrites when the value
+    # differs, so it's a no-op once they're in sync. SKILL.md is excluded
+    # from the source hash above, so this cannot cause a build loop.
+    SKILL_MD="hermes-skill/SKILL.md"
+    if [ -f "$SKILL_MD" ]; then
+        CURRENT=$(awk '/^version: /{sub(/^version:[ \t]*/,""); print; exit}' "$SKILL_MD")
+        if [ "$CURRENT" != "$VERSION" ]; then
+            awk -v v="$VERSION" 'BEGIN{d=0} /^version: / && !d {$0="version: "v; d=1} {print}' \
+                "$SKILL_MD" > "$SKILL_MD.tmp" && mv "$SKILL_MD.tmp" "$SKILL_MD"
+            echo "-> synced SKILL.md version -> $VERSION"
+        fi
     fi
 
     LDFLAGS="-X linkedin-jobs/cmd.Version=$VERSION"
