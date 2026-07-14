@@ -1,6 +1,9 @@
 package models
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // JobPosting mirrors the LinkedIn job record persisted in SQLite. Field names
 // line up with the database columns (snake_case via explicit SQL).
@@ -63,6 +66,25 @@ type JobPosting struct {
 
 // IsEnriched reports whether structured enrichment has run for this job.
 func (j *JobPosting) IsEnriched() bool { return j.EnrichedAt != "" }
+
+// DetectArrangement determines the job's work arrangement from its location and
+// remote_type fields. Returns one of "remote", "hybrid", "onsite", or "" (unknown).
+// Detection priority is hybrid > remote > onsite — a blob containing both
+// "remote" and "hybrid" resolves to "hybrid" because hybrid is the more specific
+// arrangement mode. Matches "on-site" and "on site" as well as "onsite".
+func (j *JobPosting) DetectArrangement() string {
+	blob := strings.ToLower(j.Location + " " + j.RemoteType)
+	if strings.Contains(blob, "hybrid") {
+		return "hybrid"
+	}
+	if strings.Contains(blob, "remote") {
+		return "remote"
+	}
+	if strings.Contains(blob, "onsite") || strings.Contains(blob, "on-site") || strings.Contains(blob, "on site") {
+		return "onsite"
+	}
+	return ""
+}
 
 // IsFiltered reports whether the hard preference filter marked this job a mismatch.
 func (j *JobPosting) IsFiltered() bool { return j.Status == "filtered" }
