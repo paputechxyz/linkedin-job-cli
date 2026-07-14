@@ -52,6 +52,7 @@ func fullProfile() *models.Profile {
 		PrefMinSalaryCurrency: "CAD",
 		PrefLocations:         []string{"Remote", "Toronto"},
 		PrefPreferredTech:     []string{"Java", "Python", "Go", "Kafka", "Postgres"},
+		PrefAvoidedTech:       []string{"C#", ".NET", "Ruby"},
 	}
 }
 
@@ -82,20 +83,21 @@ func TestCompute_DealBreakerCaseInsensitive(t *testing.T) {
 func TestCompute_DealBreakerCustomCapAndTokens(t *testing.T) {
 	w := defaultWeights()
 	w.DealBreakerCap = 40
-	w.DealBreakers = []string{"Salesforce", "PHP"}
+	prof := &models.Profile{
+		PrefWorkArrangement: []string{"remote"},
+		PrefAvoidedTech:     []string{"Salesforce", "PHP"},
+	}
 	j := &models.JobPosting{TechStack: "Ruby, PHP, Rails"}
-	r := Compute(j, fullProfile(), w)
+	r := Compute(j, prof, w)
 	if r.Score != 40 || r.CapReason != CapDealBreakerTech {
 		t.Errorf("expected custom cap 40; got score=%d cap=%q", r.Score, r.CapReason)
 	}
 }
 
 // TestCompute_AvoidedTechCapsAtDealBreaker verifies the profile.avoided_tech
-// knob feeds the same deal-breaker path as scoring.deal_breakers — a hit caps
-// at DealBreakerCap even when the scoring-level deal-breakers list is empty.
+// knob feeds the deal-breaker path — a hit caps at DealBreakerCap.
 func TestCompute_AvoidedTechCapsAtDealBreaker(t *testing.T) {
 	w := defaultWeights()
-	w.DealBreakers = nil // isolate the profile-level knob
 	prof := &models.Profile{
 		PrefWorkArrangement: []string{"remote"},
 		PrefAvoidedTech:     []string{"C#", ".NET", "Ruby"},
@@ -110,23 +112,6 @@ func TestCompute_AvoidedTechCapsAtDealBreaker(t *testing.T) {
 	}
 	if want := `Deal-breaker tech "c#" in stack`; r.CapDetail != want {
 		t.Errorf("CapDetail=%q want %q", r.CapDetail, want)
-	}
-}
-
-// TestCompute_AvoidedTechAndDealBreakersBothApply verifies the two token
-// sources combine without mutating the caller's Weights.DealBreakers slice.
-func TestCompute_AvoidedTechAndDealBreakersBothApply(t *testing.T) {
-	w := defaultWeights()
-	w.DealBreakers = []string{"Salesforce"}
-	prof := &models.Profile{PrefAvoidedTech: []string{"PHP"}}
-	// PHP (from avoided_tech) hits; Salesforce tokens stay untouched after the call.
-	j := &models.JobPosting{TechStack: "PHP, Laravel"}
-	r := Compute(j, prof, w)
-	if r.Score != w.DealBreakerCap || r.CapReason != CapDealBreakerTech {
-		t.Errorf("expected avoided_tech cap; got score=%d cap=%q", r.Score, r.CapReason)
-	}
-	if len(w.DealBreakers) != 1 || w.DealBreakers[0] != "Salesforce" {
-		t.Errorf("Weights.DealBreakers mutated: %+v", w.DealBreakers)
 	}
 }
 

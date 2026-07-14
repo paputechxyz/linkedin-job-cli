@@ -16,12 +16,11 @@ var profileCmd = &cobra.Command{
 	Use:   "profile",
 	Short: "Show your preference knobs (drive fit scoring & hard filtering)",
 	Long: `Your candidate context lives in settings.yaml under the ` + "`profile:`" + `
-section (resolved under the project directory — the CWD when settings.yaml
-already lives there, else ~/.linkedin-jobs).
+section (resolved at ~/.linkedin-jobs/settings.yaml, or $LJ_SETTINGS_FILE).
 
 The structured knobs (work_arrangement, min_salary, locations, preferred_tech,
 avoided_tech) drive the deterministic hard filter + rubric. Edit settings.yaml
-by hand to tune them:
+by hand to tune them, or run ` + "`linkedin-jobs setup`" + ` for an interactive walk-through:
 
     linkedin-jobs profile show`,
 }

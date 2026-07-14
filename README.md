@@ -325,10 +325,9 @@ POST endpoints guarded by a per-session CSRF token.
 ### Profile + fit scoring
 
 Set preference knobs once; they drive both scoring and filtering. `settings.yaml`
-lives in your **project root** when one is already present there (so it travels
-with this job-search folder and you can edit it by hand); otherwise it lives in
-`~/.linkedin-jobs/` (the built-binary default). Preference knobs live under the
-`profile:` section of `settings.yaml`:
+lives in `~/.linkedin-jobs/` (override with `$LJ_SETTINGS_FILE`). Preference
+knobs live under the `profile:` section of `settings.yaml`. Run
+`linkedin-jobs setup` for an interactive walk-through, or edit by hand:
 
 - `settings.yaml` → `profile:` — structured knobs for the hard filter + rubric:
 
@@ -339,7 +338,7 @@ with this job-search folder and you can edit it by hand); otherwise it lives in
     min_salary_currency: CAD
     locations: [Remote, Toronto]
     preferred_tech: [Java, Python, Go, Postgres, AWS]
-    avoided_tech: [C#, .NET, Ruby]   # deal-breakers: caps score at scoring.deal_breaker_cap
+    avoided_tech: [C#, .NET, Ruby]   # caps score at scoring.deal_breaker_cap
   ```
 
 ```bash
@@ -458,9 +457,9 @@ No key? Scoring is skipped with a clear message; all other commands still work.
 
 ### Settings
 
-Optional `settings.yaml` in your **project root** when one is already present
-there, otherwise in `~/.linkedin-jobs/`. Everything (DB, settings, FX cache)
-lives under `~/.linkedin-jobs/` for the built binary:
+`settings.yaml` lives in `~/.linkedin-jobs/` (override with `$LJ_SETTINGS_FILE`).
+Run `linkedin-jobs setup` to create it interactively. Everything (DB, settings,
+FX cache) lives under `~/.linkedin-jobs/`:
 
 ```yaml
 stats:
@@ -495,9 +494,9 @@ context or ran context-free.
 | `LJ_LLM_BASE_URL` | OpenAI-compatible base URL (or `OPENAI_BASE_URL`)  | `https://api.openai.com/v1`      |
 | `LJ_LLM_MODEL`    | model name                                          | `gpt-4o-mini`                    |
 
-> `settings.yaml` resolves to the project root (CWD) when one is already present
-> there, otherwise to `~/.linkedin-jobs/`. There is no separate config-dir env
-> var and no persisted provider file — set an env var for the LLM.
+> `settings.yaml` always resolves to `~/.linkedin-jobs/settings.yaml` unless
+> `$LJ_SETTINGS_FILE` is set. There is no persisted provider file — set an env
+> var for the LLM.
 
 ## Project structure
 

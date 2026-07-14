@@ -115,7 +115,7 @@ linkedin-jobs doctor          # diagnose provider + settings completeness
 
 ## Settings (settings.yaml)
 
-Optional `settings.yaml` in your **project root** when one is already present there, otherwise in `~/.linkedin-jobs/`.
+Optional `settings.yaml` in `~/.linkedin-jobs/` (override with `$LJ_SETTINGS_FILE`):
 
 ```yaml
 stats:
@@ -127,8 +127,7 @@ filter:
 scoring:
   reason_threshold: 70           # fit_reason emitted at/above this score
   baseline: 60                   # starting score after passing hard filter
-  deal_breaker_cap: 30           # hard floor when deal-breaker tech matched
-  deal_breakers: [".NET", "C#", "Ruby"]
+  deal_breaker_cap: 30           # hard floor when an avoided_tech token is matched
   weights:
     salary: 6
     tech_overlap: 4
@@ -164,7 +163,7 @@ profile:
 
 ## File Locations
 
-When a `settings.yaml` already exists in the project root (CWD), the CLI uses the project root. Otherwise, everything lives under `~/.linkedin-jobs/`:
+Everything lives under `~/.linkedin-jobs/` (override settings path via `$LJ_SETTINGS_FILE`):
 
 - `~/.linkedin-jobs/linkedin_jobs.db` — SQLite database
 - `~/.linkedin-jobs/cookies.txt` — LinkedIn session cookies (written by `auth login`, 0600 perms)

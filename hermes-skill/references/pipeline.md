@@ -86,7 +86,7 @@ The rubric (`score.Compute`) uses weights from `settings.yaml` under `scoring.we
 | `compensation_extras` (default 3) | Bonus + equity + retirement match (1pt each, +1 all three) |
 | `remote_tiebreak` (default 6) | Full-remote=full, hybrid=partial |
 
-Starting score after passing the hard filter: `scoring.baseline` (default 60). Deal-breaker tech (from `scoring.deal_breakers` or `profile.avoided_tech`) caps the score at `scoring.deal_breaker_cap` (default 30).
+Starting score after passing the hard filter: `scoring.baseline` (default 60). Avoided tech (from `profile.avoided_tech`) caps the score at `scoring.deal_breaker_cap` (default 30).
 
 A `fit_reason` is included when the score is at or above `scoring.reason_threshold` (default 70).
 

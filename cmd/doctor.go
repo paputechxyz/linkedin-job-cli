@@ -118,7 +118,7 @@ var doctorEnvKeys = []string{
 var settingsTopSchema = map[string][]string{
 	"stats":   {"top_companies_limit"},
 	"filter":  {"auto_filter"},
-	"scoring": {"reason_threshold", "baseline", "deal_breaker_cap", "deal_breakers", "weights"},
+	"scoring": {"reason_threshold", "baseline", "deal_breaker_cap", "weights"},
 	"profile": {"work_arrangement", "min_salary", "min_salary_currency", "locations", "preferred_tech", "avoided_tech"},
 }
 

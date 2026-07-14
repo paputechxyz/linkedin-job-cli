@@ -1,7 +1,7 @@
 ---
 name: linkedin-jobs
 description: "Use when the user wants to search, fetch, score, or manage LinkedIn job postings — pull their personalized recommended feed, search the public job board, score fit against their preferences, find who to reach out to for a job, manage a job pipeline, or configure their job-search profile. Wraps the linkedin-jobs CLI."
-version: 0.1.18
+version: 0.1.20
 author: Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -37,7 +37,10 @@ The skill installs the CLI itself — **no repo checkout needed**. Run the First
 
 ### First-Time Setup
 
-Ordered flow. Stop at the first unresolved gate and guide the user through it before continuing.
+The fastest path is to tell the user to run `linkedin-jobs setup` — it walks
+through all three steps interactively (profile preferences, LLM check, session
+capture). Alternatively, follow the ordered flow below step-by-step. Stop at the
+first unresolved gate and guide the user through it before continuing.
 
 1. **Ensure the CLI is installed.** Check `command -v linkedin-jobs`.
    - **Missing → auto-install the latest release binary** (self-contained; works on macOS/Linux/Windows in any agent shell — no repo checkout, no skill-dir token). Run:
@@ -70,7 +73,7 @@ Ordered flow. Stop at the first unresolved gate and guide the user through it be
    - **Cookie resolution priority** (first match wins): `LJ_COOKIE` → `LJ_COOKIES_FILE` → `~/.linkedin-jobs/cookies.txt` (default, written by `auth login`). Never assume a path — always verify with `doctor`.
    - **Do NOT silently fall back to anonymous `search`** when the session is missing — that returns irrelevant global results. See Pitfall #1.
 
-5. **(Optional) Set preference knobs.** `linkedin-jobs config path` shows where `settings.yaml` lives; `linkedin-jobs profile show` shows the active knobs. Edit the `profile:` section of `settings.yaml` by hand to set work arrangement, salary floor, locations, and preferred/avoided tech. Scoring works without knobs but is much better with them.
+5. **(Optional) Set preference knobs.** `linkedin-jobs config path` shows where `settings.yaml` lives (always `~/.linkedin-jobs/settings.yaml` unless `$LJ_SETTINGS_FILE` is set); `linkedin-jobs profile show` shows the active knobs. Tell the user to run `linkedin-jobs setup` for an interactive walk-through, or edit the `profile:` section of `settings.yaml` by hand to set work arrangement, salary floor, locations, and preferred/avoided tech. Scoring works without knobs but is much better with them.
 
 6. **Re-run `linkedin-jobs doctor`** to confirm no blocking issues, then proceed to the user's request.
 
@@ -108,6 +111,7 @@ Commands grouped by intent. Auth column: **auth** = requires LinkedIn session, *
 | `hr <job-url>` | Find best person to contact about a job | anon | yes |
 | **Profile** | | | |
 | `profile show` | Show active preference knobs | — | yes |
+| `setup` | Interactive first-time setup (profile, LLM, session) | — | text |
 | **Config** | | | |
 | `config show` | Show resolved LLM provider + settings | — | text |
 | `config path` | Print settings/db file locations | — | text |
@@ -141,43 +145,50 @@ These operations require explicit user confirmation before executing. Never auto
 
 Named scenarios mapping user intents to concrete command sequences. Always use `--json` for read commands and summarize results — never dump raw JSON to the user.
 
-### 1. Pull my feed
+### 1. Set up from scratch (first time)
+Tell the user to run `linkedin-jobs setup` in their terminal. It walks through
+profile preferences (work arrangement, salary, locations, preferred/avoided
+tech), checks the LLM provider, and recommends `auth login` for the LinkedIn
+session — all interactively. After they finish, re-check with `doctor` and
+proceed to Recipe #2.
+
+### 2. Pull my feed
 `doctor` → confirm session is available (look for `LJ_COOKIES_FILE` under `== Environment ==`, or the default `~/.linkedin-jobs/cookies.txt`; if unset and no default file, stop and tell the user — see Pitfall #1; **do not fall back to `search`**) → `recommended --json --top 25` → summarize top-N by fit score → offer to `tag` strong matches `saved`. **Always prefer `recommended` over `search` for personalized results.** `search` is a fallback for users with no session, not a default.
 
-### 1a. Set up auth (first time or expired session)
-`auth status` → if "No session" or "incomplete": tell the user to run `linkedin-jobs auth login` in their terminal (macOS + Chrome). Explain: it reads cookies silently from Chrome (no browser opens if already logged in), or launches a guided Chrome window for login. First run triggers a macOS keychain prompt — click "Always Allow". After they confirm it ran, re-check: `auth status` → should show "Session available [source: login]". Then proceed to Recipe #1.
+### 2a. Set up auth (first time or expired session)
+`auth status` → if "No session" or "incomplete": tell the user to run `linkedin-jobs auth login` in their terminal (macOS + Chrome). Explain: it reads cookies silently from Chrome (no browser opens if already logged in), or launches a guided Chrome window for login. First run triggers a macOS keychain prompt — click "Always Allow". After they confirm it ran, re-check: `auth status` → should show "Session available [source: login]". Then proceed to Recipe #2.
 
-### 2. Search anonymous (only when no session is available)
-`search "Staff Engineer" Toronto --json --top 25` → summarize results. **Only use this when the user has explicitly opted out of cookies** — see Pitfall #1. Default to Recipe #1 (`recommended`) whenever `LJ_COOKIES_FILE` is set.
+### 3. Search anonymous (only when no session is available)
+`search "Staff Engineer" Toronto --json --top 25` → summarize results. **Only use this when the user has explicitly opted out of cookies** — see Pitfall #1. Default to Recipe #2 (`recommended`) whenever `LJ_COOKIES_FILE` is set.
 
-### 3. Score a URL
+### 4. Score a URL
 `url "<url>" --json` → summarize. Requires auth session.
 
-### 4. What's new this week
+### 5. What's new this week
 `watch "Staff Engineer" Toronto --json` → summarize only new jobs (IDs not in DB).
 
-### 5. Find who to reach out to
+### 6. Find who to reach out to
 `hr "<job-url>" --json` → present best contact + ranked list + tailored hook + company-scoped LinkedIn search links.
 
-### 6. My best-fit shortlist
+### 7. My best-fit shortlist
 `list --json --sort-score --min-score 70` → summarize top matches with fit reasons.
 
-### 7. Score stored jobs
+### 8. Score stored jobs
 `count` → report N unenriched → `enrich --all` (after confirmation) → `list --json --sort-score` → summarize. Or score a single job: `enrich <job-id> --json`.
 
-### 8. Update my profile
-`profile show` → show current knobs → guide user to edit `settings.yaml` (profile section) → `rescore-all` (after confirmation) to re-score with updated context.
+### 9. Update my profile
+`profile show` → show current knobs → guide user to run `linkedin-jobs setup` or edit `settings.yaml` by hand (profile section) → `rescore-all` (after confirmation) to re-score with updated context.
 
-### 9. Check my config
+### 10. Check my config
 `doctor` → report any issues → `config show` → show resolved provider + settings → `config path` → show file locations.
 
-### 10. Export my pipeline
+### 11. Export my pipeline
 `export --format csv -o jobs.csv` → report file path. Or `--format json` / `--format markdown`.
 
-### 11. Start the web UI
+### 12. Start the web UI
 `serve --port 8080` → report `http://127.0.0.1:8080` URL. Human-facing — do not scrape the HTML. Use CLI `--json` commands as the agent's data source.
 
-### 12. Look up a specific job
+### 13. Look up a specific job
 `show <job-id> --json` → present full details (title, company, salary, description, fit score, enrichment, status, notes).
 
 ## Common Pitfalls

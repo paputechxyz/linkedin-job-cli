@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -38,11 +39,10 @@ type FilterSettings struct {
 }
 
 type ScoringSettings struct {
-	ReasonThreshold int             `yaml:"reason_threshold"`
-	Baseline        int             `yaml:"baseline"`
-	DealBreakerCap  int             `yaml:"deal_breaker_cap"`
-	DealBreakers    []string        `yaml:"deal_breakers"`
-	Weights         ScoringWeights  `yaml:"weights"`
+	ReasonThreshold int            `yaml:"reason_threshold"`
+	Baseline        int            `yaml:"baseline"`
+	DealBreakerCap  int            `yaml:"deal_breaker_cap"`
+	Weights         ScoringWeights `yaml:"weights"`
 }
 
 // ScoringWeights tunes the rubric dimensions. All default to the values in
@@ -74,7 +74,6 @@ func DefaultScoringSettings() ScoringSettings {
 		ReasonThreshold: 70,
 		Baseline:        60,
 		DealBreakerCap:  30,
-		DealBreakers:    []string{".NET", "C#", "Ruby on Rails"},
 		Weights: ScoringWeights{
 			Salary:             6,
 			TechOverlap:        7,
@@ -87,9 +86,8 @@ func DefaultScoringSettings() ScoringSettings {
 }
 
 // HomeDir returns the per-user home for all CLI state: the SQLite DB, the FX
-// rate cache, and (when no settings.yaml is found in the working directory) the
-// user-content files. Everything lives under ~/.linkedin-jobs.
-// The directory is created lazily by callers that write into it.
+// rate cache, settings.yaml, and the cookies file. Everything lives under
+// ~/.linkedin-jobs. The directory is created lazily by callers that write into it.
 func HomeDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -98,37 +96,20 @@ func HomeDir() string {
 	return filepath.Join(home, ".linkedin-jobs")
 }
 
-// ProjectDir returns the directory holding project-local, hand-editable user
-// content (settings.yaml incl. the profile: knobs). Resolution: the current
-// working directory when it already holds a settings.yaml (the dev case — edit
-// it alongside the source); otherwise HomeDir() so a built binary run from
-// anywhere still finds its config.
-//
-// These files describe *this* job-search project (your preference knobs, your
-// tunables) and travel together; SettingsPath reads from the same resolved
-// directory.
+// ProjectDir returns the directory holding user-content files (settings.yaml).
+// Always ~/.linkedin-jobs so the installed binary behaves the same regardless
+// of CWD. Override via $LJ_SETTINGS_FILE for dev/testing.
 func ProjectDir() string {
-	cwd, err := os.Getwd()
-	if err == nil {
-		if pathExists(filepath.Join(cwd, "settings.yaml")) {
-			return cwd
-		}
-	}
 	return HomeDir()
 }
 
-func pathExists(p string) bool {
-	_, err := os.Stat(p)
-	return err == nil
-}
-
 // SettingsPath returns the resolved path to settings.yaml. An absolute path in
-// $LJ_SETTINGS_FILE overrides the default project-local location.
+// $LJ_SETTINGS_FILE overrides the default ~/.linkedin-jobs/ location.
 func SettingsPath() string {
 	if p := os.Getenv("LJ_SETTINGS_FILE"); p != "" {
 		return p
 	}
-	return filepath.Join(ProjectDir(), "settings.yaml")
+	return filepath.Join(HomeDir(), "settings.yaml")
 }
 
 // LoadSettings reads settings.yaml from ProjectDir, overlaying it on
@@ -162,9 +143,6 @@ func LoadSettings() (Settings, error) {
 	if s.Scoring.DealBreakerCap <= 0 || s.Scoring.DealBreakerCap > 100 {
 		s.Scoring.DealBreakerCap = DefaultSettings().Scoring.DealBreakerCap
 	}
-	if len(s.Scoring.DealBreakers) == 0 {
-		s.Scoring.DealBreakers = DefaultSettings().Scoring.DealBreakers
-	}
 	applyDefaultWeight := func(current, def int) int {
 		if current < 0 {
 			return def
@@ -179,4 +157,83 @@ func LoadSettings() (Settings, error) {
 	s.Scoring.Weights.CompensationExtras = applyDefaultWeight(s.Scoring.Weights.CompensationExtras, dw.CompensationExtras)
 	s.Scoring.Weights.RemoteTiebreak = applyDefaultWeight(s.Scoring.Weights.RemoteTiebreak, dw.RemoteTiebreak)
 	return s, nil
+}
+
+// defaultSettingsTemplate is the YAML written when settings.yaml doesn't exist
+// yet. Profile starts empty so the user can fill it via `linkedin-jobs setup`.
+const defaultSettingsTemplate = `# linkedin-jobs settings — edit freely, delete a key to fall back to its default.
+# Docs: README → Settings
+
+stats:
+  top_companies_limit: 50       # stats command + serve UI; also stats --top N
+
+filter:
+  auto_filter: true             # true = cap score on hard-filter mismatch (no LLM); false = always call LLM
+
+scoring:
+  reason_threshold: 70          # fit_reason only emitted at/above this score (0-100)
+  baseline: 60                  # starting score after a job passes the hard filter
+  deal_breaker_cap: 30          # hard floor when an avoided_tech token is matched
+  weights:
+    salary: 6                   # tiered by how far above your floor (0/at-floor/+10%/+30%)
+    tech_overlap: 7             # count of preferred_tech items found in tech_stack
+    startup: 5                  # company_stage seed/early + size 1-50
+    ai_intensity: 5             # core=full, mentioned=partial, none=0
+    compensation_extras: 4      # bonus + equity + retirement match (1pt each, +1 all three)
+    remote_tiebreak: 3          # full-remote=full, hybrid=partial
+
+profile:
+  work_arrangement: []          # remote, hybrid, onsite (any subset)
+  min_salary: 0                 # 0 = no salary floor
+  min_salary_currency: USD      # ISO 4217 (USD, CAD, EUR, GBP)
+  locations: []                 # preferred location tokens (e.g. Remote, Toronto)
+  preferred_tech: []            # tech stack tokens that boost score
+  avoided_tech: []              # tech tokens that cap score at deal_breaker_cap
+`
+
+// EnsureSettings writes a default settings.yaml to SettingsPath() if the file
+// does not yet exist. Returns the path either way. The directory is created
+// if needed.
+func EnsureSettings() (string, error) {
+	p := SettingsPath()
+	if _, err := os.Stat(p); err == nil {
+		return p, nil // already exists
+	}
+	dir := filepath.Dir(p)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return p, fmt.Errorf("create %s: %w", dir, err)
+	}
+	if err := os.WriteFile(p, []byte(defaultSettingsTemplate), 0o644); err != nil {
+		return p, fmt.Errorf("write %s: %w", p, err)
+	}
+	return p, nil
+}
+
+// SaveProfile writes the profile section into settings.yaml, preserving the
+// rest of the file. Reads the current file (or defaults), replaces the
+// profile key, and writes back.
+func SaveProfile(p ProfileSettings) error {
+	path := SettingsPath()
+	var root map[string]any
+	data, err := os.ReadFile(path)
+	if err == nil {
+		_ = yaml.Unmarshal(data, &root)
+	}
+	if root == nil {
+		root = map[string]any{}
+	}
+	raw, err := yaml.Marshal(p)
+	if err != nil {
+		return fmt.Errorf("marshal profile: %w", err)
+	}
+	var profMap map[string]any
+	if err := yaml.Unmarshal(raw, &profMap); err != nil {
+		return fmt.Errorf("remarshal profile: %w", err)
+	}
+	root["profile"] = profMap
+	out, err := yaml.Marshal(root)
+	if err != nil {
+		return fmt.Errorf("marshal settings: %w", err)
+	}
+	return os.WriteFile(path, out, 0o644)
 }

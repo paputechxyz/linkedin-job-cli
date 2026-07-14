@@ -11,6 +11,6 @@ type Profile struct {
 	PrefMinSalaryCurrency string   `json:"pref_min_salary_currency,omitempty"` // ISO 4217 (e.g. CAD); "" = raw numeric compare
 	PrefLocations         []string `json:"pref_locations,omitempty"`           // preferred location tokens
 	PrefPreferredTech     []string `json:"pref_preferred_tech,omitempty"`      // drives tech_overlap dimension
-	PrefAvoidedTech       []string `json:"pref_avoided_tech,omitempty"`        // drives deal-breaker cap alongside scoring.deal_breakers
+	PrefAvoidedTech       []string `json:"pref_avoided_tech,omitempty"`        // drives deal-breaker cap (score capped at deal_breaker_cap)
 	UpdatedAt             string   `json:"updated_at,omitempty"`
 }
