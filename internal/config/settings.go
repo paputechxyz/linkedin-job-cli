@@ -167,7 +167,7 @@ scoring:
     startup: 5                  # company_stage seed/early + size 1-50
     ai_intensity: 5             # core=full, mentioned=partial, none=0
     compensation_extras: 4      # bonus + equity + retirement match (1pt each, +1 all three)
-    remote_tiebreak: 3          # full-remote=full, hybrid=partial
+    remote_tiebreak: 3          # each preferred arrangement match = full weight
 
 profile:
   work_arrangement: []          # remote, hybrid, onsite (any subset)

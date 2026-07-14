@@ -145,7 +145,7 @@ func Compute(job *models.JobPosting, profile *models.Profile, w Weights) Result 
 		dims = append(dims, d)
 		score += d.Points
 	}
-	if d := remoteTiebreakDimension(job, profile, w); d.Points > 0 {
+	if d := workArrangementDimension(job, profile, w); d.Points > 0 {
 		dims = append(dims, d)
 		score += d.Points
 	}
@@ -254,15 +254,19 @@ func hardFilterCap(job *models.JobPosting, profile *models.Profile) *capResult {
 		}
 	}
 
-	// Work arrangement: cap when the job matches none of the preferred
-	// arrangements (e.g. remote-required and no remote/hybrid signal).
-	blob := strings.ToLower(job.Location + " " + job.RemoteType)
-	if len(profile.PrefWorkArrangement) > 0 && !arrangementMatches(blob, profile.PrefWorkArrangement) {
-		detail := fmt.Sprintf("Role has no signal matching your preferred work arrangement (%s)", strings.Join(profile.PrefWorkArrangement, ", "))
-		fired = append(fired, capResult{capNonRemote, CapNonRemote, detail})
+	// Work arrangement: cap when the user has a preference and the job's
+	// detected arrangement doesn't match any preferred arrangement (including
+	// when the job has no arrangement signal at all).
+	if profile.HasWorkArrangementPreference() {
+		arrangement := job.DetectArrangement()
+		if arrangement == "" || !profile.PrefersArrangement(arrangement) {
+			detail := fmt.Sprintf("Role has no signal matching your preferred work arrangement (%s)", strings.Join(profile.PrefWorkArrangement, ", "))
+			fired = append(fired, capResult{capNonRemote, CapNonRemote, detail})
+		}
 	}
 
 	// Preferred locations: cap only when job location is known and matches none.
+	blob := strings.ToLower(job.Location + " " + job.RemoteType)
 	if len(profile.PrefLocations) > 0 && strings.TrimSpace(job.Location) != "" {
 		if !locationMatches(blob, profile.PrefLocations) {
 			detail := fmt.Sprintf("Location %q not in your preferred (%s)", job.Location, strings.Join(profile.PrefLocations, ", "))
@@ -299,29 +303,6 @@ func convertSalaryTo(amount float64, fromCur, toCur string) float64 {
 		return amount // unknown rate: best-effort raw compare, mirror filter.go behavior
 	}
 	return conv
-}
-
-func arrangementMatches(jobBlob string, prefs []string) bool {
-	for _, pref := range prefs {
-		t := strings.ToLower(strings.TrimSpace(pref))
-		if t == "" {
-			continue
-		}
-		if strings.Contains(jobBlob, t) {
-			return true
-		}
-	}
-	return false
-}
-
-// sliceContains reports whether ss contains s (case-insensitive).
-func sliceContains(ss []string, s string) bool {
-	for _, v := range ss {
-		if strings.EqualFold(strings.TrimSpace(v), s) {
-			return true
-		}
-	}
-	return false
 }
 
 func locationMatches(jobBlob string, prefLocations []string) bool {
@@ -515,26 +496,21 @@ func compensationExtrasDimension(job *models.JobPosting, w Weights) Dimension {
 	return Dimension{Name: "compensation_extras", Points: pts, Reason: strings.Join(on, "+")}
 }
 
-// remoteTiebreakDimension: full-remote = full; hybrid = ~33%; onsite/unknown = 0.
-// Only meaningful when hardFilterCap did not fire (which it would have for the
-// non-remote case). Returns 0 silently if no remote signal, or if the profile
-// is nil/the user hasn't asked for remote work — no preference means no bonus.
-func remoteTiebreakDimension(job *models.JobPosting, profile *models.Profile, w Weights) Dimension {
+// workArrangementDimension: rewards the job's detected arrangement when it
+// matches a preferred arrangement. Each matching arrangement contributes the
+// full weight. When the user has no preference (empty or all-three), or when
+// the job's arrangement doesn't match any preference, the dimension is neutral.
+func workArrangementDimension(job *models.JobPosting, profile *models.Profile, w Weights) Dimension {
 	max := w.RemoteTiebreak
 	if max <= 0 || profile == nil {
-		return Dimension{Name: "remote"}
+		return Dimension{Name: "work_arrangement"}
 	}
-	// User must have expressed a remote preference to be rewarded for it.
-	if !sliceContains(profile.PrefWorkArrangement, "remote") {
-		return Dimension{Name: "remote"}
+	if !profile.HasWorkArrangementPreference() {
+		return Dimension{Name: "work_arrangement"}
 	}
-	blob := strings.ToLower(job.Location + " " + job.RemoteType)
-	switch {
-	case strings.Contains(blob, "remote") && !strings.Contains(blob, "hybrid"):
-		return Dimension{Name: "remote", Points: max, Reason: "fully remote"}
-	case strings.Contains(blob, "hybrid"):
-		return Dimension{Name: "remote", Points: max / 3, Reason: "hybrid"}
-	default:
-		return Dimension{Name: "remote"}
+	arrangement := job.DetectArrangement()
+	if arrangement == "" || !profile.PrefersArrangement(arrangement) {
+		return Dimension{Name: "work_arrangement"}
 	}
+	return Dimension{Name: "work_arrangement", Points: max, Reason: arrangement}
 }

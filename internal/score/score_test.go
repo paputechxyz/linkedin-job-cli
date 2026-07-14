@@ -347,33 +347,108 @@ func TestCompute_CompensationExtrasSums(t *testing.T) {
 	}
 }
 
-// --- Remote tiebreak dimension (requires remote pref to evaluate) ---
+// --- Work arrangement dimension (preference-aware) ---
 //
-// Note: jobs without a "remote" signal trigger the non_remote cap and never
-// reach the remote_tiebreak dimension. So the hybrid/onsite cases are covered
-// by TestCompute_NonRemoteCapsAt55. Here we test the dimension itself by using
-// jobs that DO contain a "remote" signal (so no cap) but vary in hybrid-ness.
+// Empty or all-three prefs = "no preference" → dimension neutral, no cap.
+// Any proper subset = has preference → matching arrangement gets full weight;
+// non-matching arrangement triggers the non_remote cap at 55.
 
-func TestCompute_RemoteTiebreak(t *testing.T) {
+func TestCompute_WorkArrangement(t *testing.T) {
 	w := defaultWeights()
 	max := w.RemoteTiebreak
-	cases := []struct {
-		loc, remote string
-		want        int
+
+	// No preference: empty or all-three → neutral (score stays at baseline, no cap).
+	noPrefCases := []struct {
+		name  string
+		prefs []string
 	}{
-		{"Remote, Canada", "Remote", max},        // full remote
-		{"Remote (Hybrid)", "Hybrid", max / 3},    // hybrid (still passes filter since blob has "remote")
-		{"Toronto", "Remote", max},               // RemoteType carries the signal; loc match passes filter
+		{"empty", nil},
+		{"all_three", []string{"remote", "hybrid", "onsite"}},
 	}
-	for _, tc := range cases {
-		t.Run(tc.loc+"/"+tc.remote, func(t *testing.T) {
-			j := &models.JobPosting{Location: tc.loc, RemoteType: tc.remote}
-			r := Compute(j, remoteOnlyProfile(), w)
-			if got := r.Score - 60; got != tc.want {
-				t.Errorf("loc=%q remote=%q got %d pts, want %d", tc.loc, tc.remote, got, tc.want)
+	for _, npc := range noPrefCases {
+		t.Run("no_pref/"+npc.name, func(t *testing.T) {
+			for _, jc := range []struct {
+				loc, remote string
+			}{
+				{"Remote, Canada", "Remote"},
+				{"Hybrid - NYC", ""},
+				{"On-site, SF", ""},
+				{"Unknown location", ""},
+			} {
+				j := &models.JobPosting{Location: jc.loc, RemoteType: jc.remote}
+				prof := &models.Profile{PrefWorkArrangement: npc.prefs}
+				r := Compute(j, prof, w)
+				if r.Score != 60 {
+					t.Errorf("prefs=%v job=(%q,%q) Score=%d want 60 (baseline, no cap, no dimension)", npc.prefs, jc.loc, jc.remote, r.Score)
+				}
 			}
 		})
 	}
+
+	// Match: proper subset pref + matching job → full weight added to baseline.
+	matchCases := []struct {
+		name        string
+		prefs       []string
+		loc, remote string
+	}{
+		{"remote_pref_remote_job", []string{"remote"}, "Remote, Canada", "Remote"},
+		{"onsite_pref_onsite_job", []string{"onsite"}, "SF", "On-site"},
+		{"hybrid_pref_hybrid_job", []string{"hybrid"}, "Hybrid - NYC", ""},
+		{"hybrid_onsite_pref_hybrid_job", []string{"hybrid", "onsite"}, "Hybrid - NYC", ""},
+		{"hybrid_onsite_pref_onsite_job", []string{"hybrid", "onsite"}, "SF", "onsite"},
+		{"remote_hybrid_pref_remote_job", []string{"remote", "hybrid"}, "Remote, Canada", "Remote"},
+		{"remote_hybrid_pref_hybrid_job", []string{"remote", "hybrid"}, "Hybrid - NYC", ""},
+		{"remote_onsite_pref_remote_job", []string{"remote", "onsite"}, "Remote, Canada", "Remote"},
+		{"remote_onsite_pref_onsite_job", []string{"remote", "onsite"}, "SF", "onsite"},
+	}
+	for _, tc := range matchCases {
+		t.Run("match/"+tc.name, func(t *testing.T) {
+			j := &models.JobPosting{Location: tc.loc, RemoteType: tc.remote}
+			prof := &models.Profile{PrefWorkArrangement: tc.prefs}
+			r := Compute(j, prof, w)
+			want := 60 + max
+			if r.Score != want {
+				t.Errorf("prefs=%v job=(%q,%q) Score=%d want %d (baseline + full weight)", tc.prefs, tc.loc, tc.remote, r.Score, want)
+			}
+		})
+	}
+
+	// Non-match: proper subset pref + non-matching job → capped at 55.
+	nonMatchCases := []struct {
+		name        string
+		prefs       []string
+		loc, remote string
+	}{
+		{"remote_pref_hybrid_job", []string{"remote"}, "Hybrid - NYC", ""},
+		{"remote_pref_onsite_job", []string{"remote"}, "SF", "On-site"},
+		{"onsite_pref_remote_job", []string{"onsite"}, "Remote, Canada", "Remote"},
+		{"hybrid_pref_remote_job", []string{"hybrid"}, "Remote, Canada", "Remote"},
+		{"hybrid_onsite_pref_remote_job", []string{"hybrid", "onsite"}, "Remote, Canada", "Remote"},
+		{"remote_hybrid_pref_onsite_job", []string{"remote", "hybrid"}, "SF", "onsite"},
+	}
+	for _, tc := range nonMatchCases {
+		t.Run("non_match/"+tc.name, func(t *testing.T) {
+			j := &models.JobPosting{Location: tc.loc, RemoteType: tc.remote}
+			prof := &models.Profile{PrefWorkArrangement: tc.prefs}
+			r := Compute(j, prof, w)
+			if r.Score != 55 {
+				t.Errorf("prefs=%v job=(%q,%q) Score=%d want 55 (cap fires)", tc.prefs, tc.loc, tc.remote, r.Score)
+			}
+			if r.CapReason != CapNonRemote {
+				t.Errorf("prefs=%v job=(%q,%q) CapReason=%q want %q", tc.prefs, tc.loc, tc.remote, r.CapReason, CapNonRemote)
+			}
+		})
+	}
+
+	// Unknown arrangement with active preference → cap fires (conservative).
+	t.Run("unknown_arrangement_with_pref", func(t *testing.T) {
+		j := &models.JobPosting{Location: "San Francisco, CA", RemoteType: ""}
+		prof := &models.Profile{PrefWorkArrangement: []string{"remote"}}
+		r := Compute(j, prof, w)
+		if r.Score != 55 {
+			t.Errorf("Score=%d want 55 (unknown arrangement, preference active)", r.Score)
+		}
+	})
 }
 
 // --- Combined + clamp ---
