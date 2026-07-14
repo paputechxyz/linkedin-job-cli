@@ -43,12 +43,12 @@ type ScoringSettings struct {
 // ScoringWeights tunes the rubric dimensions. All default to the values in
 // DefaultSettings(); any weight set to 0 disables that dimension.
 type ScoringWeights struct {
-	Salary              int `yaml:"salary"`
-	TechOverlap         int `yaml:"tech_overlap"`
-	Startup             int `yaml:"startup"`
-	AIIntensity         int `yaml:"ai_intensity"`
-	CompensationExtras  int `yaml:"compensation_extras"`
-	RemoteTiebreak      int `yaml:"remote_tiebreak"`
+	Salary             int `yaml:"salary"`
+	TechOverlap        int `yaml:"tech_overlap"`
+	Startup            int `yaml:"startup"`
+	AIIntensity        int `yaml:"ai_intensity"`
+	CompensationExtras int `yaml:"compensation_extras"`
+	RemoteTiebreak     int `yaml:"remote_tiebreak"`
 }
 
 // DefaultSettings returns the built-in defaults used when the YAML file is
@@ -167,7 +167,7 @@ scoring:
     startup: 5                  # company_stage seed/early + size 1-50
     ai_intensity: 5             # core=full, mentioned=partial, none=0
     compensation_extras: 4      # bonus + equity + retirement match (1pt each, +1 all three)
-    remote_tiebreak: 3          # full-remote=full, hybrid=partial
+    remote_tiebreak: 3          # each preferred arrangement match = full weight
 
 profile:
   work_arrangement: []          # remote, hybrid, onsite (any subset)

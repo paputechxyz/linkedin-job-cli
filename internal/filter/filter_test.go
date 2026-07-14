@@ -88,6 +88,71 @@ func TestPassesHardFilter_Combined(t *testing.T) {
 	}
 }
 
+func TestPassesHardFilter_NoPreference(t *testing.T) {
+	// Empty or all-three prefs = no preference → all jobs pass regardless of arrangement.
+	noPrefProfiles := []struct {
+		name  string
+		prefs []string
+	}{
+		{"empty", nil},
+		{"all_three", []string{"remote", "hybrid", "onsite"}},
+	}
+	jobs := []struct {
+		name   string
+		loc    string
+		remote string
+	}{
+		{"remote", "Remote, US", ""},
+		{"hybrid", "Hybrid - NYC", ""},
+		{"onsite", "SF", "On-site"},
+		{"no_signal", "Unknown location", ""},
+	}
+	for _, np := range noPrefProfiles {
+		t.Run(np.name, func(t *testing.T) {
+			p := &models.Profile{PrefWorkArrangement: np.prefs}
+			for _, jc := range jobs {
+				if !PassesHardFilter(job(jc.loc, jc.remote, nil), p) {
+					t.Errorf("%s prefs + %s job should pass (no preference)", np.name, jc.name)
+				}
+			}
+		})
+	}
+}
+
+func TestPassesHardFilter_ArrangementPreferences(t *testing.T) {
+	cases := []struct {
+		name   string
+		prefs  []string
+		loc    string
+		remote string
+		want   bool
+	}{
+		// Single-arrangement prefs
+		{"remote_pref_remote_job", []string{"remote"}, "Remote, US", "", true},
+		{"remote_pref_hybrid_job", []string{"remote"}, "Hybrid - NYC", "", false},
+		{"remote_pref_onsite_job", []string{"remote"}, "SF", "onsite", false},
+		{"onsite_pref_onsite_job", []string{"onsite"}, "SF", "onsite", true},
+		{"onsite_pref_remote_job", []string{"onsite"}, "Remote, US", "", false},
+		{"onsite_pref_on_site_hyphenated", []string{"onsite"}, "SF", "On-site", true},
+		{"hybrid_pref_hybrid_job", []string{"hybrid"}, "Hybrid - NYC", "", true},
+		{"hybrid_pref_remote_job", []string{"hybrid"}, "Remote, US", "", false},
+		// Multi-arrangement prefs
+		{"hybrid_onsite_pref_hybrid_job", []string{"hybrid", "onsite"}, "Hybrid - NYC", "", true},
+		{"hybrid_onsite_pref_onsite_job", []string{"hybrid", "onsite"}, "SF", "onsite", true},
+		{"hybrid_onsite_pref_remote_job", []string{"hybrid", "onsite"}, "Remote, US", "", false},
+		{"remote_hybrid_pref_remote_hybrid_blob", []string{"remote", "hybrid"}, "Remote (Hybrid)", "", true},
+		{"remote_hybrid_pref_onsite_job", []string{"remote", "hybrid"}, "SF", "onsite", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &models.Profile{PrefWorkArrangement: tc.prefs}
+			if got := PassesHardFilter(job(tc.loc, tc.remote, nil), p); got != tc.want {
+				t.Errorf("prefs=%v job=(%q,%q) got %v want %v", tc.prefs, tc.loc, tc.remote, got, tc.want)
+			}
+		})
+	}
+}
+
 // seedFX writes a today-dated rate cache so the FX-aware floor is deterministic.
 func seedFX(t *testing.T) {
 	t.Helper()

@@ -15,6 +15,7 @@ profile:
     work_arrangement:
         - remote
         - hybrid
+        - onsite
 scoring:
     baseline: 60
     deal_breaker_cap: 30

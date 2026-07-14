@@ -1,6 +1,9 @@
 package models
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // JobPosting mirrors the LinkedIn job record persisted in SQLite. Field names
 // line up with the database columns (snake_case via explicit SQL).
@@ -19,38 +22,38 @@ type JobPosting struct {
 	// (low confidence, amber). "" means unknown/pre-feature.
 	SalarySource string `json:"salary_source,omitempty"`
 	Description  string `json:"description,omitempty"`
-	Summary        string   `json:"summary,omitempty"`
-	LLMSummary     string   `json:"llm_summary,omitempty"`
-	RemoteType     string   `json:"remote_type,omitempty"`
-	Status         string   `json:"status,omitempty"`
-	Notes          string   `json:"notes,omitempty"`
-	Source         string   `json:"source,omitempty"`    // "recommended" | "search"
-	ListedAt       int64    `json:"listed_at,omitempty"` // epoch ms
-	SearchedAt     string   `json:"searched_at,omitempty"`
-	FetchedAt      string   `json:"fetched_at,omitempty"`
+	Summary      string `json:"summary,omitempty"`
+	LLMSummary   string `json:"llm_summary,omitempty"`
+	RemoteType   string `json:"remote_type,omitempty"`
+	Status       string `json:"status,omitempty"`
+	Notes        string `json:"notes,omitempty"`
+	Source       string `json:"source,omitempty"`    // "recommended" | "search"
+	ListedAt     int64  `json:"listed_at,omitempty"` // epoch ms
+	SearchedAt   string `json:"searched_at,omitempty"`
+	FetchedAt    string `json:"fetched_at,omitempty"`
 
 	// Structured enrichment (LLM-extracted). Zero values mean "not enriched."
-	CompanyOverview  string `json:"company_overview,omitempty"`
-	Industry         string `json:"industry,omitempty"`
-	TechStack        string `json:"tech_stack,omitempty"`
-	Seniority        string `json:"seniority,omitempty"`
-	EmploymentType   string `json:"employment_type,omitempty"`
-	YearsExperience  *int   `json:"years_experience,omitempty"`
-	CompanySizeBand  string `json:"company_size_band,omitempty"`
-	CompanyStage     string `json:"company_stage,omitempty"`
-	IsFoundingRole   bool   `json:"is_founding_role,omitempty"`
-	VisaSponsorship  string `json:"visa_sponsorship,omitempty"`
-	EnrichedAt       string `json:"enriched_at,omitempty"`
+	CompanyOverview string `json:"company_overview,omitempty"`
+	Industry        string `json:"industry,omitempty"`
+	TechStack       string `json:"tech_stack,omitempty"`
+	Seniority       string `json:"seniority,omitempty"`
+	EmploymentType  string `json:"employment_type,omitempty"`
+	YearsExperience *int   `json:"years_experience,omitempty"`
+	CompanySizeBand string `json:"company_size_band,omitempty"`
+	CompanyStage    string `json:"company_stage,omitempty"`
+	IsFoundingRole  bool   `json:"is_founding_role,omitempty"`
+	VisaSponsorship string `json:"visa_sponsorship,omitempty"`
+	EnrichedAt      string `json:"enriched_at,omitempty"`
 
 	// Compensation extras (LLM-extracted booleans, used by the rubric scorer).
-	HasBonus          bool `json:"has_bonus,omitempty"`
-	HasEquity         bool `json:"has_equity,omitempty"`
+	HasBonus           bool `json:"has_bonus,omitempty"`
+	HasEquity          bool `json:"has_equity,omitempty"`
 	HasRetirementMatch bool `json:"has_retirement_match,omitempty"`
 	// AIIntensity is one of core | mentioned | none ("" = not enriched).
 	AIIntensity string `json:"ai_intensity,omitempty"`
 
 	// Fit scoring against the user's preferences.
-	FitScore  *int  `json:"fit_score,omitempty"` // 0-100, nil = unscored
+	FitScore  *int   `json:"fit_score,omitempty"` // 0-100, nil = unscored
 	FitReason string `json:"fit_reason,omitempty"`
 	ScoredAt  string `json:"scored_at,omitempty"`
 	// ScoreCapReason records why the score was capped (e.g. "salary_under_floor",
@@ -63,6 +66,25 @@ type JobPosting struct {
 
 // IsEnriched reports whether structured enrichment has run for this job.
 func (j *JobPosting) IsEnriched() bool { return j.EnrichedAt != "" }
+
+// DetectArrangement determines the job's work arrangement from its location and
+// remote_type fields. Returns one of "remote", "hybrid", "onsite", or "" (unknown).
+// Detection priority is hybrid > remote > onsite — a blob containing both
+// "remote" and "hybrid" resolves to "hybrid" because hybrid is the more specific
+// arrangement mode. Matches "on-site" and "on site" as well as "onsite".
+func (j *JobPosting) DetectArrangement() string {
+	blob := strings.ToLower(j.Location + " " + j.RemoteType)
+	if strings.Contains(blob, "hybrid") {
+		return "hybrid"
+	}
+	if strings.Contains(blob, "remote") {
+		return "remote"
+	}
+	if strings.Contains(blob, "onsite") || strings.Contains(blob, "on-site") || strings.Contains(blob, "on site") {
+		return "onsite"
+	}
+	return ""
+}
 
 // IsFiltered reports whether the hard preference filter marked this job a mismatch.
 func (j *JobPosting) IsFiltered() bool { return j.Status == "filtered" }
