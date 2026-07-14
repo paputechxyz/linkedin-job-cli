@@ -253,7 +253,7 @@ linkedin-jobs enrich [<job-id>] [--all]
 
 ### rescore-all
 
-Re-enrich + re-score every stored job via the LLM, and re-judge filter status. Always calls LLM (one call per job), ignores dedup. Use after editing resume/preferences/weights.
+Re-enrich + re-score every stored job via the LLM, and re-judge filter status. Always calls LLM (one call per job), ignores dedup. Use after editing preferences/weights.
 
 ```bash
 linkedin-jobs rescore-all
@@ -281,33 +281,13 @@ linkedin-jobs hr <linkedin-job-url> [flags]
 
 ### profile show
 
-Show the stored resume and preference knobs.
+Show the active preference knobs.
 
 ```bash
 linkedin-jobs profile show
 ```
 
 `--json`: yes.
-
-### profile resume
-
-Paste your resume text from stdin. Writes to `RESUME.md`.
-
-```bash
-linkedin-jobs profile resume    # type or paste, end with Ctrl-D
-```
-
-`--json`: no (always text).
-
-### profile clear
-
-Delete the stored resume file. **Approval gate: confirm (data loss).**
-
-```bash
-linkedin-jobs profile clear
-```
-
-`--json`: no (always text).
 
 ## Config Commands
 
@@ -323,7 +303,7 @@ linkedin-jobs config show
 
 ### config path
 
-Print the settings/resume/db file locations.
+Print the settings/db file locations.
 
 ```bash
 linkedin-jobs config path
@@ -333,7 +313,7 @@ linkedin-jobs config path
 
 ### doctor
 
-Diagnose config: LLM provider, resume, settings.yaml completeness, env vars.
+Diagnose config: LLM provider, settings.yaml completeness, env vars.
 
 ```bash
 linkedin-jobs doctor

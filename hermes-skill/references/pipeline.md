@@ -71,7 +71,7 @@ One LLM call per genuine new candidate (one that passed dedup + hard filter). Th
 1. **Extracts structured facts:** company overview, industry, tech stack, seniority, employment type, years of experience, company size/stage, founding role, visa sponsorship, work arrangement, bonus/equity/retirement match, AI intensity.
 2. **Does NOT pick a score** — the LLM only extracts facts. The deterministic rubric (`score.Compute`) derives the 0-100 fit score from the enriched facts + profile.
 
-**Data sent to the LLM provider:** job description (full text), the user's resume (truncated), and preference knobs. Users should verify their provider's data retention policy. `LJ_LLM_BASE_URL` can point to a self-hosted endpoint (Ollama, vLLM) for data residency control.
+**Data sent to the LLM provider:** job description (full text) and preference knobs. Users should verify their provider's data retention policy. `LJ_LLM_BASE_URL` can point to a self-hosted endpoint (Ollama, vLLM) for data residency control.
 
 ### Scoring Rubric
 
@@ -104,4 +104,4 @@ A `fit_reason` is included when the score is at or above `scoring.reason_thresho
 - **`enrich --all`:** enrich all unenriched jobs. No stdout (stderr progress only). Follow up with `list` or `show`.
 - **`rescore-all`:** re-enrich + re-score EVERY stored job (ignores dedup). Always calls LLM. Re-judges the `filtered` tag based on current profile. Preserves explicit triage statuses (saved/applied/rejected).
 
-After editing `RESUME.md` or `settings.yaml` profile knobs, run `rescore-all` to re-score with updated context.
+After editing the `settings.yaml` profile knobs, run `rescore-all` to re-score with updated context.

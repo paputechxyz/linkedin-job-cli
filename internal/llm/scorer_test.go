@@ -43,7 +43,7 @@ func TestEnrich_HappyPathJSON(t *testing.T) {
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Title: "Staff Eng", Description: "build stuff"}
-	e, err := Enrich(j, nil, p)
+	e, err := Enrich(j, p)
 	if err != nil {
 		t.Fatalf("Score: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestEnrich_JSONWrappedInFence(t *testing.T) {
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "d"}
-	e, err := Enrich(j, nil, p)
+	e, err := Enrich(j, p)
 	if err != nil {
 		t.Fatalf("Score: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestEnrich_DelimiterFallback(t *testing.T) {
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "d"}
-	e, err := Enrich(j, nil, p)
+	e, err := Enrich(j, p)
 	if err != nil {
 		t.Fatalf("Score: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestEnrich_UnparseableYieldsPartialWithoutError(t *testing.T) {
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "d"}
-	_, err := Enrich(j, nil, p)
+	_, err := Enrich(j, p)
 	if err != nil {
 		t.Errorf("unparseable response should not error, got %v", err)
 	}
@@ -141,7 +141,7 @@ func TestEnrich_EmptyDescriptionMakesNoCall(t *testing.T) {
 	srv, p := fakeCompletions(t, "{}", 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: ""}
-	_, err := Enrich(j, nil, p)
+	_, err := Enrich(j, p)
 	if err != ErrEmptyDescription {
 		t.Fatalf("Score err = %v, want ErrEmptyDescription", err)
 	}
@@ -155,7 +155,7 @@ func TestEnrich_TransportFailureReturnsError(t *testing.T) {
 	srv, p := fakeCompletions(t, "", 500, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "d"}
-	_, err := Enrich(j, nil, p)
+	_, err := Enrich(j, p)
 	if err == nil {
 		t.Fatalf("want error on HTTP 500")
 	}

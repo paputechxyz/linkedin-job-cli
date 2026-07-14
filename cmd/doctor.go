@@ -10,22 +10,20 @@ import (
 
 	"linkedin-jobs/internal/config"
 	"linkedin-jobs/internal/llm"
-	"linkedin-jobs/internal/profile"
 )
 
 var doctorPing bool
 
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
-	Short: "Diagnose config: LLM provider, resume, settings.yaml completeness, env vars",
+	Short: "Diagnose config: LLM provider, settings.yaml completeness, env vars",
 	Long: `Verify everything the CLI needs is in place.
 
 Checks (in order):
   1. LLM provider resolves (base URL + model). With --ping, also sends a tiny
      "hello" call to confirm the API key works end-to-end.
-  2. Resume loaded from RESUME.md
-  3. settings.yaml present and complete (every documented key set)
-  4. All known env vars reported (keys printed, secret values redacted)
+  2. settings.yaml present and complete (every documented key set)
+  3. All known env vars reported (keys printed, secret values redacted)
 
 Exits 1 if any check fails, 0 if all pass.`,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -66,19 +64,7 @@ Exits 1 if any check fails, 0 if all pass.`,
 		}
 		fmt.Println()
 
-		// 2. Resume.
-		fmt.Println("== Resume ==")
-		resumePath := profile.ResumePath()
-		if info, err := os.Stat(resumePath); err != nil || info.Size() == 0 {
-			ok = false
-			fmt.Printf("  [✗] no resume at %s\n", resumePath)
-			fmt.Println("      fix: linkedin-jobs profile resume  (paste text, end with Ctrl-D)")
-		} else {
-			fmt.Printf("  [✓] %s (%s)\n", resumePath, humanBytes(info.Size()))
-		}
-		fmt.Println()
-
-		// 3. Settings completeness.
+		// 2. Settings completeness.
 		fmt.Println("== Settings ==")
 		sp := config.SettingsPath()
 		missing, err := checkSettings(sp)
@@ -97,7 +83,7 @@ Exits 1 if any check fails, 0 if all pass.`,
 		}
 		fmt.Println()
 
-		// 4. Env vars (keys printed, secret values redacted).
+		// 3. Env vars (keys printed, secret values redacted).
 		fmt.Println("== Environment ==")
 		for _, k := range doctorEnvKeys {
 			v, set := os.LookupEnv(k)
@@ -157,17 +143,6 @@ func redactEnv(k, v string) string {
 		return strings.Repeat("*", len(v))
 	}
 	return strings.Repeat("*", len(v)-4) + v[len(v)-4:]
-}
-
-func humanBytes(n int64) string {
-	switch {
-	case n >= 1<<20:
-		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
-	case n >= 1<<10:
-		return fmt.Sprintf("%.1f KB", float64(n)/(1<<10))
-	default:
-		return fmt.Sprintf("%d B", n)
-	}
 }
 
 // checkSettings reads settings.yaml and returns the list of expected keys that

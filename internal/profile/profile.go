@@ -1,103 +1,46 @@
-// Package profile reads the candidate's resume and combines it with the
-// structured preference knobs from settings.yaml to build the in-memory
-// models.Profile consumed by the deterministic scorer, the hard filter, and the
-// LLM enrich prompt.
+// Package profile reads the structured preference knobs from settings.yaml to
+// build the in-memory models.Profile consumed by the deterministic scorer, the
+// hard filter, and the LLM enrich prompt.
 //
-// Files used (override each with an env var; otherwise resolved under the
-// project directory — the CWD when settings.yaml/RESUME.md already lives
-// there, else ~/.linkedin-jobs):
-//
-//	$LJ_RESUME_FILE       — resume body (free text), LLM context
-//	$LJ_SETTINGS_FILE     — preference knobs (`profile:` section)
-//
-// Preference knobs (work_arrangement, min_salary, locations, preferred_tech,
-// avoided_tech) drive the deterministic hard filter (internal/filter) and the
-// rubric (internal/score); the resume body feeds the LLM enrich call as
-// candidate context.
+// The preference knobs (work_arrangement, min_salary, locations, preferred_tech,
+// avoided_tech) live under the profile: section of settings.yaml ($LJ_SETTINGS_FILE)
+// and drive the deterministic hard filter (internal/filter) and the rubric
+// (internal/score). Fit scoring relies entirely on these knobs.
 package profile
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"linkedin-jobs/internal/config"
 	"linkedin-jobs/internal/models"
 )
 
-// ResumeFile is the filename holding the resume body.
-const ResumeFile = "RESUME.md"
-
-// ResumePath returns the resolved path to RESUME.md. An absolute path in
-// $LJ_RESUME_FILE overrides the default project-local location.
-func ResumePath() string {
-	if p := os.Getenv("LJ_RESUME_FILE"); p != "" {
-		return p
-	}
-	return filepath.Join(config.ProjectDir(), ResumeFile)
-}
-
-// Load builds the in-memory profile from RESUME.md (for ResumeText) plus the
-// structured preference knobs from settings. A missing resume yields an empty
-// ResumeText but the knobs still flow through; the caller treats a fully-empty
-// profile (no resume + no knobs) as "no profile set".
+// Load builds the in-memory profile from the structured preference knobs in
+// settings. A fully-empty profile (no knobs) means scoring/filtering will run
+// context-free.
 func Load(prefs config.ProfileSettings) (*models.Profile, error) {
-	p := &models.Profile{
+	return &models.Profile{
 		PrefWorkArrangement:   prefs.WorkArrangement,
 		PrefMinSalary:         prefs.MinSalary,
 		PrefMinSalaryCurrency: prefs.MinSalaryCurrency,
 		PrefLocations:         prefs.Locations,
 		PrefPreferredTech:     prefs.PreferredTech,
 		PrefAvoidedTech:       prefs.AvoidedTech,
-	}
-
-	resumeBytes, err := os.ReadFile(ResumePath())
-	if err != nil && !os.IsNotExist(err) {
-		return nil, fmt.Errorf("read %s: %w", ResumeFile, err)
-	}
-	if len(resumeBytes) > 0 {
-		p.ResumeText = strings.TrimSpace(string(resumeBytes))
-	}
-	p.UpdatedAt = nowISO()
-	return p, nil
+		UpdatedAt:             nowISO(),
+	}, nil
 }
 
-// IsEmpty reports whether the profile has no resume and no preference knobs —
-// i.e. scoring/filtering will run context-free.
+// IsEmpty reports whether the profile has no preference knobs — i.e.
+// scoring/filtering will run context-free.
 func IsEmpty(p *models.Profile) bool {
 	if p == nil {
 		return true
 	}
-	return p.ResumeText == "" &&
-		len(p.PrefWorkArrangement) == 0 &&
+	return len(p.PrefWorkArrangement) == 0 &&
 		p.PrefMinSalary == nil &&
 		len(p.PrefLocations) == 0 &&
 		len(p.PrefPreferredTech) == 0 &&
 		len(p.PrefAvoidedTech) == 0
-}
-
-// SaveResume writes the resume body to RESUME.md (creating the parent dir of
-// the resolved path if needed). An empty text clears the file.
-func SaveResume(text string) error {
-	dir := filepath.Dir(ResumePath())
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("create resume dir: %w", err)
-	}
-	if err := os.WriteFile(ResumePath(), []byte(strings.TrimSpace(text)+"\n"), 0o600); err != nil {
-		return fmt.Errorf("write %s: %w", ResumeFile, err)
-	}
-	return nil
-}
-
-// ClearResume removes RESUME.md. A missing file is not an error. Preference
-// knobs live in settings.yaml and are cleared by hand-editing that file.
-func ClearResume() error {
-	if err := os.Remove(ResumePath()); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
 }
 
 func nowISO() string {

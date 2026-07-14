@@ -20,7 +20,7 @@ var rescoreAllCmd = &cobra.Command{
 	Long: `Re-runs the full LLM enrichment + deterministic rubric score for every job
 in the DB — regardless of its current status (filtered jobs included) — then
 re-applies the hard filter so each job's filtered tag reflects your current
-profile. Use this after editing your resume, preferences, or scoring weights.
+profile. Use this after editing your preference knobs or scoring weights.
 
 This always calls the LLM (one call per job) and ignores dedup, so it costs
 tokens proportional to your DB size. A job that now fails the hard filter is

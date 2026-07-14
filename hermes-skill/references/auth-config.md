@@ -103,19 +103,19 @@ Explicit env vars win over opencode discovery, so you can override the discovere
 | `ANTHROPIC_API_KEY` | Claude provider (auto-detected) | — |
 | `LJ_LLM_DELAY_SECONDS` | Pause between successive LLM calls (avoids 429s) | `2.0` |
 
-**Data residency:** `LJ_LLM_BASE_URL` can point to a self-hosted endpoint (Ollama at `http://localhost:11434/v1`, vLLM, etc.) for users who need data residency control. The scoring pipeline transmits job descriptions, the user's resume (truncated), and preference knobs to the configured provider.
+**Data residency:** `LJ_LLM_BASE_URL` can point to a self-hosted endpoint (Ollama at `http://localhost:11434/v1`, vLLM, etc.) for users who need data residency control. The scoring pipeline transmits job descriptions and preference knobs to the configured provider.
 
 ### Config Commands
 
 ```bash
 linkedin-jobs config show     # resolved provider (key redacted) + settings
-linkedin-jobs config path     # settings/resume/db file locations
+linkedin-jobs config path     # settings/db file locations
 linkedin-jobs doctor          # diagnose provider + settings completeness
 ```
 
 ## Settings (settings.yaml)
 
-Optional `settings.yaml` in your **project root** when one is already present there, otherwise in `~/.linkedin-jobs/`. Same location as `RESUME.md`.
+Optional `settings.yaml` in your **project root** when one is already present there, otherwise in `~/.linkedin-jobs/`.
 
 ```yaml
 stats:
@@ -149,16 +149,6 @@ profile:
   avoided_tech: [C#, .NET, Ruby]   # caps score at deal_breaker_cap
 ```
 
-## Resume (RESUME.md)
-
-Free-text markdown file. Sent to the LLM as candidate context during scoring. Lives in the same directory as `settings.yaml`.
-
-```bash
-linkedin-jobs profile resume    # paste resume text, end with Ctrl-D
-linkedin-jobs profile show      # show resume + active knobs
-linkedin-jobs profile clear     # delete the resume file
-```
-
 ## Environment Variables
 
 | Variable | Purpose | Default |
@@ -174,13 +164,12 @@ linkedin-jobs profile clear     # delete the resume file
 
 ## File Locations
 
-When a `settings.yaml` or `RESUME.md` already exists in the project root (CWD), the CLI uses the project root. Otherwise, everything lives under `~/.linkedin-jobs/`:
+When a `settings.yaml` already exists in the project root (CWD), the CLI uses the project root. Otherwise, everything lives under `~/.linkedin-jobs/`:
 
 - `~/.linkedin-jobs/linkedin_jobs.db` — SQLite database
 - `~/.linkedin-jobs/cookies.txt` — LinkedIn session cookies (written by `auth login`, 0600 perms)
 - `~/.linkedin-jobs/chrome-profile/` — managed Chrome profile for guided login (created on first `auth login` fallback)
 - `~/.linkedin-jobs/settings.yaml` — settings
-- `~/.linkedin-jobs/RESUME.md` — resume
 - `~/.linkedin-jobs/fx_cache.json` — FX rate cache (daily)
 
 Use `linkedin-jobs config path` to see the resolved locations.

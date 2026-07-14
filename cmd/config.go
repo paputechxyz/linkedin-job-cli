@@ -7,7 +7,6 @@ import (
 
 	"linkedin-jobs/internal/config"
 	"linkedin-jobs/internal/llm"
-	"linkedin-jobs/internal/profile"
 )
 
 var configCmd = &cobra.Command{
@@ -41,10 +40,9 @@ var configShowCmd = &cobra.Command{
 
 var configPathCmd = &cobra.Command{
 	Use:   "path",
-	Short: "Print the settings/resume file locations",
+	Short: "Print the settings/db file locations",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Printf("settings: %s\n", config.SettingsPath())
-		fmt.Printf("resume:   %s\n", profile.ResumePath())
 		fmt.Printf("db:       %s\n", loadCfg().DBPath)
 		return nil
 	},
