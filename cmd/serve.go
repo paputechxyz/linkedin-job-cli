@@ -251,8 +251,19 @@ func refererOrRoot(r *http.Request) string {
 // query runs either an FTS5 search (when "q" is present) or a filtered List.
 // Search is ranked by FTS relevance; the column filters and sort only apply in
 // list mode — this mirrors the CLI's split between `query` and `list`.
+//
+// When "q" looks like a LinkedIn job id (a non-empty digit string), a direct
+// id lookup is tried first — FTS5 doesn't index the id column, so a bare
+// numeric search would otherwise return nothing even when the job is stored.
+// On miss it falls through to FTS so a numeric phrase in the description still
+// matches.
 func (ws *webServer) query(q url.Values) ([]*models.JobPosting, string, error) {
 	if term := strings.TrimSpace(q.Get("q")); term != "" {
+		if isJobID(term) {
+			if j, err := ws.st.Get(term); err == nil && j != nil {
+				return []*models.JobPosting{j}, "id", nil
+			}
+		}
 		jobs, err := ws.st.SearchFTS(ftsExpr([]string{term}, nil), 0)
 		return jobs, "search", err
 	}
@@ -354,6 +365,22 @@ func softPage(s string) int {
 		return 1
 	}
 	return n
+}
+
+// isJobID reports whether s looks like a LinkedIn job posting id — a digit
+// string of at least 5 characters (real ids are typically 9–11 digits). Used
+// to short-circuit the search box to a direct id lookup, since FTS5 doesn't
+// index the id column.
+func isJobID(s string) bool {
+	if len(s) < 5 {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // toQueryValues reconstructs url.Values from the form state, mirroring the
@@ -1403,8 +1430,8 @@ const pageHTML = `<!DOCTYPE html>
     <form class="filters" method="get" action="/" aria-label="Filters">
       <div class="filters-row">
         <div class="field field-grow">
-          <label for="q">Search (full-text)</label>
-          <input type="search" id="q" name="q" value="{{.F.Q}}" placeholder="title, keyword, stack…">
+          <label for="q">Search (full-text or job id)</label>
+          <input type="search" id="q" name="q" value="{{.F.Q}}" placeholder="title, keyword, stack… or paste a job id">
         </div>
         <div class="field field-1">
           <label for="company">Company</label>
@@ -1490,12 +1517,13 @@ const pageHTML = `<!DOCTYPE html>
 
     {{if .Error}}<div class="err">Search error: {{.Error}}<br><em>Tip: wrap multi-word phrases in quotes, e.g. "staff engineer".</em></div>{{end}}
     {{if eq .Mode "search"}}<div class="notice">Showing full-text search results ranked by relevance. Column filters and sort are ignored while searching — clear the search box to filter and sort.</div>{{end}}
+    {{if eq .Mode "id"}}<div class="notice">Showing the stored job with id <strong>{{.F.Q}}</strong>. Clear the search box to filter and sort.</div>{{end}}
 
     <div class="result-count">
       {{if gt .Pagination.Pages 1}}
-        Showing <strong>{{.Pagination.From}}–{{.Pagination.To}}</strong> of <strong>{{.N}}</strong> job{{if ne .N 1}}s{{end}}{{if eq .Mode "search"}} matching "{{.F.Q}}"{{end}}
+        Showing <strong>{{.Pagination.From}}–{{.Pagination.To}}</strong> of <strong>{{.N}}</strong> job{{if ne .N 1}}s{{end}}{{if eq .Mode "search"}} matching "{{.F.Q}}"{{else if eq .Mode "id"}} with id "{{.F.Q}}"{{end}}
       {{else}}
-        <strong>{{.N}}</strong> job{{if ne .N 1}}s{{end}}{{if eq .Mode "search"}} matching "{{.F.Q}}"{{end}}
+        <strong>{{.N}}</strong> job{{if ne .N 1}}s{{end}}{{if eq .Mode "search"}} matching "{{.F.Q}}"{{else if eq .Mode "id"}} with id "{{.F.Q}}"{{end}}
       {{end}}
       <span class="legend" aria-hidden="true">
         <span><i style="background:var(--score-high)"></i>HIGH ≥70</span>
