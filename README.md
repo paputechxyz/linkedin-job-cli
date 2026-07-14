@@ -63,8 +63,28 @@ operations, workflow recipes, and common pitfalls.
 
 `recommended` and `url` use your LinkedIn session. `search` works without it.
 
-Export your LinkedIn cookies (e.g. a browser cookie-exporter extension, or
-DevTools → Network → the request `Cookie` header) and point the CLI at them:
+### Easy way: `auth login` (macOS + Chrome)
+
+If you're already logged into LinkedIn in Chrome, the CLI can grab your session
+automatically — no cookie extensions, no DevTools:
+
+```bash
+linkedin-jobs auth login
+```
+
+It first reads cookies silently from your Chrome cookie store (no browser window
+opens). If that fails — you're not logged in, or the cookies are stale — it
+launches a Chrome window so you can log in normally, then captures the session.
+The first `security` keychain prompt is expected; click **Always Allow** so
+future runs are silent.
+
+The captured session is written to `~/.linkedin-jobs/cookies.txt` (or the path
+`LJ_COOKIES_FILE` points at if set).
+
+### Manual way: env vars (headless, agent, CI)
+
+For headless use where no browser is available, export your cookies manually
+and point the CLI at them:
 
 ```bash
 export LJ_COOKIES_FILE=/path/to/cookies.txt   # raw "name=val; name=val" header
@@ -73,10 +93,10 @@ export LJ_COOKIES_FILE=/path/to/cookies.txt   # raw "name=val; name=val" header
 
 The `csrf-token` is derived automatically from your `JSESSIONID` cookie.
 
-Verify your session is usable (checks `li_at` + `JSESSIONID` are present):
+### Verify
 
 ```bash
-linkedin-jobs auth status
+linkedin-jobs auth status      # checks li_at + JSESSIONID are present and valid
 ```
 
 ## Usage
@@ -362,7 +382,7 @@ scores reflect your actual context or ran context-free.
 main.go
 cmd/                       cobra commands (recommended, search, list, enrich, score, profile, config, hr, …)
 internal/
-  auth/                    session resolution (cookie env/file) + csrf
+  auth/                    session resolution (cookie env/file/browser), Chrome cookie-store reader, guided browser login, csrf
   config/                  env-based config + YAML settings
   filter/                  deterministic hard preference filter
   hr/                      outreach research: best contact + ranked list for a job

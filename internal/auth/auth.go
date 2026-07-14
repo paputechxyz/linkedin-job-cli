@@ -3,6 +3,8 @@ package auth
 import (
 	"errors"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	"linkedin-jobs/internal/config"
@@ -75,7 +77,50 @@ func Resolve(cfg config.Config) (*Session, error) {
 		}
 	}
 
+	// 3. default cookies file (~/.linkedin-jobs/cookies.txt) — written by `auth login`
+	if hdr, err := readCookiesFile(DefaultCookiesPath()); err == nil && hdr != "" {
+		return &Session{
+			CookieHeader: hdr,
+			CSRFToken:    csrfFromCookieHeader(hdr),
+			Source:       "login",
+		}, nil
+	}
+
 	return nil, ErrNoSession
+}
+
+// DefaultCookiesPath returns the default location for the cookies file written
+// by `auth login`: ~/.linkedin-jobs/cookies.txt. This is the third resolution
+// source in Resolve (after LJ_COOKIE and LJ_COOKIES_FILE).
+func DefaultCookiesPath() string {
+	return filepath.Join(config.HomeDir(), "cookies.txt")
+}
+
+// AssembleCookieHeader builds a raw "name=value; name=value" Cookie header from
+// a cookie map. Keys are sorted for deterministic output.
+func AssembleCookieHeader(cookies map[string]string) string {
+	keys := make([]string, 0, len(cookies))
+	for k := range cookies {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, k+"="+cookies[k])
+	}
+	return strings.Join(parts, "; ")
+}
+
+// WriteCookiesFile writes a raw cookie header to path, creating the parent
+// directory if needed. The file is created with 0600 permissions so only the
+// owner can read the session cookies.
+func WriteCookiesFile(path, header string) error {
+	if dir := filepath.Dir(path); dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	return os.WriteFile(path, []byte(header), 0o600)
 }
 
 // csrfFromCookieHeader extracts the csrf-token value from JSESSIONID. LinkedIn's
