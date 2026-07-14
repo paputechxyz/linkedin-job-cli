@@ -88,10 +88,10 @@ Scoring is optional — all read commands work without an LLM key. When scoring 
 ### Provider Resolution (first match wins)
 
 1. `LJ_LLM_API_KEY` or `OPENAI_API_KEY` env var
-2. `ANTHROPIC_API_KEY` env var (targets Anthropic's OpenAI-compatible endpoint)
+2. `ANTHROPIC_API_KEY` env var — Anthropic's endpoint by default; when `ANTHROPIC_BASE_URL` redirects it (e.g. an opencode/Hermes session pointing it at z.ai), the CLI honors the redirected endpoint and takes the model from opencode config
 3. opencode's stored credentials (reuses the provider configured in opencode, e.g. GLM Coding Plan key → `glm-5.2`)
 
-Explicit env vars win over opencode discovery, so you can override the discovered provider.
+Explicit env vars win over opencode discovery, so you can override the discovered provider. When you invoke this CLI from inside an opencode/Hermes session, no `LJ_LLM_*` is needed — the session injects `ANTHROPIC_API_KEY` + `ANTHROPIC_BASE_URL`, and the CLI reuses that session LLM. Set `LJ_LLM_*` to override it.
 
 ### LLM Settings
 

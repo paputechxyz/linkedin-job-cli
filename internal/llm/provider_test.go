@@ -14,6 +14,7 @@ func clearProviderEnv(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("ANTHROPIC_BASE_URL", "")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("LJ_LLM_API_KEY", "")
 	if runtime.GOOS != "windows" {
@@ -111,6 +112,55 @@ func TestResolve_FromAnthropicEnv(t *testing.T) {
 	}
 	if p.Headers["anthropic-version"] == "" {
 		t.Errorf("anthropic-version header missing")
+	}
+}
+
+// TestResolve_AnthropicEnvRedirect confirms that when an opencode/Hermes
+// session injects ANTHROPIC_BASE_URL pointing at a redirected OpenAI-compatible
+// endpoint, the CLI honors that endpoint and derives the model from opencode
+// config instead of forcing the hardcoded Anthropic preset at api.anthropic.com.
+func TestResolve_AnthropicEnvRedirect(t *testing.T) {
+	home := clearProviderEnv(t)
+	t.Setenv("ANTHROPIC_API_KEY", "redirected-key")
+	t.Setenv("ANTHROPIC_BASE_URL", "https://api.z.ai/api/coding/paas/v4")
+	writeJSON(t, filepath.Join(home, ".config", "opencode", "opencode.json"),
+		map[string]string{"model": "zai-coding-plan/glm-5.2"})
+	p, err := Resolve(config.Config{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if p.Source != "anthropic-env" {
+		t.Errorf("Source=%q want anthropic-env", p.Source)
+	}
+	if p.BaseURL != "https://api.z.ai/api/coding/paas/v4" {
+		t.Errorf("BaseURL=%q, want redirected endpoint", p.BaseURL)
+	}
+	if p.APIKey != "redirected-key" {
+		t.Errorf("APIKey=%q want redirected-key", p.APIKey)
+	}
+	if p.Model != "glm-5.2" {
+		t.Errorf("Model=%q want glm-5.2 from opencode config", p.Model)
+	}
+	if _, ok := p.Headers["x-api-key"]; ok {
+		t.Errorf("redirected OpenAI-compatible endpoint must not carry the Anthropic x-api-key header")
+	}
+}
+
+// TestResolve_AnthropicEnvRedirectNoOpencodeModel confirms the redirect arm
+// falls back to a default model when opencode config is absent.
+func TestResolve_AnthropicEnvRedirectNoOpencodeModel(t *testing.T) {
+	clearProviderEnv(t)
+	t.Setenv("ANTHROPIC_API_KEY", "k")
+	t.Setenv("ANTHROPIC_BASE_URL", "https://example.com/v1")
+	p, err := Resolve(config.Config{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if p.BaseURL != "https://example.com/v1" {
+		t.Errorf("BaseURL=%q want https://example.com/v1", p.BaseURL)
+	}
+	if p.Model != defaultModel {
+		t.Errorf("Model=%q want default %q", p.Model, defaultModel)
 	}
 }
 
