@@ -33,16 +33,45 @@ Wraps the `linkedin-jobs` Go CLI so the Hermes agent can fetch, score, and manag
 
 ## Prerequisites
 
-Run these checks before any domain command on first use. The CLI binary must be built and on `PATH`.
+The skill installs the CLI itself — **no repo checkout needed**. Run the First-Time Setup flow on first use (or any time `doctor` reports gaps); use the mid-session re-checks once setup is done.
 
-1. **Binary check:** `linkedin-jobs version` — if missing, run `just build` in the repo at `~/Documents/workspace.nosync/personal/linkedin-job-cli`.
-2. **Doctor check (primary):** `linkedin-jobs doctor` — single command that diagnoses LLM provider, resume, settings.yaml completeness, AND prints every `LJ_*` env var (set or unset, secrets redacted). This is the canonical way to verify the LinkedIn cookie is wired up: look for the `LJ_COOKIES_FILE` line under `== Environment ==`. If it shows `(unset)` AND the default cookies file (`~/.linkedin-jobs/cookies.txt`) doesn't exist, the session is missing — see Pitfall #1 before doing anything else.
-3. **Auth check (secondary, optional):** `linkedin-jobs auth status` — quick boolean ("Session available" vs "No session") once you already know the session is set up. `doctor` is preferred for first-time setup; `auth status` is fine for a fast re-check mid-session.
-4. **Profile check:** `linkedin-jobs config path` — shows where `RESUME.md` and `settings.yaml` live. `linkedin-jobs profile show` to see the current resume + preference knobs.
+### First-Time Setup
 
-**Session setup:** If no session is available, tell the user to run `linkedin-jobs auth login` on their Mac — it captures cookies from Chrome automatically (silent read or guided browser login). See `references/auth-config.md` → "Browser-based login" for the full flow. The manual env-var path (`LJ_COOKIES_FILE` / `LJ_COOKIE`) is for headless, CI, and non-macOS use.
+Ordered flow. Stop at the first unresolved gate and guide the user through it before continuing.
 
-**Cookie resolution priority** (first match wins): `LJ_COOKIE` (raw header string) → `LJ_COOKIES_FILE` (path to a file) → `~/.linkedin-jobs/cookies.txt` (default, written by `auth login`). Never assume a path — always verify with `doctor`.
+1. **Ensure the CLI is installed.** Check `command -v linkedin-jobs`.
+   - **Missing → auto-install the latest release binary** (the skill can do this for the user; no repo needed):
+     ```
+     bash ${HERMES_SKILL_DIR}/scripts/install-cli.sh
+     ```
+     The script detects OS/arch, downloads the matching asset from GitHub Releases into `~/.local/bin`, and verifies. If it warns that `~/.local/bin` is not on `PATH`, tell the user to add `export PATH="$HOME/.local/bin:$PATH"` to their shell profile and start a new shell/session — then re-run `command -v linkedin-jobs`. **Do not proceed until `linkedin-jobs version` succeeds.** (If the download 404s, no release has been published yet — see `references/auth-config.md` / ask the maintainer to run `just release`.)
+   - Confirm: `linkedin-jobs version`.
+
+2. **Diagnose everything:** `linkedin-jobs doctor`. One command reports the LLM provider, resume, `settings.yaml` completeness, and every `LJ_*` env var (set/unset, secrets redacted). It is the single source of truth for what's configured. To verify the LinkedIn session, look for the `LJ_COOKIES_FILE` line under `== Environment ==`.
+
+3. **Configure the LLM (only if `doctor` reports no provider).** Scoring is optional — every read command works without an LLM — but fit scoring needs a provider. Resolution (first match wins): `LJ_LLM_API_KEY` / `OPENAI_API_KEY` → `ANTHROPIC_API_KEY` → opencode/Hermes session credentials. **When invoked inside an opencode/Hermes session, no `LJ_LLM_*` is needed** — the session injects `ANTHROPIC_API_KEY` + `ANTHROPIC_BASE_URL` and the CLI reuses that session LLM. To set explicitly, have the user export in their shell:
+   ```
+   export LJ_LLM_API_KEY=sk-...                      # OpenAI-compatible key
+   export LJ_LLM_MODEL=gpt-4o-mini                   # optional
+   export LJ_LLM_BASE_URL=https://api.openai.com/v1  # optional (Ollama/vLLM/Azure for self-hosted)
+   ```
+   Re-run `linkedin-jobs config show` to confirm the resolved provider (key redacted). See `references/auth-config.md` → "LLM Configuration".
+
+4. **Set up the LinkedIn session (only if `recommended` or `url` will be used).** From the `LJ_COOKIES_FILE` line in `doctor` output: if it shows `(unset)` AND the default `~/.linkedin-jobs/cookies.txt` doesn't exist, the session is missing.
+   - **macOS + Chrome (preferred):** tell the user to run `linkedin-jobs auth login`. It reads cookies silently from Chrome (or launches a guided login window) and writes `~/.linkedin-jobs/cookies.txt`. The first run triggers a macOS keychain prompt — tell the user to click "Always Allow". After they confirm it ran, re-check with `linkedin-jobs auth status` (should show "Session available").
+   - **Headless / non-macOS / CI:** the user exports `LJ_COOKIES_FILE=/path/to/cookies.txt` (raw `Cookie:` header or Netscape `cookies.txt` format) or `LJ_COOKIE="li_at=...; JSESSIONID=..."`.
+   - **Cookie resolution priority** (first match wins): `LJ_COOKIE` → `LJ_COOKIES_FILE` → `~/.linkedin-jobs/cookies.txt` (default, written by `auth login`). Never assume a path — always verify with `doctor`.
+   - **Do NOT silently fall back to anonymous `search`** when the session is missing — that returns irrelevant global results. See Pitfall #1.
+
+5. **(Optional) Add a resume + preference knobs.** `linkedin-jobs config path` shows where `RESUME.md` and `settings.yaml` live; `linkedin-jobs profile resume` pastes a resume (Ctrl-D to end); `linkedin-jobs profile show` shows resume + knobs. Scoring works without a resume but is much better with one.
+
+6. **Re-run `linkedin-jobs doctor`** to confirm no blocking issues, then proceed to the user's request.
+
+### Mid-session re-checks
+
+Once first-time setup is done: `linkedin-jobs auth status` is a fast boolean re-check ("Session available" vs "No session"); `linkedin-jobs config show` shows the resolved provider; `linkedin-jobs config path` shows file locations. Use `doctor` for setup, these for quick confirmation.
+
+**Security:** LinkedIn session cookies enable full account takeover. Use `doctor` / `auth status` for session checks only — never `cat`, `echo`, or transmit `LJ_COOKIE` or the cookies file contents. See `references/auth-config.md`.
 
 ## Command Map
 

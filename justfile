@@ -50,6 +50,90 @@ build:
     go build -ldflags "$LDFLAGS" -o linkedin-jobs .
     go install -ldflags "$LDFLAGS" .
 
+# Release the current VERSION as a GitHub release with cross-compiled binaries.
+#
+# Flow: bump/sync VERSION via `just build` → refuse on re-tag or dirty tree
+# (except the build-managed files) → cross-compile static binaries → commit the
+# release metadata → git tag + push → `gh release create` with all assets.
+#
+# Requires: `gh` authenticated with push access to paputechxyz/linkedin-job-cli.
+release:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    REPO="paputechxyz/linkedin-job-cli"
+
+    # Ensure VERSION is current and the skill version mirrors it.
+    just build >/dev/null
+
+    VERSION="$(cat VERSION)"
+    TAG="v${VERSION}"
+    echo "-> releasing $TAG"
+
+    # Refuse to re-release an existing tag.
+    if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+        echo "-> tag ${TAG} already exists. Make source changes (which bump" >&2
+        echo "   VERSION via just build) before releasing." >&2
+        exit 1
+    fi
+
+    # Refuse if there is uncommitted work OUTSIDE the build-managed files.
+    # VERSION + hermes-skill/SKILL.md are committed below as part of the release;
+    # any other dirty file means the released binary would not match its tag.
+    OTHER_DIRTY=""
+    while IFS= read -r line; do
+        path="${line:3}"
+        case "$path" in
+            VERSION|hermes-skill/SKILL.md) ;;
+            *) OTHER_DIRTY="${OTHER_DIRTY}${line}"$'\n' ;;
+        esac
+    done < <(git status --porcelain --untracked-files=no)
+    if [ -n "$OTHER_DIRTY" ]; then
+        echo "-> working tree has uncommitted changes outside VERSION/SKILL.md:" >&2
+        printf '%s' "$OTHER_DIRTY" | sed 's/^/    /' >&2
+        echo "   commit them first, then run 'just release'." >&2
+        exit 1
+    fi
+
+    # Cross-compile static binaries. The SQLite driver is pure Go
+    # (modernc.org/sqlite), so CGO can be disabled for portable binaries.
+    export CGO_ENABLED=0
+    rm -rf dist && mkdir -p dist
+
+    build_one() {
+        local goos="$1" goarch="$2" ext=""
+        [ "$goos" = "windows" ] && ext=".exe"
+        local out="dist/linkedin-jobs_${goos}_${goarch}${ext}"
+        printf '  -> %s\n' "$out"
+        GOOS="$goos" GOARCH="$goarch" go build \
+            -trimpath \
+            -ldflags "-X linkedin-jobs/cmd.Version=${VERSION}" \
+            -o "$out" .
+    }
+
+    build_one darwin arm64
+    build_one darwin amd64
+    build_one linux   amd64
+    build_one linux   arm64
+    build_one windows amd64
+
+    # Commit the release metadata (if the build touched it), then tag + push.
+    git add VERSION hermes-skill/SKILL.md
+    if ! git diff --cached --quiet; then
+        git commit -m "release ${TAG}"
+    fi
+    git tag "${TAG}"
+    git push origin HEAD "${TAG}"
+
+    # Publish the GitHub release with all binary assets.
+    gh release create "${TAG}" \
+        --repo "${REPO}" \
+        --title "${TAG}" \
+        --generate-notes \
+        dist/linkedin-jobs_*
+
+    echo "-> released ${TAG}: https://github.com/${REPO}/releases/tag/${TAG}"
+
 # Remove the linkedin-jobs binary from $GOBIN (or $GOPATH/bin).
 uninstall:
     #!/usr/bin/env bash
