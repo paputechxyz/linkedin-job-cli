@@ -18,12 +18,14 @@ func PassesHardFilter(job *models.JobPosting, p *models.Profile) bool {
 	}
 	blob := strings.ToLower(job.Location + " " + job.RemoteType)
 
-	// Work arrangement: reject when the job matches none of the preferred
-	// arrangements. A preference containing "remote" rejects jobs with no
-	// "remote"/"hybrid" signal; preferences are matched as case-insensitive
-	// substrings of the job blob.
-	if len(p.PrefWorkArrangement) > 0 && !arrangementMatches(blob, p.PrefWorkArrangement) {
-		return false
+	// Work arrangement: reject when the user has a preference and the job's
+	// detected arrangement doesn't match (including when the job has no
+	// arrangement signal). When no preference (empty or all-three), skip.
+	if p.HasWorkArrangementPreference() {
+		arrangement := job.DetectArrangement()
+		if arrangement == "" || !p.PrefersArrangement(arrangement) {
+			return false
+		}
 	}
 
 	// Salary floor: only reject when the job actually has a salary below it.
@@ -43,22 +45,6 @@ func PassesHardFilter(job *models.JobPosting, p *models.Profile) bool {
 		}
 	}
 	return true
-}
-
-// arrangementMatches reports whether the job blob contains any of the preferred
-// work-arrangement tokens (e.g. remote, hybrid). Case-insensitive substring
-// match, mirroring locationMatches.
-func arrangementMatches(jobBlob string, prefs []string) bool {
-	for _, pref := range prefs {
-		t := strings.ToLower(strings.TrimSpace(pref))
-		if t == "" {
-			continue
-		}
-		if strings.Contains(jobBlob, t) {
-			return true
-		}
-	}
-	return false
 }
 
 func locationMatches(jobBlob string, prefLocations []string) bool {
