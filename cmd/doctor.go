@@ -117,12 +117,8 @@ var doctorEnvKeys = []string{
 
 var settingsTopSchema = map[string][]string{
 	"filter":  {"auto_filter"},
-	"scoring": {"reason_threshold", "baseline", "deal_breaker_cap", "weights"},
+	"scoring": {"reason_threshold", "rubrics"},
 	"profile": {"work_arrangement", "min_salary", "min_salary_currency", "locations", "preferred_tech", "avoided_tech"},
-}
-
-var weightsKeys = []string{
-	"salary", "tech_overlap", "startup", "ai_intensity", "compensation_extras", "work_arrangement",
 }
 
 // redactEnv prints the value verbatim for clearly non-secret keys (paths, URLs,
@@ -172,12 +168,10 @@ func checkSettings(path string) ([]string, error) {
 			}
 		}
 		if section == "scoring" {
-			if w, ok := sub["weights"].(map[string]interface{}); ok {
-				for _, wk := range weightsKeys {
-					if _, present := w[wk]; !present {
-						missing = append(missing, "scoring.weights."+wk)
-					}
-				}
+			// rubrics is the load-bearing key now; flag an empty list too,
+			// since defaults only inject the 3 system rubrics on load.
+			if r, ok := sub["rubrics"].([]interface{}); ok && len(r) == 0 {
+				missing = append(missing, "scoring.rubrics (empty — run 'setup')")
 			}
 		}
 	}
