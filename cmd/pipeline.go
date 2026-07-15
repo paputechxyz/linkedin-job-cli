@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"linkedin-jobs/internal/config"
@@ -100,20 +101,23 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 		}
 	}
 	rubrics := settings.Scoring.Rubrics
-	scoredN, dupsN := 0, 0
+	// Partition into jobs that need LLM scoring vs. dedup-skipped.
+	var toScore []*models.JobPosting
+	dupsN := 0
 	for _, j := range jobs {
 		if !opts.forceOverwrite && st.IsDuplicateEnriched(j.ContentHash) {
 			dupsN++
 			continue
 		}
-		if provider != nil {
-			paceLLM(opts.scoreDelay, scoredN)
-			if err := enrichAndScoreJob(st, j, profileData, provider, rubrics); err != nil {
+		toScore = append(toScore, j)
+	}
+	scoredN := 0
+	if provider != nil && len(toScore) > 0 {
+		scoredN = enrichAndScoreBatch(st, toScore, profileData, provider, rubrics, resolveLLMConcurrency(), opts.scoreDelay, func(idx, total int, j *models.JobPosting, err error) {
+			if err != nil {
 				fmt.Fprintf(os.Stderr, "  ! %s: %v\n", j.Title, err)
-			} else {
-				scoredN++
 			}
-		}
+		})
 	}
 	if scoredN > 0 || dupsN > 0 {
 		fmt.Fprintf(os.Stderr, "Processed: %d scored, %d duplicates skipped.\n", scoredN, dupsN)
@@ -381,10 +385,72 @@ func resolveLLMDelay() float64 {
 	return config.Load().LLMDelaySeconds
 }
 
+// resolveLLMConcurrency reads the max number of jobs enriched+scored in
+// parallel per batch. Set LJ_LLM_CONCURRENCY (default 5). 1 reverts to
+// sequential processing.
+func resolveLLMConcurrency() int {
+	return config.Load().LLMConcurrency
+}
+
 // paceLLM sleeps for delay when callIdx > 0, i.e. between successive LLM calls
 // rather than before the first one. Pass the count of calls already made.
 func paceLLM(delay float64, callIdx int) {
 	if callIdx > 0 && delay > 0 {
 		time.Sleep(time.Duration(delay * float64(time.Second)))
 	}
+}
+
+// enrichAndScoreBatch enriches + scores jobs concurrently in batches of up to
+// `concurrency` workers. The LLM HTTP call dominates each job's wall time;
+// SQLite writes serialize safely through the store's single connection
+// (SetMaxOpenConns(1)), so concurrent goroutines only contend on the network.
+// paceDelay (seconds) is applied between batches, not within one — a batch of
+// 5 fires 5 requests at once, then waits for all to finish, then paces. Returns
+// the count of jobs that scored successfully. onResult (if non-nil) is called
+// serially after each job completes (under a mutex, so stderr output is safe),
+// receiving the job's index in the input slice plus any error.
+func enrichAndScoreBatch(
+	st *store.Store,
+	jobs []*models.JobPosting,
+	prof *models.Profile,
+	provider *llm.Provider,
+	rubrics []config.Rubric,
+	concurrency int,
+	paceDelay float64,
+	onResult func(idx, total int, j *models.JobPosting, err error),
+) int {
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	total := len(jobs)
+	var scored int
+	var mu sync.Mutex
+	for start := 0; start < total; start += concurrency {
+		if start > 0 {
+			paceLLM(paceDelay, 1)
+		}
+		end := start + concurrency
+		if end > total {
+			end = total
+		}
+		var wg sync.WaitGroup
+		for i := start; i < end; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				j := jobs[idx]
+				err := enrichAndScoreJob(st, j, prof, provider, rubrics)
+				mu.Lock()
+				if err == nil {
+					scored++
+				}
+				if onResult != nil {
+					onResult(idx, total, j, err)
+				}
+				mu.Unlock()
+			}(i)
+		}
+		wg.Wait()
+	}
+	return scored
 }
