@@ -18,18 +18,19 @@ offline full-text search.
 - **Salary parsing** — handles `CA$173,000.00 - CA$220,000.00`, `$212,500/yr`,
   `$120k`, USD/CAD.
 - **LLM enrichment + fit scoring** — OpenAI-compatible API extracts structured
-  facts and scores each job 0-100 against your preferences.
+  facts and rates each job against your rubrics, producing a 0-100 fit score.
 - **SQLite + FTS5** — every fetched job is stored and instantly searchable
   offline across title, company, and description.
 - **Agent-native** — every read command supports `--json`.
 - **Pipeline tracking** — tag jobs `saved` / `applied` / `rejected` with notes.
-- **Fit scoring** — each job is enriched and scored 0-100 against your
-  preference knobs in a single LLM call, with a fit reason for strong matches.
-- **Token-frugal** — duplicates (content-hash) and clear preference mismatches
-  are detected with zero LLM calls; only genuine new candidates are scored.
-- **Profile** — preference knobs live under the `profile:` section of
-  `settings.yaml`; those knobs also drive a deterministic hard filter that
-  auto-tags non-matches.
+- **Dynamic rubric scoring** — write a preferences paragraph once; the LLM
+  extracts your rubrics (plus system defaults for salary, work arrangement, and
+  location). Each job is rated 1-5 per rubric and combined into one normalized
+  0-100 weighted average, with a per-rubric `fit_reason` breakdown.
+- **Tunable** — every rubric weight is editable (1-10, default 5) in
+  `settings.yaml`; `amend` changes a few rubrics, `reset` starts fresh.
+- **Profile** — salary floor, locations, and work arrangement live under the
+  `profile:` section of `settings.yaml` and feed the system rubrics.
 - **Export** — JSON / CSV / Markdown.
 
 ## Install
@@ -327,53 +328,48 @@ Editable from the browser: job **status** (`new`/`viewed`/`saved`/`applied`/
 `rejected`) and **hard delete**. Every other field stays read-only. Writes are
 POST endpoints guarded by a per-session CSRF token.
 
-### Profile + fit scoring
+### Rubric scoring
 
-Set preference knobs once; they drive both scoring and filtering. `settings.yaml`
-lives in `~/.linkedin-jobs/` (override with `$LJ_SETTINGS_FILE`). Preference
-knobs live under the `profile:` section of `settings.yaml`. Run
-`linkedin-jobs setup` for an interactive walk-through, or edit by hand:
+Fit scores are driven by a **rubric set** you generate once from a preferences
+paragraph. Run `linkedin-jobs setup` and describe what you want in a job (work
+arrangement, salary, location, tech, perks, deal-breakers). The LLM extracts
+your criteria as **dynamic rubrics** and merges them onto three **system
+rubrics** that always apply:
 
-- `settings.yaml` → `profile:` — structured knobs for the hard filter + rubric:
+- **System rubrics** (computed deterministically in Go): `salary` (vs your
+  floor), `work_arrangement` (remote/hybrid/onsite match), `location` (preferred
+  location match).
+- **Dynamic rubrics** (rated 1-5 by the LLM per job): everything else — e.g.
+  `preferred_tech`, `avoided_tech`, `free_snacks`, `ai_intensity`. List-type
+  criteria (preferred/avoided tech) collapse into one rubric carrying `items`.
 
-  ```yaml
-  profile:
-    work_arrangement: [remote, hybrid]
-    min_salary: 200000
-    min_salary_currency: CAD
-    locations: [Remote, Toronto]
-    preferred_tech: [Java, Python, Go, Postgres, AWS]
-    avoided_tech: [C#, .NET, Ruby]   # caps score at scoring.deal_breaker_cap
-  ```
+Each rubric has a **weight** (1-10, default 5) tunable in `settings.yaml`. The
+final score is a weight-normalized average of every rubric's 1-5 rating mapped
+to 0-100 — so a job rated 4/5 across the board scores ~80 whether you have 3
+rubrics or 15. **There are no hard caps**: a job matching an avoided tech just
+gets a low rating on that rubric. `fit_reason` shows the per-rubric breakdown,
+e.g. `salary 4/5 (w5), preferred_tech 5/5 (w5), avoided_tech 1/5 (w5) | total 73`.
 
 ```bash
-linkedin-jobs profile show            # show active knobs
-# edit preference knobs by hand in settings.yaml (profile: section)
+linkedin-jobs setup          # paragraph → rubrics (+ system defaults)
+linkedin-jobs amend          # add/change a few rubrics; unmentioned ones preserved
+linkedin-jobs reset          # wipe all rubrics and restart setup
+linkedin-jobs rescore-all    # re-score every stored job against the current rubrics
 ```
 
-When you fetch jobs (`recommended` / `search` / `url` / `watch`), a batch-level
-pre-score gate runs first (see [below](#pre-score-gate)), then each surviving job
-flows through five gates — only the last costs an LLM token:
-
-1. **Persist full description** (always saved, for dedup memory).
-2. **Dedup** — a content-hash of company + title + full description. Re-fetched
-   or cross-source duplicates skip scoring entirely (zero tokens).
-3. **Hard filter** — a deterministic check using only pre-LLM fields (work
-   arrangement, salary floor, preferred locations). Clear mismatches are
-   score-capped (visible, but ranked low) with a recorded cap reason.
-4. **Enrich + score** — one OpenAI-compatible call per genuine new candidate
-   fills structured fields (company overview, industry, tech stack, seniority,
-   employment type, years, company size/stage, founding role, visa, work
-   arrangement) and a 0-100 `fit_score`, plus a `fit_reason` when score ≥ 70.
-5. **Display** — sorted/filtered output.
+The structured inputs the system rubrics need live under `profile:` in
+`settings.yaml` (salary floor, currency, locations, work arrangement, tech
+lists) — `setup` fills them from your paragraph and prompts for any required
+number (like a salary floor) it omitted.
 
 ```bash
+linkedin-jobs profile show            # show active profile knobs
 linkedin-jobs enrich 4430749190       # enrich+score one job
 linkedin-jobs enrich --all            # backfill all unenriched jobs
-linkedin-jobs rescore-all          # re-enrich + re-score every job after a profile edit
 ```
 
-Token-frugality flag: `--no-score` (skip the LLM).
+Every fetched job is enriched and scored (one LLM call per new candidate);
+duplicates are skipped by content-hash.
 
 ### Pre-score gate
 
@@ -411,25 +407,10 @@ with the title, company, and a human-readable reason (e.g.
 linkedin-jobs recommended --remote --hybrid --min-salary 200k --salary-currency CAD
 ```
 
-#### Pre-score gate vs. `settings.yaml` profile knobs
-
-Both are deterministic and LLM-free, but they differ in scope, effect, and
-persistence. The pre-score gate **drops** jobs; the profile knobs **score-cap**
-them (the "hard filter" in step 3 of the pipeline above).
-
-| Aspect              | Pre-score gate (CLI flags)                              | `settings.yaml` `profile:` knobs                          |
-|---------------------|---------------------------------------------------------|-----------------------------------------------------------|
-| Trigger             | Per-invocation flags                                    | Persistent; applied every run                             |
-| Effect on mismatch  | **Drops** — never stored, never scored                  | **Caps score** — stored + visible, ranked low (cap reason) |
-| When it runs        | Batch-level, before persist                             | Per-job, after persist; also feeds the rubric scorer      |
-| Job with no salary  | Dropped (when a floor is set)                           | Passes ("unknown is not a mismatch")                      |
-| Scope               | Work arrangement, salary floor                          | + locations, preferred/avoided tech                       |
-| Disable             | Omit the flag                                           | `filter.auto_filter: false`                              |
-
-Reach for the **pre-score gate** for one-off hard cuts ("only remote jobs paying
-≥ CA$200k *this run*"). Reach for **profile knobs** for standing preferences you
-want applied every run, where mismatches stay visible but sink to the bottom of
-your shortlist.
+The pre-score gate **drops** jobs for this run; your rubrics and `profile:`
+knobs **score** them. Reach for the gate for one-off hard cuts ("only remote
+jobs paying ≥ CA$200k *this run*"); reach for rubrics/profile knobs for standing
+preferences you want applied every run.
 
 ### LLM configuration
 
@@ -467,17 +448,33 @@ Run `linkedin-jobs setup` to create it interactively. Everything (DB, settings,
 FX cache) lives under `~/.linkedin-jobs/`:
 
 ```yaml
-filter:
-  auto_filter: true              # set false to disable the hard filter
 scoring:
-  reason_threshold: 70           # fit_reason included at/above this score
-profile:                         # preference knobs for the hard filter + rubric
+  rubrics:                       # weight 1-10 (default 5); system rubrics are computed in Go,
+                                 # dynamic rubrics are rated 1-5 by the LLM. Run `setup` to generate.
+    - id: salary
+      kind: system
+      weight: 5
+    - id: work_arrangement
+      kind: system
+      weight: 5
+    - id: preferred_tech
+      kind: dynamic
+      weight: 5
+      items: [Java, Python, Go]
+    - id: avoided_tech
+      kind: dynamic
+      weight: 5
+      items: [C#, .NET]
+    - id: location               # dynamic: LLM rates jurisdiction/proximity fit
+      kind: dynamic              # from the description, e.g. "remote flexible anywhere"
+      weight: 5
+      description: "Hybrid must be in Toronto/Mississauga; remote is flexible"
+profile:                         # structured inputs for the system rubrics
   work_arrangement: [remote, hybrid]
   min_salary: 200000
   min_salary_currency: CAD
-  locations: [Remote, Toronto]
-  preferred_tech: [Java, Python, Go, Postgres, AWS]
-  avoided_tech: [C#, .NET, Ruby]   # caps score at scoring.deal_breaker_cap
+  preferred_tech: [Java, Python, Go]
+  avoided_tech: [C#, .NET, Ruby]
 ```
 
 When scoring runs, the CLI prints which profile context it loaded (knobs from

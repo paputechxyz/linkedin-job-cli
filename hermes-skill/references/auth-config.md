@@ -118,31 +118,36 @@ linkedin-jobs doctor          # diagnose provider + settings completeness
 Optional `settings.yaml` in `~/.linkedin-jobs/` (override with `$LJ_SETTINGS_FILE`):
 
 ```yaml
-filter:
-  auto_filter: true              # false = always call LLM (no deterministic cap)
-
 scoring:
-  reason_threshold: 70           # fit_reason emitted at/above this score
-  baseline: 60                   # starting score after passing hard filter
-  deal_breaker_cap: 30           # hard floor when an avoided_tech token is matched
-  weights:
-    salary: 6
-    tech_overlap: 4
-    startup: 5
-    ai_intensity: 3
-    compensation_extras: 3
-    work_arrangement: 6
+  rubrics:                       # weight 1-10 (default 5); run `setup` to generate
+    - id: salary                 # system rubrics are computed in Go
+      kind: system
+      weight: 5
+    - id: work_arrangement
+      kind: system
+      weight: 5
+    - id: location
+      kind: system
+      weight: 5
+    - id: preferred_tech         # dynamic rubrics are rated 1-5 by the LLM
+      kind: dynamic
+      weight: 5
+      items: [Java, Python, Go]
+    - id: avoided_tech
+      kind: dynamic
+      weight: 5
+      items: [C#, .NET]
+    - id: location
+      kind: dynamic
+      weight: 5
+      description: "Hybrid must be in Toronto/Mississauga; remote is flexible anywhere"
 
-enrich:
-  auto_enrich_on_save: false     # true = auto-score jobs when tagged `saved`
-
-profile:
+profile:                         # structured inputs for the system rubrics
   work_arrangement: [remote, hybrid]
   min_salary: 200000
   min_salary_currency: CAD
-  locations: [Remote, Toronto]
   preferred_tech: [Java, Python, Go, Postgres, AWS]
-  avoided_tech: [C#, .NET, Ruby]   # caps score at deal_breaker_cap
+  avoided_tech: [C#, .NET, Ruby]
 ```
 
 ## Environment Variables

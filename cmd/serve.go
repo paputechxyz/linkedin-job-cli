@@ -578,8 +578,8 @@ func toJobView(j *models.JobPosting) jobView {
 	// shown next to the badge. Full reason stays in the expandable <details>.
 	if j.FitReason != "" {
 		v.ScoreBlurb = preview(j.FitReason, 110)
-		v.ScoreCapped = j.ScoreCapReason != ""
 	}
+	v.ScoreCapped = false // caps retired; field kept for template compatibility
 	if j.YearsExperience != nil {
 		v.Years = strconv.Itoa(*j.YearsExperience) + "+"
 	}

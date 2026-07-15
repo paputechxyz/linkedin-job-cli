@@ -1,7 +1,7 @@
 ---
 name: linkedin-jobs
 description: "Use when the user wants to search, fetch, score, or manage LinkedIn job postings — pull their personalized recommended feed, search the public job board, score fit against their preferences, find who to reach out to for a job, manage a job pipeline, or configure their job-search profile. Wraps the linkedin-jobs CLI."
-version: 0.1.22
+version: 0.1.26
 author: Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -73,7 +73,7 @@ first unresolved gate and guide the user through it before continuing.
    - **Cookie resolution priority** (first match wins): `LJ_COOKIE` → `LJ_COOKIES_FILE` → `~/.linkedin-jobs/cookies.txt` (default, written by `auth login`). Never assume a path — always verify with `doctor`.
    - **Do NOT silently fall back to anonymous `search`** when the session is missing — that returns irrelevant global results. See Pitfall #1.
 
-5. **(Optional) Set preference knobs.** `linkedin-jobs config path` shows where `settings.yaml` lives (always `~/.linkedin-jobs/settings.yaml` unless `$LJ_SETTINGS_FILE` is set); `linkedin-jobs profile show` shows the active knobs. Tell the user to run `linkedin-jobs setup` for an interactive walk-through, or edit the `profile:` section of `settings.yaml` by hand to set work arrangement, salary floor, locations, and preferred/avoided tech. Scoring works without knobs but is much better with them.
+5. **(Optional) Generate rubrics.** Scoring is driven by a rubric set the user generates from a preferences paragraph. Tell the user to run `linkedin-jobs setup` and describe what they want in a job (work arrangement, salary, location, tech, perks, deal-breakers); the LLM extracts the rubrics (plus system defaults for salary and work arrangement) and writes them to `settings.yaml`. `amend` changes a few rubrics later; `reset` starts fresh. Each rubric weight is 1-10 (default 5); the score is a weighted average of per-rubric 1-5 ratings mapped to 0-100. Scoring works without rubrics (system defaults only) but is much better with the user's own.
 
 6. **Re-run `linkedin-jobs doctor`** to confirm no blocking issues, then proceed to the user's request.
 
@@ -106,12 +106,14 @@ Commands grouped by intent. Auth column: **auth** = requires LinkedIn session, *
 | `purge` | Delete jobs from the database | — | text |
 | **Enrich/Score** | | | |
 | `enrich [<job-id>]` | Enrich + score one job, or all unenriched (`--all`) | — | yes* |
-| `rescore-all` | Re-enrich + re-score every stored job | — | text |
+| `rescore-all` | Re-enrich + re-score every stored job against the current rubrics | — | text |
 | **HR Outreach** | | | |
 | `hr <job-url>` | Find best person to contact about a job | anon | yes |
-| **Profile** | | | |
-| `profile show` | Show active preference knobs | — | yes |
-| `setup` | Interactive first-time setup (profile, LLM, session) | — | text |
+| **Profile / Rubrics** | | | |
+| `profile show` | Show active profile knobs | — | yes |
+| `setup` | Generate rubrics from a preferences paragraph (interactive) | — | text |
+| `amend` | Add or change a few rubrics from a follow-up paragraph | — | text |
+| `reset` | Wipe all rubrics and restart setup from scratch | — | text |
 | **Config** | | | |
 | `config show` | Show resolved LLM provider + settings | — | text |
 | `config path` | Print settings/db file locations | — | text |
@@ -146,11 +148,10 @@ These operations require explicit user confirmation before executing. Never auto
 Named scenarios mapping user intents to concrete command sequences. Always use `--json` for read commands and summarize results — never dump raw JSON to the user.
 
 ### 1. Set up from scratch (first time)
-Tell the user to run `linkedin-jobs setup` in their terminal. It walks through
-profile preferences (work arrangement, salary, locations, preferred/avoided
-tech), checks the LLM provider, and recommends `auth login` for the LinkedIn
-session — all interactively. After they finish, re-check with `doctor` and
-proceed to Recipe #2.
+Tell the user to run `linkedin-jobs setup` in their terminal. It takes a
+preferences paragraph and generates the rubric set, checks the LLM provider,
+and recommends `auth login` for the LinkedIn session — all interactively. After
+they finish, re-check with `doctor` and proceed to Recipe #2.
 
 ### 2. Pull my feed
 `doctor` → confirm session is available (look for `LJ_COOKIES_FILE` under `== Environment ==`, or the default `~/.linkedin-jobs/cookies.txt`; if unset and no default file, stop and tell the user — see Pitfall #1; **do not fall back to `search`**) → `recommended --json --top 25` → summarize top-N by fit score → offer to `tag` strong matches `saved`. **Always prefer `recommended` over `search` for personalized results.** `search` is a fallback for users with no session, not a default.
@@ -176,8 +177,8 @@ proceed to Recipe #2.
 ### 8. Score stored jobs
 `count` → report N unenriched → `enrich --all` (after confirmation) → `list --json --sort-score` → summarize. Or score a single job: `enrich <job-id> --json`.
 
-### 9. Update my profile
-`profile show` → show current knobs → guide user to run `linkedin-jobs setup` or edit `settings.yaml` by hand (profile section) → `rescore-all` (after confirmation) to re-score with updated context.
+### 9. Update my rubrics / profile
+`profile show` → show current knobs → guide user to run `linkedin-jobs amend` (change a few rubrics) or `setup` (regenerate from a paragraph) → `rescore-all` (after confirmation) to re-score with the updated rubric set.
 
 ### 10. Check my config
 `doctor` → report any issues → `config show` → show resolved provider + settings → `config path` → show file locations.
@@ -206,7 +207,7 @@ proceed to Recipe #2.
 
 3. **Salary gate drops jobs with no salary data.** When `--min-salary` is set, jobs without salary information are dropped (never stored). This is intentional — a floor implies "only show jobs I know pay enough."
 
-4. **Pre-score gate vs profile knobs.** CLI flags (`--remote`, `--min-salary`, etc.) **drop** jobs pre-store (zero LLM tokens). Profile knobs in `settings.yaml` **cap** the score (stored, visible, ranked low). See `references/pipeline.md` for the full distinction.
+4. **Pre-score gate vs rubrics.** CLI flags (`--remote`, `--min-salary`, etc.) **drop** jobs pre-store (zero LLM tokens). Rubrics and `profile:` knobs **score** jobs — there are no hard caps anymore; a mismatch just lowers the weighted-average score. See `references/pipeline.md`.
 
 5. **`serve` is human-facing.** The agent may start it on explicit request and report the URL, but must never scrape the HTML as its own data source. Use CLI `--json` commands instead. `serve` defaults to `127.0.0.1` — never override `--addr` to `0.0.0.0` or a non-localhost address; the web UI has no authentication.
 

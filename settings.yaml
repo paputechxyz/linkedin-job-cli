@@ -1,12 +1,29 @@
-enrich:
-    auto_enrich_on_save: false
-filter:
-    auto_filter: true
+scoring:
+    rubrics:
+        - description: Salary level relative to your floor
+          id: salary
+          kind: system
+          weight: 5
+        - description: Remote / hybrid / onsite match
+          id: work_arrangement
+          kind: system
+          weight: 5
+        - description: Uses preferred technologies
+          id: preferred_tech
+          items:
+            - Java
+            - Ruby
+          kind: dynamic
+          weight: 5
+        - description: Avoids technologies you don't want
+          id: avoided_tech
+          items:
+            - Scala
+          kind: dynamic
+          weight: 5
 profile:
     avoided_tech:
         - Scala
-    locations:
-        - Seattle
     min_salary: 80000
     min_salary_currency: USD
     preferred_tech:
@@ -16,14 +33,3 @@ profile:
         - remote
         - hybrid
         - onsite
-scoring:
-    baseline: 60
-    deal_breaker_cap: 30
-    reason_threshold: 70
-    weights:
-        ai_intensity: 3
-        compensation_extras: 3
-        work_arrangement: 6
-        salary: 6
-        startup: 5
-        tech_overlap: 4

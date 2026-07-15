@@ -59,7 +59,7 @@ Exits 1 if any check fails, 0 if all pass.`,
 					fmt.Printf("  [✓] LLM responded: %q\n", reply)
 				}
 			} else {
-				fmt.Println("  [·] ping skipped (--ping to send a hello call)")
+				// --ping not set: stay quiet rather than advertising the flag on every run.
 			}
 		}
 		fmt.Println()
@@ -116,13 +116,8 @@ var doctorEnvKeys = []string{
 }
 
 var settingsTopSchema = map[string][]string{
-	"filter":  {"auto_filter"},
-	"scoring": {"reason_threshold", "baseline", "deal_breaker_cap", "weights"},
-	"profile": {"work_arrangement", "min_salary", "min_salary_currency", "locations", "preferred_tech", "avoided_tech"},
-}
-
-var weightsKeys = []string{
-	"salary", "tech_overlap", "startup", "ai_intensity", "compensation_extras", "work_arrangement",
+	"scoring": {"rubrics"},
+	"profile": {"work_arrangement", "min_salary", "min_salary_currency", "preferred_tech", "avoided_tech"},
 }
 
 // redactEnv prints the value verbatim for clearly non-secret keys (paths, URLs,
@@ -172,12 +167,10 @@ func checkSettings(path string) ([]string, error) {
 			}
 		}
 		if section == "scoring" {
-			if w, ok := sub["weights"].(map[string]interface{}); ok {
-				for _, wk := range weightsKeys {
-					if _, present := w[wk]; !present {
-						missing = append(missing, "scoring.weights."+wk)
-					}
-				}
+			// rubrics is the load-bearing key now; flag an empty list too,
+			// since defaults only inject the 3 system rubrics on load.
+			if r, ok := sub["rubrics"].([]interface{}); ok && len(r) == 0 {
+				missing = append(missing, "scoring.rubrics (empty — run 'setup')")
 			}
 		}
 	}

@@ -45,20 +45,15 @@ type JobPosting struct {
 	VisaSponsorship string `json:"visa_sponsorship,omitempty"`
 	EnrichedAt      string `json:"enriched_at,omitempty"`
 
-	// Compensation extras (LLM-extracted booleans, used by the rubric scorer).
-	HasBonus           bool `json:"has_bonus,omitempty"`
-	HasEquity          bool `json:"has_equity,omitempty"`
-	HasRetirementMatch bool `json:"has_retirement_match,omitempty"`
-	// AIIntensity is one of core | mentioned | none ("" = not enriched).
-	AIIntensity string `json:"ai_intensity,omitempty"`
-
-	// Fit scoring against the user's preferences.
+	// Fit scoring against the user's rubric set.
 	FitScore  *int   `json:"fit_score,omitempty"` // 0-100, nil = unscored
 	FitReason string `json:"fit_reason,omitempty"`
 	ScoredAt  string `json:"scored_at,omitempty"`
-	// ScoreCapReason records why the score was capped (e.g. "salary_under_floor",
-	// "deal_breaker_tech"). Empty means no cap applied — the score is full.
-	ScoreCapReason string `json:"score_cap_reason,omitempty"`
+	// RubricScores holds a JSON array of per-rubric {id, kind, rating, weight,
+	// reason} for this job. The fit_score column holds the normalized weighted
+	// average; this column carries the breakdown. Loose JSON by design — the
+	// rubric set is user-generated, so there is no fixed column per rubric.
+	RubricScores string `json:"rubric_scores,omitempty"`
 
 	// LLM-free dedup fingerprint.
 	ContentHash string `json:"content_hash,omitempty"`

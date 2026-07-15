@@ -1,11 +1,11 @@
 // Package profile reads the structured preference knobs from settings.yaml to
-// build the in-memory models.Profile consumed by the deterministic scorer, the
-// hard filter, and the LLM enrich prompt.
+// build the in-memory models.Profile consumed by the system rubrics (salary,
+// work arrangement) and the LLM enrich prompt.
 //
-// The preference knobs (work_arrangement, min_salary, locations, preferred_tech,
-// avoided_tech) live under the profile: section of settings.yaml ($LJ_SETTINGS_FILE)
-// and drive the deterministic hard filter (internal/filter) and the rubric
-// (internal/score). Fit scoring relies entirely on these knobs.
+// The preference knobs (work_arrangement, min_salary, preferred_tech,
+// avoided_tech) live under the profile: section of settings.yaml
+// ($LJ_SETTINGS_FILE) and feed the system rubrics in internal/score. Location
+// is LLM-rated as a dynamic rubric and does not use these knobs.
 package profile
 
 import (
@@ -23,7 +23,6 @@ func Load(prefs config.ProfileSettings) (*models.Profile, error) {
 		PrefWorkArrangement:   prefs.WorkArrangement,
 		PrefMinSalary:         prefs.MinSalary,
 		PrefMinSalaryCurrency: prefs.MinSalaryCurrency,
-		PrefLocations:         prefs.Locations,
 		PrefPreferredTech:     prefs.PreferredTech,
 		PrefAvoidedTech:       prefs.AvoidedTech,
 		UpdatedAt:             nowISO(),
@@ -38,7 +37,6 @@ func IsEmpty(p *models.Profile) bool {
 	}
 	return len(p.PrefWorkArrangement) == 0 &&
 		p.PrefMinSalary == nil &&
-		len(p.PrefLocations) == 0 &&
 		len(p.PrefPreferredTech) == 0 &&
 		len(p.PrefAvoidedTech) == 0
 }

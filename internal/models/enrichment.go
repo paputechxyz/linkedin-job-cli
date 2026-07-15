@@ -18,11 +18,4 @@ type Enrichment struct {
 	IsFoundingRole  bool
 	VisaSponsorship string
 	WorkArrangement string // remote|hybrid|onsite|unknown; refines jobs.remote_type
-
-	// Compensation extras (LLM-extracted booleans, used by the rubric scorer).
-	HasBonus           bool
-	HasEquity          bool
-	HasRetirementMatch bool // RRSP match / 401k match / pension
-	// AIIntensity is one of core | mentioned | none ("" = not extracted).
-	AIIntensity string
 }

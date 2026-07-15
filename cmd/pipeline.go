@@ -1,13 +1,13 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
 	"linkedin-jobs/internal/config"
-	"linkedin-jobs/internal/filter"
 	"linkedin-jobs/internal/fx"
 	"linkedin-jobs/internal/linkedin"
 	"linkedin-jobs/internal/llm"
@@ -84,11 +84,11 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 		}
 	}
 
-	// 3. Run gates per job: dedup -> score (which internally applies caps).
-	noScore := opts.noScore
+	// 3. Score every surviving job. No token-frugality gate — every job runs
+	// through enrich → compose → persist (the user opted into LLM-everywhere).
 	profileData, _ := profile.Load(settings.Profile)
 	var provider *llm.Provider
-	if !noScore {
+	if !opts.noScore {
 		p, err := llm.Resolve(cfg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Scoring skipped: %v\n", err)
@@ -99,41 +99,24 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 			fmt.Fprintln(os.Stderr, profileStatus(profileData))
 		}
 	}
-	weights := score.FromSettings(settings.Scoring)
-	scoredN, cappedN, dupsN := 0, 0, 0
+	rubrics := settings.Scoring.Rubrics
+	scoredN, dupsN := 0, 0
 	for _, j := range jobs {
 		if !opts.forceOverwrite && st.IsDuplicateEnriched(j.ContentHash) {
 			dupsN++
 			continue
 		}
-		// Token-frugality gate: jobs that fail the hard filter are still visible
-		// (the new cap-not-hide semantics), but they skip the LLM enrich call
-		// because their final score is already known (the cap).
-		if settings.Filter.AutoFilter && !filter.PassesHardFilter(j, profileData) {
-			res := score.Compute(j, profileData, weights)
-			reason := score.FitReason(res)
-			if err := st.SetScore(j.ID, res.Score, reason, res.CapReason); err != nil {
-				fmt.Fprintf(os.Stderr, "  ! %s: %v\n", j.Title, err)
-			} else {
-				j.FitScore = &res.Score
-				j.FitReason = reason
-				j.ScoreCapReason = res.CapReason
-				j.ScoredAt = "set"
-				cappedN++
-			}
-			continue
-		}
 		if provider != nil {
-			paceLLM(opts.scoreDelay, scoredN+cappedN)
-			if err := enrichAndScoreJob(st, j, profileData, provider, weights); err != nil {
+			paceLLM(opts.scoreDelay, scoredN)
+			if err := enrichAndScoreJob(st, j, profileData, provider, rubrics); err != nil {
 				fmt.Fprintf(os.Stderr, "  ! %s: %v\n", j.Title, err)
 			} else {
 				scoredN++
 			}
 		}
 	}
-	if scoredN > 0 || cappedN > 0 || dupsN > 0 {
-		fmt.Fprintf(os.Stderr, "Processed: %d scored, %d capped, %d duplicates skipped.\n", scoredN, cappedN, dupsN)
+	if scoredN > 0 || dupsN > 0 {
+		fmt.Fprintf(os.Stderr, "Processed: %d scored, %d duplicates skipped.\n", scoredN, dupsN)
 	}
 
 	// 4. Output. No further filtering here — the user gates already ran in
@@ -163,9 +146,6 @@ func profileStatus(p *models.Profile) string {
 	if p.PrefMinSalary != nil {
 		knobs++
 	}
-	if len(p.PrefLocations) > 0 {
-		knobs++
-	}
 	if len(p.PrefPreferredTech) > 0 {
 		knobs++
 	}
@@ -180,12 +160,13 @@ func profileDir() string {
 	return config.ProjectDir()
 }
 
-// enrichAndScoreJob runs the LLM enrichment call, persists the extracted facts,
-// then computes the deterministic rubric score and persists that. The LLM never
-// picks a score — it only extracts facts; score.Compute derives the number.
-// Shared by ingest, the enrich command, and score --all.
-func enrichAndScoreJob(st *store.Store, j *models.JobPosting, prof *models.Profile, provider *llm.Provider, weights score.Weights) error {
-	e, err := llm.Enrich(j, provider)
+// enrichAndScoreJob runs the LLM enrichment call (which also rates the dynamic
+// rubrics), persists the extracted facts, then composes the weighted-average
+// rubric score and persists that. System rubrics are computed in Go; dynamic
+// rubrics take their rating from the LLM response. Shared by ingest, the enrich
+// command, and rescore-all.
+func enrichAndScoreJob(st *store.Store, j *models.JobPosting, prof *models.Profile, provider *llm.Provider, rubrics []config.Rubric) error {
+	e, ratings, err := llm.Enrich(j, provider, rubrics)
 	if err != nil {
 		return err
 	}
@@ -209,20 +190,17 @@ func enrichAndScoreJob(st *store.Store, j *models.JobPosting, prof *models.Profi
 	if e.WorkArrangement != "" {
 		j.RemoteType = e.WorkArrangement
 	}
-	j.HasBonus = e.HasBonus
-	j.HasEquity = e.HasEquity
-	j.HasRetirementMatch = e.HasRetirementMatch
-	j.AIIntensity = e.AIIntensity
 
-	// Compute the rubric score from the freshly-enriched facts + profile.
-	res := score.Compute(j, prof, weights)
+	// Compose the weighted-average score from the rubric set + LLM ratings.
+	res := score.Compute(j, prof, rubrics, ratings)
 	reason := score.FitReason(res)
-	if err := st.SetScore(j.ID, res.Score, reason, res.CapReason); err != nil {
+	rubricJSON, _ := json.Marshal(res.Rubrics)
+	if err := st.SetScore(j.ID, res.Score, reason, string(rubricJSON)); err != nil {
 		return err
 	}
 	j.FitScore = &res.Score
 	j.FitReason = reason
-	j.ScoreCapReason = res.CapReason
+	j.RubricScores = string(rubricJSON)
 	j.ScoredAt = "set"
 	return nil
 }

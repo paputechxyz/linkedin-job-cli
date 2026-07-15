@@ -16,19 +16,21 @@ import (
 
 var setupCmd = &cobra.Command{
 	Use:   "setup",
-	Short: "Interactive setup: profile preferences, LLM, and LinkedIn session",
+	Short: "Interactive setup: generate rubrics from a preferences paragraph, configure LLM + LinkedIn",
 	Long: `Walk through the full first-time setup interactively:
 
-  1. Profile preferences — work arrangement, salary floor, locations,
-     preferred tech, and avoided tech (deal-breakers). Written to
-     settings.yaml under the profile: section.
+  1. Preferences — write a paragraph describing what you want in a job. The
+     LLM extracts scoring rubrics from it (plus a few system defaults that
+     always apply: salary, work arrangement). You confirm before
+     anything is saved. Any required number the paragraph omits (e.g. a salary
+     floor) is prompted for. Rubrics + weights land in settings.yaml.
   2. LLM provider — checks whether a provider is resolved; if not, prints
      guidance on how to configure one.
   3. LinkedIn session — recommends auth login (macOS + Chrome) so the
      'recommended' and 'url' commands work with your personalized feed.
 
-Run this once after installing the CLI. You can re-run it any time to
-update your preferences.`,
+Run this once after installing the CLI. Use 'amend' to change a few rubrics,
+or 'reset' to start over from scratch.`,
 	RunE: runSetup,
 }
 
@@ -44,40 +46,77 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Settings file: %s\n\n", settingsPath)
 
 	settings, _ := config.LoadSettings()
-	prof := settings.Profile
 
-	// --- Step 1: Profile preferences ---
-	fmt.Println("== Profile Preferences ==")
-	fmt.Println("(Press Enter to keep the current value shown in brackets.)")
+	// --- Step 1: Preferences paragraph → rubrics + structured params ---
+	fmt.Println("== Preferences ==")
+	fmt.Println("Describe what you want in a job in a few sentences — work arrangement,")
+	fmt.Println("salary, location, tech, perks, deal-breakers, etc. The LLM extracts scoring")
+	fmt.Println("rubrics from it. End your paragraph with a blank line.")
+	paragraph := promptParagraph(stdin)
 
-	prof.WorkArrangement = promptList(stdin,
-		"Work arrangements (comma-separated: remote, hybrid, onsite)",
-		prof.WorkArrangement)
+	if strings.TrimSpace(paragraph) == "" {
+		fmt.Println("  No paragraph entered — keeping current rubrics and profile.")
+	} else {
+		cfg := loadCfg()
+		provider, err := llm.Resolve(cfg)
+		if err != nil {
+			return fmt.Errorf("LLM provider required for rubric setup: %w", err)
+		}
+		fmt.Println("  Extracting rubrics…")
+		gen, err := llm.GenerateRubrics(paragraph, provider)
+		if err != nil {
+			return fmt.Errorf("extract rubrics: %w", err)
+		}
 
-	prof.MinSalaryCurrency = promptString(stdin,
-		"Salary currency (USD, CAD, EUR, GBP)",
-		prof.MinSalaryCurrency, "USD")
+		// Dynamic rubrics merge onto the always-present system defaults.
+		changes := make([]config.Rubric, 0, len(gen.Rubrics))
+		for _, r := range gen.Rubrics {
+			changes = append(changes, config.Rubric{ID: r.ID, Kind: "dynamic", Weight: 5, Description: r.Description, Items: r.Items})
+		}
+		rubrics := config.MergeRubrics(config.DefaultScoringSettings().Rubrics, changes)
 
-	prof.MinSalary = promptFloatPtr(stdin,
-		"Minimum salary (0 = no floor)",
-		prof.MinSalary)
+		// Structured params flow into the profile block.
+		prof := settings.Profile
+		if len(gen.WorkArrangement) > 0 {
+			prof.WorkArrangement = gen.WorkArrangement
+		}
+		if gen.MinSalaryCurrency != "" {
+			prof.MinSalaryCurrency = gen.MinSalaryCurrency
+		}
+		if gen.MinSalary != nil {
+			prof.MinSalary = gen.MinSalary
+		}
+		if len(gen.PreferredTech) > 0 {
+			prof.PreferredTech = gen.PreferredTech
+		}
+		if len(gen.AvoidedTech) > 0 {
+			prof.AvoidedTech = gen.AvoidedTech
+		}
+		// A required number the paragraph omitted is prompted, never guessed.
+		if prof.MinSalary == nil || *prof.MinSalary <= 0 {
+			fmt.Println("\n  No salary floor detected in your paragraph.")
+			prof.MinSalary = promptFloatPtr(stdin, "Minimum salary (0 = no floor)", prof.MinSalary)
+		}
 
-	prof.Locations = promptList(stdin,
-		"Preferred locations (comma-separated, e.g. Remote, Toronto)",
-		prof.Locations)
+		fmt.Println("\n  Extracted rubrics:")
+		printRubrics(rubrics)
+		fmt.Println("\n  Structured params:")
+		fmt.Printf("    work arrangement: %s\n", orNoneSlice(prof.WorkArrangement))
+		fmt.Printf("    min salary:       %s\n", formatSalaryFloor(prof.MinSalary, prof.MinSalaryCurrency))
 
-	prof.PreferredTech = promptList(stdin,
-		"Preferred tech (comma-separated, e.g. Python, Go, AWS)",
-		prof.PreferredTech)
-
-	prof.AvoidedTech = promptList(stdin,
-		"Avoided tech / deal-breakers (comma-separated, e.g. C#, .NET, Ruby)",
-		prof.AvoidedTech)
-
-	if err := config.SaveProfile(prof); err != nil {
-		return fmt.Errorf("save profile: %w", err)
+		if !confirm(stdin, "Save these rubrics and params?") {
+			fmt.Println("  Aborted — nothing saved.")
+			return nil
+		}
+		if err := config.SaveProfile(prof); err != nil {
+			return fmt.Errorf("save profile: %w", err)
+		}
+		if err := config.SaveRubrics(rubrics); err != nil {
+			return fmt.Errorf("save rubrics: %w", err)
+		}
+		settings.Scoring.Rubrics = rubrics
+		fmt.Printf("\n-> rubrics + profile saved to %s\n\n", settingsPath)
 	}
-	fmt.Printf("\n-> profile saved to %s\n\n", settingsPath)
 
 	// --- Step 2: LLM provider ---
 	fmt.Println("== LLM Provider ==")
@@ -199,4 +238,61 @@ func promptFloatPtr(stdin *bufio.Reader, label string, current *float64) *float6
 
 func init() {
 	rootCmd.AddCommand(setupCmd)
+}
+
+// promptParagraph reads a multi-line paragraph from stdin until a blank line
+// (or EOF). Used for the preferences paragraph in setup/amend.
+func promptParagraph(stdin *bufio.Reader) string {
+	fmt.Println(">")
+	var lines []string
+	for {
+		line, err := stdin.ReadString('\n')
+		if err != nil {
+			break
+		}
+		if strings.TrimSpace(line) == "" {
+			break
+		}
+		lines = append(lines, strings.TrimRight(line, "\n"))
+	}
+	return strings.Join(lines, " ")
+}
+
+// confirm asks a yes/no question; empty or y/yes returns true.
+func confirm(stdin *bufio.Reader, question string) bool {
+	fmt.Printf("  %s [Y/n]: ", question)
+	line, _ := stdin.ReadString('\n')
+	line = strings.ToLower(strings.TrimSpace(line))
+	return line == "" || line == "y" || line == "yes"
+}
+
+// printRubrics lists the rubric set for confirmation.
+func printRubrics(rubrics []config.Rubric) {
+	for _, r := range rubrics {
+		tag := r.Kind
+		if tag == "" {
+			tag = "dynamic"
+		}
+		desc := r.Description
+		if desc == "" {
+			desc = "—"
+		}
+		fmt.Printf("    [%s] %-18s w%-2d  %s", tag, r.ID, r.Weight, desc)
+		if len(r.Items) > 0 {
+			fmt.Printf("  (items: %s)", strings.Join(r.Items, ", "))
+		}
+		fmt.Println()
+	}
+}
+
+// formatSalaryFloor renders a salary floor for display.
+func formatSalaryFloor(salary *float64, currency string) string {
+	if salary == nil || *salary <= 0 {
+		return "(none)"
+	}
+	cur := currency
+	if cur == "" {
+		cur = "USD"
+	}
+	return fmt.Sprintf("%s%.0f", cur, *salary)
 }

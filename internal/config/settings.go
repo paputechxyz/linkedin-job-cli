@@ -11,70 +11,61 @@ import (
 // Settings holds tunable runtime settings loaded from a YAML file. Zero values
 // are replaced by DefaultSettings so callers always get usable numbers.
 type Settings struct {
-	Filter  FilterSettings  `yaml:"filter"`
 	Scoring ScoringSettings `yaml:"scoring"`
 	Profile ProfileSettings `yaml:"profile"`
 }
 
 // ProfileSettings holds the structured candidate preferences that drive the
-// deterministic hard filter + rubric (work arrangement, salary floor, locations,
-// preferred tech, avoided tech). These flow into models.Profile.Pref* at load
-// time. Pointer types let users express "unset" by deleting the key.
+// deterministic system rubrics (salary floor, work arrangement) and the LLM
+// enrich prompt (preferred/avoided tech). These flow into models.Profile.Pref*
+// at load time. Pointer types let users express "unset" by deleting the key.
 type ProfileSettings struct {
 	WorkArrangement   []string `yaml:"work_arrangement,omitempty"`
 	MinSalary         *float64 `yaml:"min_salary,omitempty"`
 	MinSalaryCurrency string   `yaml:"min_salary_currency,omitempty"`
-	Locations         []string `yaml:"locations,omitempty"`
 	PreferredTech     []string `yaml:"preferred_tech,omitempty"`
 	AvoidedTech       []string `yaml:"avoided_tech,omitempty"`
 }
 
-type FilterSettings struct {
-	AutoFilter bool `yaml:"auto_filter"`
-}
-
 type ScoringSettings struct {
-	ReasonThreshold int            `yaml:"reason_threshold"`
-	Baseline        int            `yaml:"baseline"`
-	DealBreakerCap  int            `yaml:"deal_breaker_cap"`
-	Weights         ScoringWeights `yaml:"weights"`
+	Rubrics []Rubric `yaml:"rubrics"`
 }
 
-// ScoringWeights tunes the rubric dimensions. All default to the values in
-// DefaultSettings(); any weight set to 0 disables that dimension.
-type ScoringWeights struct {
-	Salary             int `yaml:"salary"`
-	TechOverlap        int `yaml:"tech_overlap"`
-	Startup            int `yaml:"startup"`
-	AIIntensity        int `yaml:"ai_intensity"`
-	CompensationExtras int `yaml:"compensation_extras"`
-	WorkArrangement    int `yaml:"work_arrangement"`
+// Rubric is one scored criterion. System rubrics (salary, work_arrangement)
+// are computed deterministically in Go; dynamic rubrics are rated 1–5 by the
+// LLM at enrichment time. Weight is user-tunable (1–10, default 5).
+// Items lets one rubric carry a list (e.g. preferred/avoided tech) whose rating
+// reflects aggregate match across the whole list.
+type Rubric struct {
+	ID          string   `yaml:"id" json:"id"`
+	Kind        string   `yaml:"kind" json:"kind"` // "system" | "dynamic"
+	Weight      int      `yaml:"weight" json:"weight"`
+	Description string   `yaml:"description,omitempty" json:"description,omitempty"`
+	Items       []string `yaml:"items,omitempty" json:"items,omitempty"`
 }
+
+// System rubric IDs — always present, computed deterministically in Go.
+const (
+	RubricSalary      = "salary"
+	RubricArrangement = "work_arrangement"
+)
 
 // DefaultSettings returns the built-in defaults used when the YAML file is
 // absent or a key is omitted.
 func DefaultSettings() Settings {
 	return Settings{
-		Filter:  FilterSettings{AutoFilter: true},
 		Scoring: DefaultScoringSettings(),
 	}
 }
 
-// DefaultScoringSettings returns the rubric defaults: baseline 60 after passing
-// the hard filter, deal-breakers cap at 30, six weighted dimensions summing to
-// a ~30-point upside above baseline. Tunable via settings.yaml.
+// DefaultScoringSettings returns the rubric defaults: two system rubrics
+// (salary, work_arrangement) at weight 5. Dynamic rubrics (including location)
+// are added by the setup flow from the user's preferences paragraph.
 func DefaultScoringSettings() ScoringSettings {
 	return ScoringSettings{
-		ReasonThreshold: 70,
-		Baseline:        60,
-		DealBreakerCap:  30,
-		Weights: ScoringWeights{
-			Salary:             6,
-			TechOverlap:        7,
-			Startup:            5,
-			AIIntensity:        5,
-			CompensationExtras: 4,
-			WorkArrangement:    3,
+		Rubrics: []Rubric{
+			{ID: RubricSalary, Kind: "system", Weight: 5, Description: "Salary level relative to your floor"},
+			{ID: RubricArrangement, Kind: "system", Weight: 5, Description: "Remote / hybrid / onsite match"},
 		},
 	}
 }
@@ -122,30 +113,12 @@ func LoadSettings() (Settings, error) {
 	if err := yaml.Unmarshal(data, &s); err != nil {
 		return DefaultSettings(), err
 	}
-	if s.Scoring.ReasonThreshold <= 0 || s.Scoring.ReasonThreshold > 100 {
-		s.Scoring.ReasonThreshold = DefaultSettings().Scoring.ReasonThreshold
-	}
-	// Rubric defaults: fill any missing/invalid scoring values from defaults so
-	// the scorer never sees a zero baseline or an empty deal-breaker cap.
-	if s.Scoring.Baseline <= 0 || s.Scoring.Baseline > 100 {
-		s.Scoring.Baseline = DefaultSettings().Scoring.Baseline
-	}
-	if s.Scoring.DealBreakerCap <= 0 || s.Scoring.DealBreakerCap > 100 {
-		s.Scoring.DealBreakerCap = DefaultSettings().Scoring.DealBreakerCap
-	}
-	applyDefaultWeight := func(current, def int) int {
-		if current < 0 {
-			return def
+	// Rubric weights must land in [1,10]; clamp anything invalid to the default 5.
+	for i := range s.Scoring.Rubrics {
+		if s.Scoring.Rubrics[i].Weight < 1 || s.Scoring.Rubrics[i].Weight > 10 {
+			s.Scoring.Rubrics[i].Weight = 5
 		}
-		return current
 	}
-	dw := DefaultSettings().Scoring.Weights
-	s.Scoring.Weights.Salary = applyDefaultWeight(s.Scoring.Weights.Salary, dw.Salary)
-	s.Scoring.Weights.TechOverlap = applyDefaultWeight(s.Scoring.Weights.TechOverlap, dw.TechOverlap)
-	s.Scoring.Weights.Startup = applyDefaultWeight(s.Scoring.Weights.Startup, dw.Startup)
-	s.Scoring.Weights.AIIntensity = applyDefaultWeight(s.Scoring.Weights.AIIntensity, dw.AIIntensity)
-	s.Scoring.Weights.CompensationExtras = applyDefaultWeight(s.Scoring.Weights.CompensationExtras, dw.CompensationExtras)
-	s.Scoring.Weights.WorkArrangement = applyDefaultWeight(s.Scoring.Weights.WorkArrangement, dw.WorkArrangement)
 	return s, nil
 }
 
@@ -154,28 +127,26 @@ func LoadSettings() (Settings, error) {
 const defaultSettingsTemplate = `# linkedin-jobs settings — edit freely, delete a key to fall back to its default.
 # Docs: README → Settings
 
-filter:
-  auto_filter: true             # true = cap score on hard-filter mismatch (no LLM); false = always call LLM
-
 scoring:
-  reason_threshold: 70          # fit_reason only emitted at/above this score (0-100)
-  baseline: 60                  # starting score after a job passes the hard filter
-  deal_breaker_cap: 30          # hard floor when an avoided_tech token is matched
-  weights:
-    salary: 6                   # tiered by how far above your floor (0/at-floor/+10%/+30%)
-    tech_overlap: 7             # count of preferred_tech items found in tech_stack
-    startup: 5                  # company_stage seed/early + size 1-50
-    ai_intensity: 5             # core=full, mentioned=partial, none=0
-    compensation_extras: 4      # bonus + equity + retirement match (1pt each, +1 all three)
-    work_arrangement: 3         # each preferred arrangement match = full weight
+  # Rubrics drive the weighted-average score. System rubrics are computed in Go;
+  # dynamic rubrics are rated 1-5 by the LLM. Run 'linkedin-jobs setup' to
+  # (re)generate the dynamic rubrics from a preferences paragraph. Weight: 1-10.
+  rubrics:
+    - id: salary
+      kind: system
+      weight: 5
+      description: Salary level relative to your floor
+    - id: work_arrangement
+      kind: system
+      weight: 5
+      description: Remote / hybrid / onsite match
 
 profile:
   work_arrangement: []          # remote, hybrid, onsite (any subset)
   min_salary: 0                 # 0 = no salary floor
   min_salary_currency: USD      # ISO 4217 (USD, CAD, EUR, GBP)
-  locations: []                 # preferred location tokens (e.g. Remote, Toronto)
-  preferred_tech: []            # tech stack tokens that boost score
-  avoided_tech: []              # tech tokens that cap score at deal_breaker_cap
+  preferred_tech: []            # tech tokens (also surfaced as a dynamic rubric via setup)
+  avoided_tech: []              # tech tokens to penalize (surfaced as a dynamic rubric via setup)
 `
 
 // EnsureSettings writes a default settings.yaml to SettingsPath() if the file
@@ -218,6 +189,42 @@ func SaveProfile(p ProfileSettings) error {
 		return fmt.Errorf("remarshal profile: %w", err)
 	}
 	root["profile"] = profMap
+	out, err := yaml.Marshal(root)
+	if err != nil {
+		return fmt.Errorf("marshal settings: %w", err)
+	}
+	return os.WriteFile(path, out, 0o644)
+}
+
+// SaveRubrics writes the scoring.rubrics section into settings.yaml, preserving
+// the rest of the file. Used by setup/amend/reset to persist a generated or
+// edited rubric set.
+func SaveRubrics(rubrics []Rubric) error {
+	path := SettingsPath()
+	var root map[string]any
+	data, err := os.ReadFile(path)
+	if err == nil {
+		_ = yaml.Unmarshal(data, &root)
+	}
+	if root == nil {
+		root = map[string]any{}
+	}
+	scoring, _ := root["scoring"].(map[string]any)
+	if scoring == nil {
+		scoring = map[string]any{}
+	}
+	raw, err := yaml.Marshal(ScoringSettings{Rubrics: rubrics})
+	if err != nil {
+		return fmt.Errorf("marshal rubrics: %w", err)
+	}
+	var scored map[string]any
+	if err := yaml.Unmarshal(raw, &scored); err != nil {
+		return fmt.Errorf("remarshal rubrics: %w", err)
+	}
+	if rubricsMap, ok := scored["rubrics"]; ok {
+		scoring["rubrics"] = rubricsMap
+	}
+	root["scoring"] = scoring
 	out, err := yaml.Marshal(root)
 	if err != nil {
 		return fmt.Errorf("marshal settings: %w", err)
