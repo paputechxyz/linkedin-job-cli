@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"linkedin-jobs/internal/llm"
 	"linkedin-jobs/internal/models"
 	"linkedin-jobs/internal/store"
 )
@@ -277,5 +278,38 @@ func TestEnrichAndScoreBatch_SequentialFallback(t *testing.T) {
 	})
 	if count != 3 {
 		t.Errorf("callbacks = %d, want 3 (concurrency=1)", count)
+	}
+}
+
+func TestScoringProvider_MissingProviderReturnsSetupError(t *testing.T) {
+	_, err := scoringProvider(nil, llm.ErrNoProvider)
+	if err == nil {
+		t.Fatal("expected an error when no provider resolves, got nil")
+	}
+	// The error must steer the user at the same setup knobs doctor/setup advertise.
+	for _, knob := range []string{"OPENAI_API_KEY", "LJ_LLM", "ANTHROPIC_API_KEY"} {
+		if !strings.Contains(err.Error(), knob) {
+			t.Errorf("error %q should mention setup knob %q", err.Error(), knob)
+		}
+	}
+}
+
+func TestScoringProvider_NilProviderNeverPassesSilently(t *testing.T) {
+	// A nil provider with no resolve error must still yield a setup error — the
+	// policy never lets a nil provider through to the scoring loop.
+	_, err := scoringProvider(nil, nil)
+	if err == nil {
+		t.Fatal("expected an error for a nil provider even when resolve returned no error")
+	}
+}
+
+func TestScoringProvider_ResolvedProviderPassesThrough(t *testing.T) {
+	p := &llm.Provider{BaseURL: "https://example.com", Model: "x", Source: "test"}
+	got, err := scoringProvider(p, nil)
+	if err != nil {
+		t.Fatalf("expected no error for a resolved provider, got %v", err)
+	}
+	if got != p {
+		t.Error("expected the same provider pointer to be returned unchanged")
 	}
 }

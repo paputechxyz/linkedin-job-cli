@@ -14,7 +14,6 @@ var (
 	urlRemote         bool
 	urlHybrid         bool
 	urlOnsite         bool
-	urlNoScore        bool
 	urlForceOW        bool
 )
 
@@ -55,6 +54,7 @@ Examples:
 		if currency != "" && minSal == 0 {
 			die("--salary-currency requires --min-salary.")
 		}
+		provider := mustResolveProvider()
 		rawURL := args[0]
 		// url is an authenticated command: a session drives the Voyager
 		// jobCards search path, which returns the full result set the signed-in
@@ -70,13 +70,12 @@ Examples:
 		if urlTop > 0 && len(jobs) > urlTop {
 			jobs = jobs[:urlTop]
 		}
-		ingest(jobs, ingestOptions{
+		ingest(jobs, provider, ingestOptions{
 			minSalary:         minSal,
 			minSalaryCurrency: currency,
 			remote:            urlRemote,
 			hybrid:            urlHybrid,
 			onsite:            urlOnsite,
-			noScore:           urlNoScore,
 			forceOverwrite:    urlForceOW,
 			detailDelay:       resolveDetailDelay(),
 			scoreDelay:        resolveLLMDelay(),
@@ -93,7 +92,6 @@ func init() {
 	urlCmd.Flags().BoolVar(&urlRemote, "remote", false, "only keep remote-friendly jobs")
 	urlCmd.Flags().BoolVar(&urlHybrid, "hybrid", false, "only keep hybrid-friendly jobs (combine with --remote/--onsite for OR)")
 	urlCmd.Flags().BoolVar(&urlOnsite, "onsite", false, "only keep on-site jobs (combine with --remote/--hybrid for OR)")
-	urlCmd.Flags().BoolVar(&urlNoScore, "no-score", false, "skip LLM enrichment+fit-scoring")
 	urlCmd.Flags().BoolVar(&urlForceOW, "force-overwrite", false, "re-parse and re-score jobs already in the DB (bypass dedup; overwrites existing values)")
 	rootCmd.AddCommand(urlCmd)
 }

@@ -14,7 +14,6 @@ var (
 	searchRemote          bool
 	searchHybrid          bool
 	searchOnsite          bool
-	searchNoScore         bool
 	searchForceOW         bool
 )
 
@@ -40,6 +39,7 @@ Examples:
 		if currency != "" && minSal == 0 {
 			die("--salary-currency requires --min-salary.")
 		}
+		provider := mustResolveProvider()
 		keywords := args[0]
 		location := ""
 		if len(args) > 1 {
@@ -61,13 +61,12 @@ Examples:
 		if searchTop > 0 && len(jobs) > searchTop {
 			jobs = jobs[:searchTop]
 		}
-		ingest(jobs, ingestOptions{
+		ingest(jobs, provider, ingestOptions{
 			minSalary:         minSal,
 			minSalaryCurrency: currency,
 			remote:            searchRemote,
 			hybrid:            searchHybrid,
 			onsite:            searchOnsite,
-			noScore:           searchNoScore,
 			forceOverwrite:    searchForceOW,
 			detailDelay:       resolveDetailDelay(),
 			scoreDelay:        resolveLLMDelay(),
@@ -84,7 +83,6 @@ func init() {
 	searchCmd.Flags().BoolVar(&searchRemote, "remote", false, "only keep remote-friendly jobs")
 	searchCmd.Flags().BoolVar(&searchHybrid, "hybrid", false, "only keep hybrid-friendly jobs (combine with --remote/--onsite for OR)")
 	searchCmd.Flags().BoolVar(&searchOnsite, "onsite", false, "only keep on-site jobs (combine with --remote/--hybrid for OR)")
-	searchCmd.Flags().BoolVar(&searchNoScore, "no-score", false, "skip LLM enrichment+fit-scoring")
 	searchCmd.Flags().BoolVar(&searchForceOW, "force-overwrite", false, "re-parse and re-score jobs already in the DB (bypass dedup; overwrites existing values)")
 	rootCmd.AddCommand(searchCmd)
 }
