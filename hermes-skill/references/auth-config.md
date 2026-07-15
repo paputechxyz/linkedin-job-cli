@@ -83,7 +83,7 @@ linkedin-jobs auth status     # fast mid-session boolean check. Only meaningful
 
 ## LLM Configuration
 
-Scoring is optional — all read commands work without an LLM key. When scoring runs and no provider is configured, it is skipped with a clear message.
+An LLM provider is required for scoring — fetch+score commands (`recommended`/`url`/`search`/`watch`/`job`) exit with a setup prompt when none is configured.
 
 ### Provider Resolution (first match wins)
 

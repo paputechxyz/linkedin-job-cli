@@ -14,7 +14,6 @@ var (
 	recRemote           bool
 	recHybrid           bool
 	recOnsite           bool
-	recNoScore          bool
 	recForceOW          bool
 )
 
@@ -33,6 +32,7 @@ survivors.`,
 		if currency != "" && minSal == 0 {
 			die("--salary-currency requires --min-salary.")
 		}
+		provider := mustResolveProvider()
 		c, err := newClient(true)
 		if err != nil {
 			die("%v", err)
@@ -49,13 +49,12 @@ survivors.`,
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 		}
-		ingest(jobs, ingestOptions{
+		ingest(jobs, provider, ingestOptions{
 			minSalary:         minSal,
 			minSalaryCurrency: currency,
 			remote:            recRemote,
 			hybrid:            recHybrid,
 			onsite:            recOnsite,
-			noScore:           recNoScore,
 			forceOverwrite:    recForceOW,
 			detailDelay:       resolveDetailDelay(),
 			scoreDelay:        resolveLLMDelay(),
@@ -72,7 +71,6 @@ func init() {
 	recommendedCmd.Flags().BoolVar(&recRemote, "remote", false, "only keep remote-friendly jobs")
 	recommendedCmd.Flags().BoolVar(&recHybrid, "hybrid", false, "only keep hybrid-friendly jobs (combine with --remote/--onsite for OR)")
 	recommendedCmd.Flags().BoolVar(&recOnsite, "onsite", false, "only keep on-site jobs (combine with --remote/--hybrid for OR)")
-	recommendedCmd.Flags().BoolVar(&recNoScore, "no-score", false, "skip LLM enrichment+fit-scoring")
 	recommendedCmd.Flags().BoolVar(&recForceOW, "force-overwrite", false, "re-parse and re-score jobs already in the DB (bypass dedup; overwrites existing values)")
 	rootCmd.AddCommand(recommendedCmd)
 }

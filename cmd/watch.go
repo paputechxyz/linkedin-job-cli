@@ -35,6 +35,7 @@ scored.`,
 		if currency != "" && minSal == 0 {
 			die("--salary-currency requires --min-salary.")
 		}
+		provider := mustResolveProvider()
 		keywords, location := args[0], args[1]
 		c, err := newClient(false)
 		if err != nil {
@@ -81,7 +82,7 @@ scored.`,
 		if watchForceOW {
 			target = jobs
 		}
-		ingest(target, ingestOptions{
+		ingest(target, provider, ingestOptions{
 			minSalary:         minSal,
 			minSalaryCurrency: currency,
 			remote:            watchRemote,

@@ -439,7 +439,7 @@ linkedin-jobs config path             # settings/db file locations
 linkedin-jobs doctor                  # diagnose provider + settings completeness
 ```
 
-No key? Scoring is skipped with a clear message; all other commands still work.
+No key? Fetch+score commands (`recommended`/`url`/`search`/`watch`/`job`) exit with a setup prompt instead of running — configure a provider first.
 
 ### Settings
 

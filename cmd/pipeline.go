@@ -30,18 +30,46 @@ type ingestOptions struct {
 	remote            bool
 	hybrid            bool
 	onsite            bool
-	noScore           bool
 	forceOverwrite    bool // bypass dedup: re-parse + re-score + overwrite jobs already in the DB
 	detailDelay       float64
 	scoreDelay        float64 // pause between successive LLM scoring calls (avoids 429s)
 	jsonOut           bool
 }
 
+// scoringProvider is the pure policy for the mandatory-LLM precondition: it
+// returns a setup-guidance error when the provider is nil or resolution failed,
+// otherwise the provider unchanged. Split from mustResolveProvider so the
+// "missing provider → actionable error, never a silent nil" rule is unit-
+// testable without depending on host opencode credential state (which
+// llm.Resolve also reads and would make a forced-failure test flaky).
+func scoringProvider(p *llm.Provider, err error) (*llm.Provider, error) {
+	if p == nil && err == nil {
+		err = llm.ErrNoProvider
+	}
+	if err != nil {
+		return nil, fmt.Errorf("LLM provider required for scoring — run 'linkedin-jobs doctor' to diagnose: %w", err)
+	}
+	return p, nil
+}
+
+// mustResolveProvider resolves the LLM provider or dies with a setup prompt.
+// Each fetch+score command calls it at the top of its RunE, before any LinkedIn
+// fetch, so a missing provider fails fast with no network calls.
+func mustResolveProvider() *llm.Provider {
+	p, err := scoringProvider(llm.Resolve(loadCfg()))
+	if err != nil {
+		die("%v", err)
+	}
+	return p
+}
+
 // ingest runs the pipeline on a batch of job cards and returns the display set
-// (all fetched jobs are persisted to the store regardless). Gate order keeps
-// token use minimal: dedup and the hard filter are deterministic and free; only
-// genuine new candidates reach the LLM (one combined enrichment+score call).
-func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting {
+// (all fetched jobs are persisted to the store regardless). The caller resolves
+// the LLM provider and passes it in — scoring is mandatory, so provider is
+// always non-nil. Gate order keeps token use minimal: dedup and the hard filter
+// are deterministic and free; every genuine new candidate reaches the LLM (one
+// combined enrichment+score call).
+func ingest(jobs []*models.JobPosting, provider *llm.Provider, opts ingestOptions) []*models.JobPosting {
 	cfg := loadCfg()
 	settings, _ := config.LoadSettings()
 	st, err := openStore()
@@ -85,21 +113,11 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 		}
 	}
 
-	// 3. Score every surviving job. No token-frugality gate — every job runs
-	// through enrich → compose → persist (the user opted into LLM-everywhere).
+	// 3. Score every surviving job. The provider is resolved by the caller
+	// before any fetch (LLM is a hard requirement; --no-score is gone), so every
+	// non-duplicate survivor runs through enrich → compose → persist.
 	profileData, _ := profile.Load(settings.Profile)
-	var provider *llm.Provider
-	if !opts.noScore {
-		p, err := llm.Resolve(cfg)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Scoring skipped: %v\n", err)
-		} else {
-			provider = p
-			// Surface profile state so the user can tell whether scores will
-			// reflect their actual preference knobs or run context-free.
-			fmt.Fprintln(os.Stderr, profileStatus(profileData))
-		}
-	}
+	fmt.Fprintln(os.Stderr, profileStatus(profileData))
 	rubrics := settings.Scoring.Rubrics
 	// Partition into jobs that need LLM scoring vs. dedup-skipped.
 	var toScore []*models.JobPosting
@@ -112,7 +130,7 @@ func ingest(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting 
 		toScore = append(toScore, j)
 	}
 	scoredN := 0
-	if provider != nil && len(toScore) > 0 {
+	if len(toScore) > 0 {
 		scoredN = enrichAndScoreBatch(st, toScore, profileData, provider, rubrics, resolveLLMConcurrency(), opts.scoreDelay, func(idx, total int, j *models.JobPosting, err error) {
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "  ! %s: %v\n", j.Title, err)

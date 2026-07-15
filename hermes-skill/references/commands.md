@@ -27,7 +27,6 @@ linkedin-jobs recommended [flags]
 | `--remote` | bool | false | Only keep remote-friendly jobs |
 | `--hybrid` | bool | false | Only keep hybrid-friendly jobs (OR with `--remote`/`--onsite`) |
 | `--onsite` | bool | false | Only keep on-site jobs (OR with `--remote`/`--hybrid`) |
-| `--no-score` | bool | false | Skip LLM enrichment + fit-scoring |
 | `--force-overwrite` | bool | false | Re-parse and re-score jobs already in the DB (bypass dedup) |
 
 `--json`: yes. Progress to stderr: fetch count, detail fetch `N/total`, gate pass/drop, scoring summary.
@@ -50,7 +49,6 @@ Args: `keywords` (required), `location` (optional, e.g. `"Toronto"` or `"Remote,
 | `--remote` | bool | false | Only remote-friendly jobs |
 | `--hybrid` | bool | false | Only hybrid-friendly jobs |
 | `--onsite` | bool | false | Only on-site jobs |
-| `--no-score` | bool | false | Skip LLM enrichment + fit-scoring |
 | `--force-overwrite` | bool | false | Re-parse and re-score jobs already in the DB |
 
 `--json`: yes.
@@ -73,7 +71,6 @@ For URLs with `keywords=`, replays the URL's filters against the authenticated V
 | `--remote` | bool | false | Only remote-friendly jobs |
 | `--hybrid` | bool | false | Only hybrid-friendly jobs |
 | `--onsite` | bool | false | Only on-site jobs |
-| `--no-score` | bool | false | Skip LLM enrichment + fit-scoring |
 | `--force-overwrite` | bool | false | Re-parse and re-score jobs already in the DB |
 
 `--json`: yes.
@@ -98,7 +95,7 @@ Args: `keywords` and `location` (both required).
 | `--onsite` | bool | false | Only on-site jobs |
 | `--force-overwrite` | bool | false | Re-process existing jobs (bypass new-only pre-filter and dedup) |
 
-`--json`: yes. Note: `watch` has no `--no-score` flag — scoring runs if an LLM provider is configured.
+`--json`: yes. Like every fetch+score command, `watch` requires a configured LLM provider and exits with a setup prompt if none is found.
 
 ### job
 

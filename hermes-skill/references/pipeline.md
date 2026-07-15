@@ -72,7 +72,6 @@ A `fit_reason` showing the per-rubric breakdown is always stored (e.g. `salary 4
 ## Token-Frugality Features
 
 - **Dedup:** re-fetched or cross-source duplicates skip scoring (zero tokens).
-- **`--no-score`:** skip the LLM entirely for a fetch run.
 - **Pre-score gate:** drops jobs before they reach the DB or LLM.
 - **`LJ_LLM_DELAY_SECONDS`:** pauses between successive LLM calls (default 2.0s) to avoid provider rate limits (HTTP 429).
 
