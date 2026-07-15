@@ -8,6 +8,7 @@ import (
 
 	"linkedin-jobs/internal/config"
 	"linkedin-jobs/internal/llm"
+	"linkedin-jobs/internal/models"
 	"linkedin-jobs/internal/profile"
 	"linkedin-jobs/internal/store"
 )
@@ -44,19 +45,17 @@ tokens proportional to your DB size. Explicit triage statuses
 			die("%v", err)
 		}
 		delay := resolveLLMDelay()
-		fmt.Fprintf(os.Stderr, "Re-scoring %d job(s) via %s…\n", total, provider.Source)
+		concurrency := resolveLLMConcurrency()
+		fmt.Fprintf(os.Stderr, "Re-scoring %d job(s) via %s (batch %d)…\n", total, provider.Source, concurrency)
 		fmt.Fprintln(os.Stderr, profileStatus(p))
 
-		scored := 0
-		for i, j := range jobs {
-			paceLLM(delay, i)
-			fmt.Fprintf(os.Stderr, "  [%d/%d] %s — %s\n", i+1, total, j.Title, j.Company)
-			if err := enrichAndScoreJob(st, j, p, provider, rubrics); err != nil {
-				fmt.Fprintf(os.Stderr, "    ! %v\n", err)
-				continue
+		scored := enrichAndScoreBatch(st, jobs, p, provider, rubrics, concurrency, delay, func(idx, total int, j *models.JobPosting, err error) {
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "  [%d/%d] ! %s — %v\n", idx+1, total, j.Title, err)
+				return
 			}
-			scored++
-		}
+			fmt.Fprintf(os.Stderr, "  [%d/%d] + %s — %s\n", idx+1, total, j.Title, j.Company)
+		})
 		fmt.Fprintf(os.Stderr, "Re-scored %d of %d job(s).\n", scored, total)
 		return nil
 	},

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -42,6 +43,30 @@ type Rubric struct {
 	Weight      int      `yaml:"weight" json:"weight"`
 	Description string   `yaml:"description,omitempty" json:"description,omitempty"`
 	Items       []string `yaml:"items,omitempty" json:"items,omitempty"`
+	AppliesTo   []string `yaml:"applies_to,omitempty" json:"applies_to,omitempty"`
+}
+
+// AppliesToArrangement reports whether this rubric should be scored for a job
+// whose detected arrangement is the argument ("remote", "hybrid", "onsite", or
+// "" for unknown). An empty AppliesTo list means the rubric applies to every
+// job. When set (e.g. ["hybrid","onsite"]), the rubric is skipped entirely —
+// excluded from both the weighted-average numerator and denominator — for jobs
+// whose arrangement is not listed. An unknown arrangement ("") is never
+// excluded: a rubric is dropped only when the arrangement is positively
+// detected and it isn't in the list.
+func (r Rubric) AppliesToArrangement(arrangement string) bool {
+	if len(r.AppliesTo) == 0 {
+		return true
+	}
+	if arrangement == "" {
+		return true
+	}
+	for _, a := range r.AppliesTo {
+		if strings.EqualFold(strings.TrimSpace(a), arrangement) {
+			return true
+		}
+	}
+	return false
 }
 
 // System rubric IDs — always present, computed deterministically in Go.
@@ -167,6 +192,21 @@ func EnsureSettings() (string, error) {
 	return p, nil
 }
 
+// stripObsoleteSettingsKeys removes keys whose behavior was deleted in earlier
+// refactors but which linger in settings.yaml files written by old binaries.
+// Because SaveProfile/SaveRubrics round-trip the file through a generic map,
+// unknown keys are otherwise preserved forever. Removing them here keeps the
+// file clean: filter.auto_filter (hard-filter gate, removed), enrich.*
+// (auto_enrich_on_save, removed), and scoring.reason_threshold (fit_reason
+// gating, replaced by the always-stored per-rubric breakdown).
+func stripObsoleteSettingsKeys(root map[string]any) {
+	delete(root, "filter")
+	delete(root, "enrich")
+	if scoring, ok := root["scoring"].(map[string]any); ok {
+		delete(scoring, "reason_threshold")
+	}
+}
+
 // SaveProfile writes the profile section into settings.yaml, preserving the
 // rest of the file. Reads the current file (or defaults), replaces the
 // profile key, and writes back.
@@ -180,6 +220,7 @@ func SaveProfile(p ProfileSettings) error {
 	if root == nil {
 		root = map[string]any{}
 	}
+	stripObsoleteSettingsKeys(root)
 	raw, err := yaml.Marshal(p)
 	if err != nil {
 		return fmt.Errorf("marshal profile: %w", err)
@@ -209,6 +250,7 @@ func SaveRubrics(rubrics []Rubric) error {
 	if root == nil {
 		root = map[string]any{}
 	}
+	stripObsoleteSettingsKeys(root)
 	scoring, _ := root["scoring"].(map[string]any)
 	if scoring == nil {
 		scoring = map[string]any{}

@@ -469,6 +469,7 @@ scoring:
       kind: dynamic              # from the description, e.g. "remote flexible anywhere"
       weight: 5
       description: "Hybrid must be in Toronto/Mississauga; remote is flexible"
+      applies_to: [hybrid, onsite]  # optional: skip this rubric for other arrangements
 profile:                         # structured inputs for the system rubrics
   work_arrangement: [remote, hybrid]
   min_salary: 200000

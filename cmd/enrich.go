@@ -57,24 +57,20 @@ var enrichCmd = &cobra.Command{
 			jobs = []*models.JobPosting{j}
 		}
 
-		fmt.Fprintf(os.Stderr, "Enriching + scoring %d job(s) via %s…\n", len(jobs), provider.Source)
+		fmt.Fprintf(os.Stderr, "Enriching + scoring %d job(s) via %s (batch %d)…\n", len(jobs), provider.Source, resolveLLMConcurrency())
 		fmt.Fprintln(os.Stderr, profileStatus(p))
-		delay := resolveLLMDelay()
 		rubrics := settings.Scoring.Rubrics
-		scored := 0
-		for _, j := range jobs {
-			paceLLM(delay, scored)
-			if err := enrichAndScoreJob(st, j, p, provider, rubrics); err != nil {
+		enrichAndScoreBatch(st, jobs, p, provider, rubrics, resolveLLMConcurrency(), resolveLLMDelay(), func(idx, total int, j *models.JobPosting, err error) {
+			if err != nil {
 				fmt.Fprintf(os.Stderr, "  ! %s: %v\n", j.Title, err)
-				continue
+				return
 			}
-			scored++
 			s := "-"
 			if j.FitScore != nil {
 				s = fmt.Sprintf("%d", *j.FitScore)
 			}
 			fmt.Fprintf(os.Stderr, "  + [%s] %s @ %s\n", s, j.Title, orNA2(j.Company))
-		}
+		})
 		fmt.Fprintln(os.Stderr, "Done.")
 
 		if !enrichAll && len(args) == 1 {

@@ -24,6 +24,10 @@ type Config struct {
 	// to avoid provider rate limits (HTTP 429). 0 = no delay.
 	LLMDelaySeconds float64
 
+	// LLM concurrency: max jobs enriched+scored in parallel per batch. The LLM
+	// HTTP call dominates; SQLite writes serialize through MaxOpenConns(1).
+	LLMConcurrency int
+
 	// LinkedIn session (for recommended). Press-auth is preferred; these are fallbacks.
 	CookiesFile  string // path to a file holding a raw "Cookie:" header value or Netscape cookies.txt
 	CookieHeader string // raw cookie header override (env LJ_COOKIE)
@@ -40,6 +44,7 @@ func Load() Config {
 		RequestTimeoutSeconds: 20,
 		DetailDelaySeconds:    0.8,
 		LLMDelaySeconds:       envFloat("LJ_LLM_DELAY_SECONDS", 2.0),
+		LLMConcurrency:       envInt("LJ_LLM_CONCURRENCY", 5),
 		CookiesFile:           os.Getenv("LJ_COOKIES_FILE"),
 		CookieHeader:          os.Getenv("LJ_COOKIE"),
 	}
@@ -70,6 +75,19 @@ func envFloat(key string, def float64) float64 {
 		return def
 	}
 	return f
+}
+
+// envInt parses key as a positive int, falling back to def on missing/invalid.
+func envInt(key string, def int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		return def
+	}
+	return n
 }
 
 // defaultDBPath returns the global DB location at ~/.linkedin-jobs/linkedin_jobs.db,
