@@ -220,6 +220,79 @@ func TestCompute_NoCaps(t *testing.T) {
 	}
 }
 
+// --- applies_to: conditional rubric skip ---
+
+func TestCompute_AppliesToSkipsRemote(t *testing.T) {
+	// location_proximity has applies_to: [hybrid, onsite]. For a REMOTE job it
+	// is skipped entirely — excluded from numerator AND denominator — so a
+	// perfect-5 job reaches 100 instead of being dragged toward 60.
+	rubrics := []config.Rubric{
+		dynRubric("a", 5),
+		{ID: "location_proximity", Kind: "dynamic", Weight: 5, AppliesTo: []string{"hybrid", "onsite"}},
+	}
+	ratings := map[string]int{"a": 5, "location_proximity": 5}
+	remoteJob := &models.JobPosting{Location: "Remote"}
+	r := Compute(remoteJob, &models.Profile{}, rubrics, ratings)
+	if r.Score != 100 {
+		t.Errorf("remote Score=%d want 100 (location_proximity skipped, only 'a' rated)", r.Score)
+	}
+	if len(r.Rubrics) != 1 || r.Rubrics[0].ID != "a" {
+		t.Errorf("remote breakdown should omit location_proximity, got %v", r.Rubrics)
+	}
+}
+
+func TestCompute_AppliesToKeepsForHybrid(t *testing.T) {
+	// Same rubrics, but a HYBRID job → location_proximity IS scored.
+	rubrics := []config.Rubric{
+		dynRubric("a", 5),
+		{ID: "location_proximity", Kind: "dynamic", Weight: 5, AppliesTo: []string{"hybrid", "onsite"}},
+	}
+	ratings := map[string]int{"a": 5, "location_proximity": 3}
+	hybridJob := &models.JobPosting{Location: "Hybrid · Toronto"}
+	r := Compute(hybridJob, &models.Profile{}, rubrics, ratings)
+	// avg = (5·5 + 5·3)/10 = 4.0 → 80. If location_proximity were wrongly
+	// skipped, the score would be 100.
+	if r.Score != 80 {
+		t.Errorf("hybrid Score=%d want 80 (location_proximity rated 3, kept)", r.Score)
+	}
+	if len(r.Rubrics) != 2 {
+		t.Errorf("hybrid breakdown should include both rubrics, got %d", len(r.Rubrics))
+	}
+}
+
+func TestCompute_AppliesToUnknownArrangementKeeps(t *testing.T) {
+	// When arrangement can't be detected (""), the rubric is NOT excluded —
+	// we only drop when positively detected and not matching.
+	rubrics := []config.Rubric{
+		{ID: "loc", Kind: "dynamic", Weight: 5, AppliesTo: []string{"hybrid"}},
+	}
+	unknownJob := &models.JobPosting{Location: "New York, NY"} // no arrangement keyword
+	r := Compute(unknownJob, &models.Profile{}, rubrics, map[string]int{"loc": 5})
+	if r.Score != 100 {
+		t.Errorf("unknown-arrangement Score=%d want 100 (rubric kept, not excluded)", r.Score)
+	}
+}
+
+func TestRubric_AppliesToArrangement(t *testing.T) {
+	r := config.Rubric{AppliesTo: []string{"hybrid", "onsite"}}
+	if !r.AppliesToArrangement("hybrid") {
+		t.Error("hybrid should apply")
+	}
+	if !r.AppliesToArrangement("onsite") {
+		t.Error("onsite should apply")
+	}
+	if r.AppliesToArrangement("remote") {
+		t.Error("remote should NOT apply")
+	}
+	if !r.AppliesToArrangement("") {
+		t.Error("unknown arrangement should apply (never exclude on uncertainty)")
+	}
+	empty := config.Rubric{}
+	if !empty.AppliesToArrangement("remote") {
+		t.Error("empty AppliesTo should apply to all")
+	}
+}
+
 // --- edge cases ---
 
 func TestCompute_EmptyRubrics(t *testing.T) {

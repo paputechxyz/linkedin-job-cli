@@ -281,6 +281,9 @@ func printRubrics(rubrics []config.Rubric) {
 		if len(r.Items) > 0 {
 			fmt.Printf("  (items: %s)", strings.Join(r.Items, ", "))
 		}
+		if len(r.AppliesTo) > 0 {
+			fmt.Printf("  (applies_to: %s)", strings.Join(r.AppliesTo, ", "))
+		}
 		fmt.Println()
 	}
 }

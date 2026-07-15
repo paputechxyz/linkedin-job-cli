@@ -67,6 +67,9 @@ func Compute(job *models.JobPosting, profile *models.Profile, rubrics []config.R
 	out := Result{Rubrics: make([]RubricScore, 0, len(rubrics))}
 	var weighted, totalWeight float64
 	for _, r := range rubrics {
+		if !r.AppliesToArrangement(job.DetectArrangement()) {
+			continue
+		}
 		rating, reason := rateRubric(r, job, profile, dynamicRatings)
 		w := r.Weight
 		if w < 1 {

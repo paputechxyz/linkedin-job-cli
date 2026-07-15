@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -54,3 +55,33 @@ func TestLoadSettings_RubricsFromFile(t *testing.T) {
 		t.Errorf("free_snacks weight = %d, want 5 (clamped)", s.Scoring.Rubrics[1].Weight)
 	}
 }
+
+// TestSave_StripObsoleteKeys verifies that SaveProfile/SaveRubrics drop the
+// filter.auto_filter / enrich.* / scoring.reason_threshold keys that older
+// binaries wrote. Without stripping, the generic-map round-trip would keep
+// these dead knobs alive forever.
+func TestSave_StripObsoleteKeys(t *testing.T) {
+	p := settingsFile(t)
+	t.Setenv("LJ_SETTINGS_FILE", p)
+	seed := []byte("filter:\n  auto_filter: true\nenrich:\n  auto_enrich_on_save: false\nscoring:\n  reason_threshold: 70\n  rubrics:\n    - id: salary\n      kind: system\n      weight: 5\nprofile:\n  min_salary: 200000\n")
+	if err := os.WriteFile(p, seed, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SaveProfile(ProfileSettings{MinSalary: ptrFloat(150000)}); err != nil {
+		t.Fatalf("SaveProfile: %v", err)
+	}
+	if err := SaveRubrics(DefaultScoringSettings().Rubrics); err != nil {
+		t.Fatalf("SaveRubrics: %v", err)
+	}
+
+	got, _ := os.ReadFile(p)
+	gotStr := string(got)
+	for _, bad := range []string{"auto_filter", "auto_enrich_on_save", "reason_threshold", "filter:", "enrich:"} {
+		if strings.Contains(gotStr, bad) {
+			t.Errorf("saved settings still contains obsolete token %q\n%s", bad, gotStr)
+		}
+	}
+}
+
+func ptrFloat(v float64) *float64 { return &v }

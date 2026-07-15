@@ -141,6 +141,7 @@ scoring:
       kind: dynamic
       weight: 5
       description: "Hybrid must be in Toronto/Mississauga; remote is flexible anywhere"
+      applies_to: [hybrid, onsite]  # optional: skip this rubric for other arrangements
 
 profile:                         # structured inputs for the system rubrics
   work_arrangement: [remote, hybrid]

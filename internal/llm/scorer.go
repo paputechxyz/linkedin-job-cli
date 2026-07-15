@@ -75,18 +75,26 @@ func orNA(s string) string {
 }
 
 // dynamicRubricBlock lists the dynamic rubrics the LLM must rate. System
-// rubrics are excluded (computed in Go). Returns a placeholder line when there
-// are no dynamic rubrics so the ratings key is still well-formed.
-func dynamicRubricBlock(rubrics []config.Rubric) string {
+// rubrics are excluded (computed in Go), and rubrics whose applies_to list
+// doesn't cover the job's arrangement are dropped so the LLM isn't asked to
+// rate (and waste tokens on) something Compute will ignore. Returns a
+// placeholder line when there are no applicable rubrics so the ratings key is
+// still well-formed.
+func dynamicRubricBlock(rubrics []config.Rubric, j *models.JobPosting) string {
+	arr := j.DetectArrangement()
 	var lines []string
 	for _, r := range rubrics {
-		if r.Kind != "system" {
-			line := r.ID + ": " + r.Description
-			if len(r.Items) > 0 {
-				line += " (items: " + strings.Join(r.Items, ", ") + ")"
-			}
-			lines = append(lines, "- "+line)
+		if r.Kind == "system" {
+			continue
 		}
+		if !r.AppliesToArrangement(arr) {
+			continue
+		}
+		line := r.ID + ": " + r.Description
+		if len(r.Items) > 0 {
+			line += " (items: " + strings.Join(r.Items, ", ") + ")"
+		}
+		lines = append(lines, "- "+line)
 	}
 	if len(lines) == 0 {
 		return "- (none — return an empty ratings object {})"
@@ -99,7 +107,7 @@ func enrichPrompt(j *models.JobPosting, rubrics []config.Rubric) string {
 	if len(desc) > 4000 {
 		desc = desc[:4000]
 	}
-	return fmt.Sprintf(enrichPromptTmpl, dynamicRubricBlock(rubrics), j.Title, orNA(j.Company), orNA(j.Location),
+	return fmt.Sprintf(enrichPromptTmpl, dynamicRubricBlock(rubrics, j), j.Title, orNA(j.Company), orNA(j.Location),
 		j.SalaryDisplay(), desc)
 }
 
