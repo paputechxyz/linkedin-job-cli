@@ -42,10 +42,17 @@ your pipeline. Install it for your agent, start a new session, and the skill
 installs the `linkedin-jobs` CLI binary for you on first use (no manual binary
 install needed).
 
-**opencode, Claude Code, Cursor, Codex, and other `~/.agents/skills/` agents:**
+**opencode, Cursor, Codex, and other `~/.agents/skills/` agents:**
 
 ```bash
-npx skills add paputechxyz/linkedin-job-cli --skill linkedin-jobs --global
+npx skills add paputechxyz/linkedin-job-cli --skill linkedin-jobs -g
+```
+
+**Claude Code** (uses `~/.claude/skills/` — add `-a claude-code` so the
+`skills` CLI symlinks it there automatically):
+
+```bash
+npx skills add paputechxyz/linkedin-job-cli --skill linkedin-jobs -g -a claude-code
 ```
 
 **Hermes:**
