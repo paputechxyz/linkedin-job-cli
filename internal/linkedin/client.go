@@ -38,7 +38,7 @@ func (c *Client) WithSession(s *auth.Session) *Client {
 func (c *Client) HasSession() bool { return c.session != nil && c.session.CookieHeader != "" }
 
 // ErrAuthRequired is returned when an authenticated call is made without a session.
-var ErrAuthRequired = errors.New("authenticated call requires a LinkedIn session: run `linkedin-jobs auth login` or set LJ_COOKIES_FILE / LJ_COOKIE")
+var ErrAuthRequired = errors.New("authenticated call requires a LinkedIn session: run `linkedin-jobs auth login` to capture one")
 
 // get fetches a URL with browser-like headers, optionally authenticated.
 func (c *Client) get(url string, authenticated bool, extra http.Header) (string, http.Header, int, error) {

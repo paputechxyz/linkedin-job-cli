@@ -53,8 +53,7 @@ var authStatusCmd = &cobra.Command{
 			return nil
 		}
 		if !c.HasSession() {
-			fmt.Println("No session. Run 'linkedin-jobs auth login' to capture one,")
-			fmt.Println("or set LJ_COOKIES_FILE / LJ_COOKIE to a raw Cookie header.")
+			fmt.Println("No session. Run 'linkedin-jobs auth login' to capture one.")
 			return nil
 		}
 		// HasSession only checks that *some* cookies were captured. A usable
@@ -79,7 +78,7 @@ var authStatusCmd = &cobra.Command{
 				why = "session could not be resolved"
 			}
 			fmt.Printf("Session captured from %s but incomplete (%s).\n", sessionSourceLabel(src), why)
-			fmt.Println("This usually means the cookie export is stale — re-export your LinkedIn cookies.")
+			fmt.Println("This usually means the session is stale — re-run `linkedin-jobs auth login`.")
 			return nil
 		}
 		fmt.Printf("Session available (recommended jobs enabled) [source: %s].\n", sessionSourceLabel(sess.Source))
@@ -115,7 +114,7 @@ headless and agent use.`,
 func runAuthLogin(cmd *cobra.Command, args []string) error {
 	if runtimeGOOS != "darwin" {
 		fmt.Println("Browser capture is only supported on macOS.")
-		fmt.Println("Set LJ_COOKIES_FILE or LJ_COOKIE to a raw Cookie header.")
+		fmt.Println("See the README for setting up a session on other platforms.")
 		return nil
 	}
 

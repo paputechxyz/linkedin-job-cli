@@ -160,7 +160,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 			fmt.Println("      if you're already logged in). The first run triggers a macOS")
 			fmt.Println("      keychain prompt — click 'Always Allow'.")
 		} else {
-			fmt.Println("      Set LJ_COOKIES_FILE or LJ_COOKIE to a raw Cookie header.")
+			fmt.Println("      See the README for setting up a session on this platform.")
 		}
 		fmt.Println()
 		fmt.Println("      'search', 'hr', 'watch', and 'job' work anonymously — no session needed.")

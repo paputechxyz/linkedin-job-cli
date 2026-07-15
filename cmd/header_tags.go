@@ -27,7 +27,7 @@ This is distinct from the stored remote_type, which the parser derives from
 description prose via DetectRemote. When the two disagree, the parser overrode
 LinkedIn's badge; the critics agent uses this command to detect that.
 
-Requires an authenticated LinkedIn session (set LJ_COOKIES_FILE or LJ_COOKIE).
+Requires an authenticated LinkedIn session (run linkedin-jobs auth login).
 With --json, emits a machine-readable HeaderTags object; otherwise prints a
 human-readable summary.
 
@@ -40,7 +40,7 @@ Example:
 			die("failed to resolve LinkedIn session: %v", err)
 		}
 		if !c.HasSession() {
-			die("no session: header-tags requires LinkedIn auth (set LJ_COOKIES_FILE or LJ_COOKIE)")
+			die("no session: header-tags requires LinkedIn auth (run `linkedin-jobs auth login`)")
 		}
 		ht, err := c.FetchHeaderTags(id)
 		if err != nil {

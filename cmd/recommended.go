@@ -38,7 +38,7 @@ survivors.`,
 			die("%v", err)
 		}
 		if !c.HasSession() {
-			fmt.Fprintln(os.Stderr, "No LinkedIn session. Set LJ_COOKIES_FILE or LJ_COOKIE to a raw Cookie header.")
+			fmt.Fprintln(os.Stderr, "No LinkedIn session. Run `linkedin-jobs auth login` to capture one.")
 			os.Exit(1)
 		}
 		fmt.Fprintln(os.Stderr, "Fetching your recommended jobs…")

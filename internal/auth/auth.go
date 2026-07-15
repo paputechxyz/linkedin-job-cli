@@ -51,7 +51,7 @@ func hasCookie(header, name string) bool {
 }
 
 // ErrNoSession is returned when no LinkedIn session could be resolved.
-var ErrNoSession = errors.New("no LinkedIn session found: set LJ_COOKIES_FILE / LJ_COOKIE to a raw Cookie header")
+var ErrNoSession = errors.New("no LinkedIn session found: run `linkedin-jobs auth login` to capture one")
 
 // Resolve resolves a LinkedIn session in priority order:
 //  1. LJ_COOKIE env (raw cookie header) — explicit override, wins over everything
