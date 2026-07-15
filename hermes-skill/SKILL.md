@@ -59,7 +59,7 @@ first unresolved gate and guide the user through it before continuing.
 
 2. **Diagnose everything:** `linkedin-jobs doctor`. One command reports the LLM provider, `settings.yaml` completeness, and every `LJ_*` env var (set/unset, secrets redacted). It is the single source of truth for what's configured. To verify the LinkedIn session, look for the `LJ_COOKIES_FILE` line under `== Environment ==`.
 
-3. **Configure the LLM (only if `doctor` reports no provider).** Scoring is optional — every read command works without an LLM — but fit scoring needs a provider. Resolution (first match wins): `LJ_LLM_API_KEY` / `OPENAI_API_KEY` → `ANTHROPIC_API_KEY` → opencode/Hermes session credentials. **When invoked inside an opencode/Hermes session, no `LJ_LLM_*` is needed** — the session injects `ANTHROPIC_API_KEY` + `ANTHROPIC_BASE_URL` and the CLI reuses that session LLM. To set explicitly, have the user export in their shell:
+3. **Configure the LLM (only if `doctor` reports no provider).** A provider is required — fetch+score commands (`recommended`/`url`/`search`/`watch`/`job`) exit with a setup prompt when none is configured. Resolution (first match wins): `LJ_LLM_API_KEY` / `OPENAI_API_KEY` → `ANTHROPIC_API_KEY` → opencode/Hermes session credentials. **When invoked inside an opencode/Hermes session, no `LJ_LLM_*` is needed** — the session injects `ANTHROPIC_API_KEY` + `ANTHROPIC_BASE_URL` and the CLI reuses that session LLM. To set explicitly, have the user export in their shell:
    ```
    export LJ_LLM_API_KEY=sk-...                      # OpenAI-compatible key
    export LJ_LLM_MODEL=gpt-4o-mini                   # optional

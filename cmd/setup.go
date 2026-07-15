@@ -124,8 +124,9 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	p, err := llm.Resolve(cfg)
 	if err != nil {
 		fmt.Println("  [✗] No LLM provider configured.")
-		fmt.Println("      Scoring is optional — every read command works without an LLM —")
-		fmt.Println("      but fit scoring needs a provider. To configure:")
+		fmt.Println("      A provider is required for scoring — without one, the fetch+score")
+		fmt.Println("      commands (recommended/url/search/watch/job) exit and ask you to")
+		fmt.Println("      configure one. To set up:")
 		fmt.Println()
 		fmt.Println("      export OPENAI_API_KEY=sk-...          # or LJ_LLM_API_KEY")
 		fmt.Println("      export LJ_LLM_MODEL=gpt-4o-mini       # optional")
