@@ -448,10 +448,7 @@ Run `linkedin-jobs setup` to create it interactively. Everything (DB, settings,
 FX cache) lives under `~/.linkedin-jobs/`:
 
 ```yaml
-filter:
-  auto_filter: true              # retained for compatibility (scoring no longer caps/hides)
 scoring:
-  reason_threshold: 70           # fit_reason included at/above this score
   rubrics:                       # weight 1-10 (default 5); system rubrics are computed in Go,
                                  # dynamic rubrics are rated 1-5 by the LLM. Run `setup` to generate.
     - id: salary

@@ -118,11 +118,7 @@ linkedin-jobs doctor          # diagnose provider + settings completeness
 Optional `settings.yaml` in `~/.linkedin-jobs/` (override with `$LJ_SETTINGS_FILE`):
 
 ```yaml
-filter:
-  auto_filter: true              # retained for compatibility (scoring no longer caps/hides)
-
 scoring:
-  reason_threshold: 70           # fit_reason emitted at/above this score
   rubrics:                       # weight 1-10 (default 5); run `setup` to generate
     - id: salary                 # system rubrics are computed in Go
       kind: system
@@ -141,9 +137,6 @@ scoring:
       kind: dynamic
       weight: 5
       items: [C#, .NET]
-
-enrich:
-  auto_enrich_on_save: false     # true = auto-score jobs when tagged `saved`
 
 profile:                         # structured inputs for the system rubrics
   work_arrangement: [remote, hybrid]

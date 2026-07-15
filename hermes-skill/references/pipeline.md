@@ -67,7 +67,7 @@ score = ( Σ weightᵢ · ratingᵢ / Σ weightᵢ ) / 5 × 100
 
 So rating 5 → 100, 4 → 80, 3 → 60, 2 → 40, 1 → 20. A job rated 4/5 across the board scores ~80 whether there are 3 rubrics or 15 — the rubric count does not distort the scale. **There are no hard caps or baselines**; a job matching an avoided tech simply gets a low rating on that rubric.
 
-A `fit_reason` showing the per-rubric breakdown is included (e.g. `salary 4/5 (w5), preferred_tech 5/5 (w5), avoided_tech 1/5 (w5) | total 73`) when the score is at or above `scoring.reason_threshold` (default 70).
+A `fit_reason` showing the per-rubric breakdown is always stored (e.g. `salary 4/5 (w5), preferred_tech 5/5 (w5), avoided_tech 1/5 (w5) | total 73`).
 
 ## Token-Frugality Features
 

@@ -31,8 +31,7 @@ var configShowCmd = &cobra.Command{
 		fmt.Printf("API key:  %s\n", p.Redacted())
 		s, _ := config.LoadSettings()
 		fmt.Printf("\nSettings: %s\n", config.SettingsPath())
-		fmt.Printf("  auto_filter:         %v\n", s.Filter.AutoFilter)
-		fmt.Printf("  reason_threshold:    %d\n", s.Scoring.ReasonThreshold)
+		fmt.Printf("  rubrics:             %d defined (%d system)\n", len(s.Scoring.Rubrics), countSystemRubrics(s.Scoring.Rubrics))
 		return nil
 	},
 }
@@ -50,4 +49,14 @@ var configPathCmd = &cobra.Command{
 func init() {
 	configCmd.AddCommand(configShowCmd, configPathCmd)
 	rootCmd.AddCommand(configCmd)
+}
+
+func countSystemRubrics(rubrics []config.Rubric) int {
+	n := 0
+	for _, r := range rubrics {
+		if r.Kind == "system" {
+			n++
+		}
+	}
+	return n
 }

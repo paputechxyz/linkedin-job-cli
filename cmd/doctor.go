@@ -116,8 +116,7 @@ var doctorEnvKeys = []string{
 }
 
 var settingsTopSchema = map[string][]string{
-	"filter":  {"auto_filter"},
-	"scoring": {"reason_threshold", "rubrics"},
+	"scoring": {"rubrics"},
 	"profile": {"work_arrangement", "min_salary", "min_salary_currency", "locations", "preferred_tech", "avoided_tech"},
 }
 

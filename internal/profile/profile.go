@@ -1,11 +1,10 @@
 // Package profile reads the structured preference knobs from settings.yaml to
-// build the in-memory models.Profile consumed by the deterministic scorer, the
-// hard filter, and the LLM enrich prompt.
+// build the in-memory models.Profile consumed by the system rubrics (salary,
+// work arrangement, location) and the LLM enrich prompt.
 //
 // The preference knobs (work_arrangement, min_salary, locations, preferred_tech,
-// avoided_tech) live under the profile: section of settings.yaml ($LJ_SETTINGS_FILE)
-// and drive the deterministic hard filter (internal/filter) and the rubric
-// (internal/score). Fit scoring relies entirely on these knobs.
+// avoided_tech) live under the profile: section of settings.yaml
+// ($LJ_SETTINGS_FILE) and feed the system rubrics in internal/score.
 package profile
 
 import (

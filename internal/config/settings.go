@@ -11,7 +11,6 @@ import (
 // Settings holds tunable runtime settings loaded from a YAML file. Zero values
 // are replaced by DefaultSettings so callers always get usable numbers.
 type Settings struct {
-	Filter  FilterSettings  `yaml:"filter"`
 	Scoring ScoringSettings `yaml:"scoring"`
 	Profile ProfileSettings `yaml:"profile"`
 }
@@ -29,13 +28,8 @@ type ProfileSettings struct {
 	AvoidedTech       []string `yaml:"avoided_tech,omitempty"`
 }
 
-type FilterSettings struct {
-	AutoFilter bool `yaml:"auto_filter"`
-}
-
 type ScoringSettings struct {
-	ReasonThreshold int      `yaml:"reason_threshold"`
-	Rubrics         []Rubric `yaml:"rubrics"`
+	Rubrics []Rubric `yaml:"rubrics"`
 }
 
 // Rubric is one scored criterion. System rubrics (salary, work_arrangement,
@@ -62,7 +56,6 @@ const (
 // absent or a key is omitted.
 func DefaultSettings() Settings {
 	return Settings{
-		Filter:  FilterSettings{AutoFilter: true},
 		Scoring: DefaultScoringSettings(),
 	}
 }
@@ -72,7 +65,6 @@ func DefaultSettings() Settings {
 // the setup flow from the user's preferences paragraph.
 func DefaultScoringSettings() ScoringSettings {
 	return ScoringSettings{
-		ReasonThreshold: 70,
 		Rubrics: []Rubric{
 			{ID: RubricSalary, Kind: "system", Weight: 5, Description: "Salary level relative to your floor"},
 			{ID: RubricArrangement, Kind: "system", Weight: 5, Description: "Remote / hybrid / onsite match"},
@@ -124,9 +116,6 @@ func LoadSettings() (Settings, error) {
 	if err := yaml.Unmarshal(data, &s); err != nil {
 		return DefaultSettings(), err
 	}
-	if s.Scoring.ReasonThreshold <= 0 || s.Scoring.ReasonThreshold > 100 {
-		s.Scoring.ReasonThreshold = DefaultSettings().Scoring.ReasonThreshold
-	}
 	// Rubric weights must land in [1,10]; clamp anything invalid to the default 5.
 	for i := range s.Scoring.Rubrics {
 		if s.Scoring.Rubrics[i].Weight < 1 || s.Scoring.Rubrics[i].Weight > 10 {
@@ -141,14 +130,10 @@ func LoadSettings() (Settings, error) {
 const defaultSettingsTemplate = `# linkedin-jobs settings — edit freely, delete a key to fall back to its default.
 # Docs: README → Settings
 
-filter:
-  auto_filter: true             # retained for compatibility; scoring no longer caps or hides jobs
-
 scoring:
-  reason_threshold: 70          # fit_reason only emitted at/above this score (0-100)
   # Rubrics drive the weighted-average score. System rubrics are computed in Go;
-  # dynamic rubrics are rated 1-5 by the LLM. Run ` + "`linkedin-jobs setup`" + ` to (re)generate
-  # the dynamic rubrics from a preferences paragraph. Weight range: 1-10.
+  # dynamic rubrics are rated 1-5 by the LLM. Run 'linkedin-jobs setup' to
+  # (re)generate the dynamic rubrics from a preferences paragraph. Weight: 1-10.
   rubrics:
     - id: salary
       kind: system
