@@ -84,7 +84,7 @@ The rubric (`score.Compute`) uses weights from `settings.yaml` under `scoring.we
 | `startup` (default 5) | Company stage seed/early + size 1-50 |
 | `ai_intensity` (default 3) | Core=full, mentioned=partial, none=0 |
 | `compensation_extras` (default 3) | Bonus + equity + retirement match (1pt each, +1 all three) |
-| `remote_tiebreak` (default 6) | Full-remote=full, hybrid=partial |
+| `work_arrangement` (default 3) | Each preferred arrangement match = full weight |
 
 Starting score after passing the hard filter: `scoring.baseline` (default 60). Avoided tech (from `profile.avoided_tech`) caps the score at `scoring.deal_breaker_cap` (default 30).
 

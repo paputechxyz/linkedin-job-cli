@@ -23,7 +23,7 @@ scoring:
     weights:
         ai_intensity: 3
         compensation_extras: 3
-        remote_tiebreak: 6
+        work_arrangement: 6
         salary: 6
         startup: 5
         tech_overlap: 4

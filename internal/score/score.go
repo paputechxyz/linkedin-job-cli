@@ -58,7 +58,7 @@ func FromSettings(s config.ScoringSettings) Weights {
 		Startup:            s.Weights.Startup,
 		AIIntensity:        s.Weights.AIIntensity,
 		CompensationExtras: s.Weights.CompensationExtras,
-		RemoteTiebreak:     s.Weights.RemoteTiebreak,
+		WorkArrangement:    s.Weights.WorkArrangement,
 	}
 }
 
@@ -72,7 +72,7 @@ type Weights struct {
 	Startup            int
 	AIIntensity        int
 	CompensationExtras int
-	RemoteTiebreak     int
+	WorkArrangement    int
 }
 
 // capReason constants — recorded in jobs.score_cap_reason and rendered in
@@ -501,7 +501,7 @@ func compensationExtrasDimension(job *models.JobPosting, w Weights) Dimension {
 // full weight. When the user has no preference (empty or all-three), or when
 // the job's arrangement doesn't match any preference, the dimension is neutral.
 func workArrangementDimension(job *models.JobPosting, profile *models.Profile, w Weights) Dimension {
-	max := w.RemoteTiebreak
+	max := w.WorkArrangement
 	if max <= 0 || profile == nil {
 		return Dimension{Name: "work_arrangement"}
 	}

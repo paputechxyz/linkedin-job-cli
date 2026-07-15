@@ -355,7 +355,7 @@ func TestCompute_CompensationExtrasSums(t *testing.T) {
 
 func TestCompute_WorkArrangement(t *testing.T) {
 	w := defaultWeights()
-	max := w.RemoteTiebreak
+	max := w.WorkArrangement
 
 	// No preference: empty or all-three → neutral (score stays at baseline, no cap).
 	noPrefCases := []struct {
@@ -472,7 +472,7 @@ func TestCompute_AllSignalsCombined(t *testing.T) {
 	r := Compute(j, fullProfile(), w)
 	// Manual: 60 baseline + 6 salary (+40%) + 7 tech (5+) + 5 startup (seed) +
 	// 5 AI core + 4 comp (3+1) + 3 remote = 90.
-	want := 60 + w.Salary + w.TechOverlap + w.Startup + w.AIIntensity + w.CompensationExtras + w.RemoteTiebreak
+	want := 60 + w.Salary + w.TechOverlap + w.Startup + w.AIIntensity + w.CompensationExtras + w.WorkArrangement
 	if r.Score != want {
 		t.Errorf("Score=%d want %d (combined)", r.Score, want)
 	}
