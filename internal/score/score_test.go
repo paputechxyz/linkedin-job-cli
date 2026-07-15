@@ -159,35 +159,6 @@ func TestCompute_WorkArrangementRating(t *testing.T) {
 	}
 }
 
-// --- system location rubric ---
-
-func TestCompute_LocationRating(t *testing.T) {
-	rubric := sysRubric(config.RubricLocation, 5)
-	prof := &models.Profile{PrefLocations: []string{"Seattle"}}
-
-	cases := []struct {
-		name       string
-		loc        string
-		wantRating int
-		wantScore  int
-	}{
-		{"seattle_match", "Seattle, WA", RatingStrong, 100},
-		{"nyc_miss", "New York, NY", RatingMiss, 20},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			j := &models.JobPosting{Location: tc.loc}
-			r := Compute(j, prof, []config.Rubric{rubric}, nil)
-			if r.Score != tc.wantScore {
-				t.Errorf("loc=%q Score=%d want %d", tc.loc, r.Score, tc.wantScore)
-			}
-			if len(r.Rubrics) != 1 || r.Rubrics[0].Rating != tc.wantRating {
-				t.Errorf("loc=%q rating=%d want %d", tc.loc, r.Rubrics[0].Rating, tc.wantRating)
-			}
-		})
-	}
-}
-
 // --- dynamic rubric rating handling ---
 
 func TestCompute_MissingDynamicRatingDefaultsNeutral(t *testing.T) {

@@ -1,7 +1,7 @@
 ---
 name: linkedin-jobs
 description: "Use when the user wants to search, fetch, score, or manage LinkedIn job postings — pull their personalized recommended feed, search the public job board, score fit against their preferences, find who to reach out to for a job, manage a job pipeline, or configure their job-search profile. Wraps the linkedin-jobs CLI."
-version: 0.1.24
+version: 0.1.25
 author: Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -73,7 +73,7 @@ first unresolved gate and guide the user through it before continuing.
    - **Cookie resolution priority** (first match wins): `LJ_COOKIE` → `LJ_COOKIES_FILE` → `~/.linkedin-jobs/cookies.txt` (default, written by `auth login`). Never assume a path — always verify with `doctor`.
    - **Do NOT silently fall back to anonymous `search`** when the session is missing — that returns irrelevant global results. See Pitfall #1.
 
-5. **(Optional) Generate rubrics.** Scoring is driven by a rubric set the user generates from a preferences paragraph. Tell the user to run `linkedin-jobs setup` and describe what they want in a job (work arrangement, salary, location, tech, perks, deal-breakers); the LLM extracts the rubrics (plus system defaults for salary, work arrangement, location) and writes them to `settings.yaml`. `amend` changes a few rubrics later; `reset` starts fresh. Each rubric weight is 1-10 (default 5); the score is a weighted average of per-rubric 1-5 ratings mapped to 0-100. Scoring works without rubrics (system defaults only) but is much better with the user's own.
+5. **(Optional) Generate rubrics.** Scoring is driven by a rubric set the user generates from a preferences paragraph. Tell the user to run `linkedin-jobs setup` and describe what they want in a job (work arrangement, salary, location, tech, perks, deal-breakers); the LLM extracts the rubrics (plus system defaults for salary and work arrangement) and writes them to `settings.yaml`. `amend` changes a few rubrics later; `reset` starts fresh. Each rubric weight is 1-10 (default 5); the score is a weighted average of per-rubric 1-5 ratings mapped to 0-100. Scoring works without rubrics (system defaults only) but is much better with the user's own.
 
 6. **Re-run `linkedin-jobs doctor`** to confirm no blocking issues, then proceed to the user's request.
 

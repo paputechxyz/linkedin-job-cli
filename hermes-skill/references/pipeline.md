@@ -56,8 +56,8 @@ Scores come from a **rubric set** in `settings.yaml` under `scoring.rubrics`. Ge
 
 Each rubric has a **weight** (1-10, default 5) and a **rating** (1-5) per job:
 
-- **System rubrics** (computed in Go): `salary` (vs `profile.min_salary` floor), `work_arrangement` (matches `profile.work_arrangement`), `location` (matches `profile.locations`).
-- **Dynamic rubrics** (rated 1-5 by the LLM): everything else, generated from your paragraph — e.g. `preferred_tech`, `avoided_tech`, `free_snacks`, `ai_intensity`. List-type criteria carry `items`.
+- **System rubrics** (computed in Go): `salary` (vs `profile.min_salary` floor), `work_arrangement` (matches `profile.work_arrangement`).
+- **Dynamic rubrics** (rated 1-5 by the LLM): everything else, generated from your paragraph — e.g. `preferred_tech`, `avoided_tech`, `location`, `free_snacks`, `ai_intensity`. List-type criteria carry `items`. Location is dynamic so jurisdiction and proximity nuance (e.g. "remote anywhere", "within 30km of Mississauga") lives in the rubric description and is LLM-judged per job.
 
 The final score is a weight-normalized average mapped to 0-100:
 

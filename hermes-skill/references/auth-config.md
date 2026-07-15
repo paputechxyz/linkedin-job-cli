@@ -137,12 +137,15 @@ scoring:
       kind: dynamic
       weight: 5
       items: [C#, .NET]
+    - id: location
+      kind: dynamic
+      weight: 5
+      description: "Hybrid must be in Toronto/Mississauga; remote is flexible anywhere"
 
 profile:                         # structured inputs for the system rubrics
   work_arrangement: [remote, hybrid]
   min_salary: 200000
   min_salary_currency: CAD
-  locations: [Remote, Toronto]
   preferred_tech: [Java, Python, Go, Postgres, AWS]
   avoided_tech: [C#, .NET, Ruby]
 ```

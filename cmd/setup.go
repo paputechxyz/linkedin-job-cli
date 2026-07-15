@@ -21,7 +21,7 @@ var setupCmd = &cobra.Command{
 
   1. Preferences — write a paragraph describing what you want in a job. The
      LLM extracts scoring rubrics from it (plus a few system defaults that
-     always apply: salary, work arrangement, location). You confirm before
+     always apply: salary, work arrangement). You confirm before
      anything is saved. Any required number the paragraph omits (e.g. a salary
      floor) is prompted for. Rubrics + weights land in settings.yaml.
   2. LLM provider — checks whether a provider is resolved; if not, prints
@@ -86,9 +86,6 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		if gen.MinSalary != nil {
 			prof.MinSalary = gen.MinSalary
 		}
-		if len(gen.Locations) > 0 {
-			prof.Locations = gen.Locations
-		}
 		if len(gen.PreferredTech) > 0 {
 			prof.PreferredTech = gen.PreferredTech
 		}
@@ -106,7 +103,6 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		fmt.Println("\n  Structured params:")
 		fmt.Printf("    work arrangement: %s\n", orNoneSlice(prof.WorkArrangement))
 		fmt.Printf("    min salary:       %s\n", formatSalaryFloor(prof.MinSalary, prof.MinSalaryCurrency))
-		fmt.Printf("    locations:        %s\n", orNoneSlice(prof.Locations))
 
 		if !confirm(stdin, "Save these rubrics and params?") {
 			fmt.Println("  Aborted — nothing saved.")

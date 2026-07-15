@@ -8,10 +8,6 @@ scoring:
           id: work_arrangement
           kind: system
           weight: 5
-        - description: Preferred location match
-          id: location
-          kind: system
-          weight: 5
         - description: Uses preferred technologies
           id: preferred_tech
           items:
@@ -28,8 +24,6 @@ scoring:
 profile:
     avoided_tech:
         - Scala
-    locations:
-        - Seattle
     min_salary: 80000
     min_salary_currency: USD
     preferred_tech:

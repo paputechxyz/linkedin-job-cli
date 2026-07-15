@@ -16,12 +16,11 @@ const rubricGenPrompt = `From the preferences paragraph below, extract the user'
   - "id": a short snake_case identifier (e.g. "preferred_tech", "free_snacks", "avoided_tech", "ai_intensity"),
   - "description": one phrase on what to look for in a job posting,
   - "items": a list of strings, ONLY when the criterion is a list of things (e.g. preferred tech, avoided tech). Omit "items" for single criteria like "free snacks" or "startup stage".
-  Do NOT generate rubrics for salary, work arrangement, or location — those are system rubrics scored automatically. Extract them as the structured fields below instead. Group list-type criteria into ONE rubric with all items (e.g. one "preferred_tech" rubric, NOT one rubric per technology).
+  Do NOT generate rubrics for salary or work arrangement — those are system rubrics scored automatically. Extract them as the structured fields below instead. Group list-type criteria into ONE rubric with all items (e.g. one "preferred_tech" rubric, NOT one rubric per technology).
 
 "work_arrangement": list of preferred arrangements among remote/hybrid/onsite (only those the paragraph mentions),
 "min_salary": a number for the salary floor, or null if none stated,
 "min_salary_currency": one of USD/CAD/EUR/GBP if inferable, else null,
-"locations": list of preferred location tokens,
 "preferred_tech": list of preferred technologies (also emitted as a rubric),
 "avoided_tech": list of technologies to penalize (also emitted as a rubric).
 
@@ -36,7 +35,6 @@ type GenResult struct {
 	WorkArrangement   []string    `json:"work_arrangement"`
 	MinSalary         *float64    `json:"min_salary"`
 	MinSalaryCurrency string      `json:"min_salary_currency"`
-	Locations         []string    `json:"locations"`
 	PreferredTech     []string    `json:"preferred_tech"`
 	AvoidedTech       []string    `json:"avoided_tech"`
 }

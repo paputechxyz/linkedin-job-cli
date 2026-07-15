@@ -1,7 +1,7 @@
 // Package score implements the dynamic rubric scorer.
 //
 // The user's rubric set (system + dynamic) lives in settings.yaml. System
-// rubrics (salary, work_arrangement, location) are computed deterministically
+// rubrics (salary, work_arrangement) are computed deterministically
 // in Go from parsed/enriched data; dynamic rubrics are rated 1–5 by the LLM at
 // enrichment time. Compute combines every rubric's rating into one normalized
 // 0–100 weighted average:
@@ -94,8 +94,6 @@ func rateRubric(r config.Rubric, job *models.JobPosting, profile *models.Profile
 			return salaryRating(job, profile)
 		case config.RubricArrangement:
 			return arrangementRating(job, profile)
-		case config.RubricLocation:
-			return locationRating(job, profile)
 		}
 	}
 	// Dynamic rubric (or an unrecognized system id): take the LLM rating,
@@ -173,23 +171,7 @@ func arrangementRating(job *models.JobPosting, profile *models.Profile) (int, st
 	return RatingMiss, arr
 }
 
-// locationRating: full rating when the job location matches a preferred token;
-// miss otherwise. No preference or unknown location → neutral.
-func locationRating(job *models.JobPosting, profile *models.Profile) (int, string) {
-	if profile == nil || len(profile.PrefLocations) == 0 {
-		return RatingNeutral, "no location preference"
-	}
-	if strings.TrimSpace(job.Location) == "" {
-		return RatingNeutral, "location unknown"
-	}
-	blob := strings.ToLower(job.Location + " " + job.RemoteType)
-	if locationMatches(blob, profile.PrefLocations) {
-		return RatingStrong, job.Location
-	}
-	return RatingMiss, job.Location
-}
-
-// --- helpers ---
+// --- helpers --
 
 func convertSalaryTo(amount float64, fromCur, toCur string) float64 {
 	if toCur == "" {
@@ -207,19 +189,6 @@ func convertSalaryTo(amount float64, fromCur, toCur string) float64 {
 		return amount
 	}
 	return conv
-}
-
-func locationMatches(jobBlob string, prefLocations []string) bool {
-	for _, tok := range prefLocations {
-		t := strings.TrimSpace(tok)
-		if t == "" {
-			continue
-		}
-		if strings.Contains(jobBlob, strings.ToLower(t)) {
-			return true
-		}
-	}
-	return false
 }
 
 func money(amount float64, currency string) string {

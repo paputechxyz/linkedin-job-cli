@@ -457,9 +457,6 @@ scoring:
     - id: work_arrangement
       kind: system
       weight: 5
-    - id: location
-      kind: system
-      weight: 5
     - id: preferred_tech
       kind: dynamic
       weight: 5
@@ -468,11 +465,14 @@ scoring:
       kind: dynamic
       weight: 5
       items: [C#, .NET]
+    - id: location               # dynamic: LLM rates jurisdiction/proximity fit
+      kind: dynamic              # from the description, e.g. "remote flexible anywhere"
+      weight: 5
+      description: "Hybrid must be in Toronto/Mississauga; remote is flexible"
 profile:                         # structured inputs for the system rubrics
   work_arrangement: [remote, hybrid]
   min_salary: 200000
   min_salary_currency: CAD
-  locations: [Remote, Toronto]
   preferred_tech: [Java, Python, Go]
   avoided_tech: [C#, .NET, Ruby]
 ```

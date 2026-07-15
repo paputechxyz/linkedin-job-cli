@@ -146,9 +146,6 @@ func profileStatus(p *models.Profile) string {
 	if p.PrefMinSalary != nil {
 		knobs++
 	}
-	if len(p.PrefLocations) > 0 {
-		knobs++
-	}
 	if len(p.PrefPreferredTech) > 0 {
 		knobs++
 	}

@@ -16,14 +16,13 @@ type Settings struct {
 }
 
 // ProfileSettings holds the structured candidate preferences that drive the
-// deterministic hard filter + rubric (work arrangement, salary floor, locations,
-// preferred tech, avoided tech). These flow into models.Profile.Pref* at load
-// time. Pointer types let users express "unset" by deleting the key.
+// deterministic system rubrics (salary floor, work arrangement) and the LLM
+// enrich prompt (preferred/avoided tech). These flow into models.Profile.Pref*
+// at load time. Pointer types let users express "unset" by deleting the key.
 type ProfileSettings struct {
 	WorkArrangement   []string `yaml:"work_arrangement,omitempty"`
 	MinSalary         *float64 `yaml:"min_salary,omitempty"`
 	MinSalaryCurrency string   `yaml:"min_salary_currency,omitempty"`
-	Locations         []string `yaml:"locations,omitempty"`
 	PreferredTech     []string `yaml:"preferred_tech,omitempty"`
 	AvoidedTech       []string `yaml:"avoided_tech,omitempty"`
 }
@@ -32,9 +31,9 @@ type ScoringSettings struct {
 	Rubrics []Rubric `yaml:"rubrics"`
 }
 
-// Rubric is one scored criterion. System rubrics (salary, work_arrangement,
-// location) are computed deterministically in Go; dynamic rubrics are rated 1–5
-// by the LLM at enrichment time. Weight is user-tunable (1–10, default 5).
+// Rubric is one scored criterion. System rubrics (salary, work_arrangement)
+// are computed deterministically in Go; dynamic rubrics are rated 1–5 by the
+// LLM at enrichment time. Weight is user-tunable (1–10, default 5).
 // Items lets one rubric carry a list (e.g. preferred/avoided tech) whose rating
 // reflects aggregate match across the whole list.
 type Rubric struct {
@@ -49,7 +48,6 @@ type Rubric struct {
 const (
 	RubricSalary      = "salary"
 	RubricArrangement = "work_arrangement"
-	RubricLocation    = "location"
 )
 
 // DefaultSettings returns the built-in defaults used when the YAML file is
@@ -60,15 +58,14 @@ func DefaultSettings() Settings {
 	}
 }
 
-// DefaultScoringSettings returns the rubric defaults: three system rubrics
-// (salary, work_arrangement, location) at weight 5. Dynamic rubrics are added by
-// the setup flow from the user's preferences paragraph.
+// DefaultScoringSettings returns the rubric defaults: two system rubrics
+// (salary, work_arrangement) at weight 5. Dynamic rubrics (including location)
+// are added by the setup flow from the user's preferences paragraph.
 func DefaultScoringSettings() ScoringSettings {
 	return ScoringSettings{
 		Rubrics: []Rubric{
 			{ID: RubricSalary, Kind: "system", Weight: 5, Description: "Salary level relative to your floor"},
 			{ID: RubricArrangement, Kind: "system", Weight: 5, Description: "Remote / hybrid / onsite match"},
-			{ID: RubricLocation, Kind: "system", Weight: 5, Description: "Preferred location match"},
 		},
 	}
 }
@@ -143,16 +140,11 @@ scoring:
       kind: system
       weight: 5
       description: Remote / hybrid / onsite match
-    - id: location
-      kind: system
-      weight: 5
-      description: Preferred location match
 
 profile:
   work_arrangement: []          # remote, hybrid, onsite (any subset)
   min_salary: 0                 # 0 = no salary floor
   min_salary_currency: USD      # ISO 4217 (USD, CAD, EUR, GBP)
-  locations: []                 # preferred location tokens (e.g. Remote, Toronto)
   preferred_tech: []            # tech tokens (also surfaced as a dynamic rubric via setup)
   avoided_tech: []              # tech tokens to penalize (surfaced as a dynamic rubric via setup)
 `

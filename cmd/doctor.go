@@ -117,7 +117,7 @@ var doctorEnvKeys = []string{
 
 var settingsTopSchema = map[string][]string{
 	"scoring": {"rubrics"},
-	"profile": {"work_arrangement", "min_salary", "min_salary_currency", "locations", "preferred_tech", "avoided_tech"},
+	"profile": {"work_arrangement", "min_salary", "min_salary_currency", "preferred_tech", "avoided_tech"},
 }
 
 // redactEnv prints the value verbatim for clearly non-secret keys (paths, URLs,
