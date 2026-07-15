@@ -48,7 +48,7 @@ type ScoringWeights struct {
 	Startup            int `yaml:"startup"`
 	AIIntensity        int `yaml:"ai_intensity"`
 	CompensationExtras int `yaml:"compensation_extras"`
-	RemoteTiebreak     int `yaml:"remote_tiebreak"`
+	WorkArrangement    int `yaml:"work_arrangement"`
 }
 
 // DefaultSettings returns the built-in defaults used when the YAML file is
@@ -74,7 +74,7 @@ func DefaultScoringSettings() ScoringSettings {
 			Startup:            5,
 			AIIntensity:        5,
 			CompensationExtras: 4,
-			RemoteTiebreak:     3,
+			WorkArrangement:    3,
 		},
 	}
 }
@@ -145,7 +145,7 @@ func LoadSettings() (Settings, error) {
 	s.Scoring.Weights.Startup = applyDefaultWeight(s.Scoring.Weights.Startup, dw.Startup)
 	s.Scoring.Weights.AIIntensity = applyDefaultWeight(s.Scoring.Weights.AIIntensity, dw.AIIntensity)
 	s.Scoring.Weights.CompensationExtras = applyDefaultWeight(s.Scoring.Weights.CompensationExtras, dw.CompensationExtras)
-	s.Scoring.Weights.RemoteTiebreak = applyDefaultWeight(s.Scoring.Weights.RemoteTiebreak, dw.RemoteTiebreak)
+	s.Scoring.Weights.WorkArrangement = applyDefaultWeight(s.Scoring.Weights.WorkArrangement, dw.WorkArrangement)
 	return s, nil
 }
 
@@ -167,7 +167,7 @@ scoring:
     startup: 5                  # company_stage seed/early + size 1-50
     ai_intensity: 5             # core=full, mentioned=partial, none=0
     compensation_extras: 4      # bonus + equity + retirement match (1pt each, +1 all three)
-    remote_tiebreak: 3          # each preferred arrangement match = full weight
+    work_arrangement: 3         # each preferred arrangement match = full weight
 
 profile:
   work_arrangement: []          # remote, hybrid, onsite (any subset)

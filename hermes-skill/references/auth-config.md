@@ -131,7 +131,7 @@ scoring:
     startup: 5
     ai_intensity: 3
     compensation_extras: 3
-    remote_tiebreak: 6
+    work_arrangement: 6
 
 enrich:
   auto_enrich_on_save: false     # true = auto-score jobs when tagged `saved`

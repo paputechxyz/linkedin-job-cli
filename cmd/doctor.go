@@ -122,7 +122,7 @@ var settingsTopSchema = map[string][]string{
 }
 
 var weightsKeys = []string{
-	"salary", "tech_overlap", "startup", "ai_intensity", "compensation_extras", "remote_tiebreak",
+	"salary", "tech_overlap", "startup", "ai_intensity", "compensation_extras", "work_arrangement",
 }
 
 // redactEnv prints the value verbatim for clearly non-secret keys (paths, URLs,
