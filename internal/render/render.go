@@ -62,6 +62,15 @@ func Table(w io.Writer, jobs []*models.JobPosting) {
 		}
 		fmt.Fprintln(w)
 	}
+
+	// Links: print each job's URL keyed by row number so terminals auto-link
+	// them as clickable hyperlinks. Kept separate from the table so the full
+	// (long) URL is shown verbatim instead of distorting the column layout.
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Links:")
+	for i, j := range jobs {
+		fmt.Fprintf(w, "  %d. %s\n", i+1, orNA(j.URL))
+	}
 }
 
 func scoreCell(j *models.JobPosting) string {
