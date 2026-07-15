@@ -190,7 +190,29 @@ they finish, re-check with `doctor` and proceed to Recipe #2.
 `serve --port 8080` → report `http://127.0.0.1:8080` URL. Human-facing — do not scrape the HTML. Use CLI `--json` commands as the agent's data source.
 
 ### 13. Look up a specific job
-`show <job-id> --json` → present full details (title, company, salary, description, fit score, enrichment, status, notes).
+`show <job-id> --json` → present full details (title, company, salary, description, fit score, enrichment, status, notes). When the job is scored, render the rubric breakdown as star-rated bullets per **Presenting Jobs** below.
+
+## Presenting Jobs
+
+Always present jobs as a concise summary — never dump raw `--json` output. When the user asks to **show a job** (or asks "why did this score X?"), render the fit-score breakdown as **bullet points with a 5-star bar per rubric** so fit is scannable at a glance.
+
+Format (one bullet per rubric, IDs aligned, `wN` weight and per-rubric reason appended):
+
+```
+Fit score: 63/100
+Rubrics:
+  • salary              ★★★☆☆ (3/5, w5) no floor/salary
+  • work_arrangement    ★★★★★ (5/5, w5) hybrid
+  • preferred_tech      ★★★☆☆ (3/5, w5)
+  • avoided_tech        ★★★☆☆ (3/5, w5)
+  • backend_role        ★★★★☆ (4/5, w5)
+  • location_proximity  ★☆☆☆☆ (1/5, w5)
+```
+
+- **Star bar:** `rating` filled stars (★) + the remainder empty (☆), always 5 total — `1/5` → `★☆☆☆☆`, `3/5` → `★★★☆☆`, `5/5` → `★★★★★`.
+- **Data source:** prefer the structured `rubric_scores` field (a JSON array of `{id, rating, weight, reason}`); if absent, fall back to parsing `fit_reason` (`"<id> <r>/5 (wN) <reason>, ... | total <score>"`).
+- **Compact vs. full:** in lists/feed summaries show the score plus the one or two standout reasons; show the full star-rated bullet breakdown for a single job or an explicit "show me / why this score" request.
+- **Relaying native output is fine too:** text-mode `show <job-id>` (no `--json`) already emits this format natively — relay it verbatim instead of reformatting if you prefer.
 
 ## Common Pitfalls
 
