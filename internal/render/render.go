@@ -119,9 +119,6 @@ func Detail(w io.Writer, j *models.JobPosting) {
 	fmt.Fprintln(w)
 	if j.FitScore != nil {
 		fmt.Fprintf(w, "Fit score:  %d/100\n", *j.FitScore)
-		if j.ScoreCapReason != "" {
-			fmt.Fprintf(w, "Capped:     %s\n", j.ScoreCapReason)
-		}
 		if j.FitReason != "" {
 			fmt.Fprintf(w, "Fit reason: %s\n", j.FitReason)
 		}

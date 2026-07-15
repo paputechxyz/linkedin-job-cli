@@ -49,11 +49,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     content_hash TEXT,
     enriched_at TEXT,
     scored_at TEXT,
-    has_bonus INTEGER DEFAULT 0,
-    has_equity INTEGER DEFAULT 0,
-    has_retirement_match INTEGER DEFAULT 0,
-    ai_intensity TEXT,
-    score_cap_reason TEXT
+    rubric_scores TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company);
 CREATE INDEX IF NOT EXISTS idx_jobs_salary_high ON jobs(salary_high);
@@ -86,11 +82,7 @@ var addColumns = []struct {
 	{"enriched_at", "TEXT"},
 	{"scored_at", "TEXT"},
 	{"salary_source", "TEXT"},
-	{"has_bonus", "INTEGER DEFAULT 0"},
-	{"has_equity", "INTEGER DEFAULT 0"},
-	{"has_retirement_match", "INTEGER DEFAULT 0"},
-	{"ai_intensity", "TEXT"},
-	{"score_cap_reason", "TEXT"},
+	{"rubric_scores", "TEXT"},
 }
 
 // Store is the SQLite persistence layer.
@@ -308,8 +300,8 @@ func (s *Store) SetTag(id, status, notes string) error {
 // SetEnrichmentAndScore persists the LLM-extracted structured fields for a job,
 // stamping enriched_at and scored_at. remote_type is refined only when the LLM
 // returned a non-empty work arrangement (so it never clobbers an existing
-// DetectRemote value with empty). The fit score itself is written separately by
-// SetScore after the deterministic rubric runs.
+// DetectRemote value with empty). The fit score + per-rubric breakdown is
+// written separately by SetScore after the rubric composer runs.
 func (s *Store) SetEnrichmentAndScore(id string, e models.Enrichment) error {
 	now := NowISO()
 	var years interface{}
@@ -320,40 +312,26 @@ func (s *Store) SetEnrichmentAndScore(id string, e models.Enrichment) error {
 	if e.IsFoundingRole {
 		founding = 1
 	}
-	hasBonus, hasEquity, hasRetirementMatch := 0, 0, 0
-	if e.HasBonus {
-		hasBonus = 1
-	}
-	if e.HasEquity {
-		hasEquity = 1
-	}
-	if e.HasRetirementMatch {
-		hasRetirementMatch = 1
-	}
 	_, err := s.db.Exec(`
 UPDATE jobs SET
   company_overview=?, industry=?, tech_stack=?, seniority=?, employment_type=?,
   years_experience=COALESCE(?, years_experience), company_size_band=?, company_stage=?,
   is_founding_role=?, visa_sponsorship=?,
   remote_type=COALESCE(NULLIF(?, ''), remote_type),
-  enriched_at=?, scored_at=?,
-  has_bonus=?, has_equity=?, has_retirement_match=?,
-  ai_intensity=COALESCE(NULLIF(?, ''), ai_intensity)
+  enriched_at=?, scored_at=?
 WHERE id=?`,
 		e.CompanyOverview, e.Industry, e.TechStack, e.Seniority, e.EmploymentType,
 		years, e.CompanySizeBand, e.CompanyStage, founding, e.VisaSponsorship,
-		e.WorkArrangement, now, now,
-		hasBonus, hasEquity, hasRetirementMatch, e.AIIntensity, id)
+		e.WorkArrangement, now, now, id)
 	return err
 }
 
 // SetScore writes the rubric-computed fit_score, machine-generated fit_reason,
-// and score_cap_reason for a job. Stamps scored_at. Called by the pipeline
-// after the deterministic scorer runs (separate from SetEnrichmentAndScore,
-// which writes the LLM-extracted structured fields).
-func (s *Store) SetScore(id string, score int, fitReason, capReason string) error {
-	_, err := s.db.Exec(`UPDATE jobs SET fit_score=?, fit_reason=?, score_cap_reason=?, scored_at=? WHERE id=?`,
-		score, fitReason, capReason, NowISO(), id)
+// and the per-rubric breakdown JSON (rubricScores) for a job. Stamps scored_at.
+// Called by the pipeline after the rubric composer runs.
+func (s *Store) SetScore(id string, score int, fitReason, rubricScores string) error {
+	_, err := s.db.Exec(`UPDATE jobs SET fit_score=?, fit_reason=?, rubric_scores=?, scored_at=? WHERE id=?`,
+		score, fitReason, rubricScores, NowISO(), id)
 	return err
 }
 
@@ -537,7 +515,7 @@ func (s *Store) SearchFTS(expr string, limit int) ([]*models.JobPosting, error) 
   j.searched_at,j.fetched_at,j.company_overview,j.industry,j.tech_stack,j.seniority,j.employment_type,
   j.years_experience,j.company_size_band,j.company_stage,j.is_founding_role,j.visa_sponsorship,j.fit_score,
   j.fit_reason,j.content_hash,j.enriched_at,j.scored_at,
-  j.has_bonus,j.has_equity,j.has_retirement_match,j.ai_intensity,j.score_cap_reason FROM jobs j JOIN (SELECT id, rank FROM jobs_fts WHERE jobs_fts MATCH ?`
+  j.rubric_scores FROM jobs j JOIN (SELECT id, rank FROM jobs_fts WHERE jobs_fts MATCH ?`
 	args := []interface{}{expr}
 	if limit > 0 {
 		q += ` LIMIT ?`
@@ -684,7 +662,7 @@ const jobCols = `SELECT id,title,company,location,url,salary_raw,salary_low,sala
   searched_at,fetched_at,company_overview,industry,tech_stack,seniority,employment_type,
   years_experience,company_size_band,company_stage,is_founding_role,visa_sponsorship,fit_score,
   fit_reason,content_hash,enriched_at,scored_at,
-  has_bonus,has_equity,has_retirement_match,ai_intensity,score_cap_reason`
+  rubric_scores`
 
 type scanner interface {
 	Scan(dest ...interface{}) error
@@ -696,14 +674,14 @@ func scanJob(row scanner) (*models.JobPosting, error) {
 	var company, location, salaryRaw, cur, salarySource, desc, summary, llm, remote, status, notes, source, fetched sql.NullString
 	var listed sql.NullInt64
 	var companyOverview, industry, techStack, seniority, employmentType, companySizeBand, companyStage, visaSponsorship, fitReason, contentHash, enrichedAt, scoredAt sql.NullString
-	var aiIntensity, scoreCapReason sql.NullString
-	var yearsExp, isFounding, fitScore, hasBonus, hasEquity, hasRetirementMatch sql.NullInt64
+	var rubricScores sql.NullString
+	var yearsExp, isFounding, fitScore sql.NullInt64
 	if err := row.Scan(&j.ID, &j.Title, &company, &location, &j.URL, &salaryRaw, &sl, &sh,
 		&cur, &salarySource, &desc, &summary, &llm, &remote, &status, &notes, &source, &listed, &j.SearchedAt, &fetched,
 		&companyOverview, &industry, &techStack, &seniority, &employmentType, &yearsExp,
 		&companySizeBand, &companyStage, &isFounding, &visaSponsorship, &fitScore,
 		&fitReason, &contentHash, &enrichedAt, &scoredAt,
-		&hasBonus, &hasEquity, &hasRetirementMatch, &aiIntensity, &scoreCapReason); err != nil {
+		&rubricScores); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
@@ -755,11 +733,7 @@ func scanJob(row scanner) (*models.JobPosting, error) {
 	j.ContentHash = contentHash.String
 	j.EnrichedAt = enrichedAt.String
 	j.ScoredAt = scoredAt.String
-	j.HasBonus = hasBonus.Valid && hasBonus.Int64 != 0
-	j.HasEquity = hasEquity.Valid && hasEquity.Int64 != 0
-	j.HasRetirementMatch = hasRetirementMatch.Valid && hasRetirementMatch.Int64 != 0
-	j.AIIntensity = aiIntensity.String
-	j.ScoreCapReason = scoreCapReason.String
+	j.RubricScores = rubricScores.String
 	return j, nil
 }
 

@@ -1,20 +1,17 @@
-// Package score implements the deterministic rubric scorer.
+// Package score implements the dynamic rubric scorer.
 //
-// The LLM enrichment call (internal/llm) extracts structured facts from the job
-// posting — including compensation extras and AI intensity, which exist
-// specifically to feed this scorer. Compute derives a 0-100 fit_score from
-// those facts plus the user's profile, never asking the LLM to pick a number
-// directly. This eliminates the LLM midpoint-bias failure mode (scores
-// collapsing to 0/50/75) and produces a per-dimension breakdown the user can
-// inspect and tune via settings.yaml.
+// The user's rubric set (system + dynamic) lives in settings.yaml. System
+// rubrics (salary, work_arrangement, location) are computed deterministically
+// in Go from parsed/enriched data; dynamic rubrics are rated 1–5 by the LLM at
+// enrichment time. Compute combines every rubric's rating into one normalized
+// 0–100 weighted average:
 //
-// Score band semantics:
-//   - 0           : unused (reserved)
-//   - deal_breaker_cap (default 30): an avoided_tech token matched
-//   - hard-filter cap (50-60)       : salary/work/location preference violated
-//   - baseline (default 60)         : passed hard filter, no positive signals
-//   - 60-95                         : calibrated by 6 weighted dimensions
-//   - 95-100                        : rare; strong on every dimension
+//	score = ( Σ wᵢ·rᵢ / Σ wᵢ ) / 5 × 100
+//
+// where rᵢ ∈ [1,5] and wᵢ ∈ [1,10]. The distribution is stable regardless of
+// how many rubrics exist: a job rated 4/5 across the board scores ~80 whether
+// there are 3 rubrics or 15. There are no hard caps — a job that fails a rubric
+// simply gets a low rating on it.
 package score
 
 import (
@@ -26,270 +23,177 @@ import (
 	"linkedin-jobs/internal/models"
 )
 
-// Result is the output of Compute. Score is the final 0-100 number; Dimensions
-// carries the per-dimension breakdown for the machine-generated fit_reason;
-// CapReason is the stable machine code set when the score was capped;
-// CapDetail is the human-readable sentence naming the specific offender
-// (which deal-breaker token, how far under floor, which preferred location).
+// Rating constants for the 1–5 scale.
+const (
+	RatingMiss    = 1 // strong negative match (e.g. avoided tech present)
+	RatingLow     = 2
+	RatingNeutral = 3 // unknown / can't judge / partial
+	RatingGood    = 4
+	RatingStrong  = 5
+)
+
+// Result is the output of Compute. Score is the final 0–100 number; Rubrics
+// carries the per-rubric rating/weight breakdown used to render fit_reason and
+// persisted as loose JSON.
 type Result struct {
-	Score      int
-	CapReason  string
-	CapDetail  string
-	Dimensions []Dimension
+	Score   int
+	Rubrics []RubricScore
 }
 
-// Dimension is one scored axis. Points is what it contributed (0 to its max);
-// Reason is the human-readable explanation fragment used in fit_reason.
-type Dimension struct {
-	Name   string
-	Points int
-	Reason string
+// RubricScore is one rubric's evaluated contribution for a job.
+type RubricScore struct {
+	ID     string `json:"id"`
+	Kind   string `json:"kind"`
+	Rating int    `json:"rating"`
+	Weight int    `json:"weight"`
+	Reason string `json:"reason,omitempty"`
 }
 
-// FromSettings lifts the YAML-configurable parts of config.ScoringSettings
-// into the weights Compute uses. Exposed so the pipeline can build Weights
-// from settings without re-importing config here.
-func FromSettings(s config.ScoringSettings) Weights {
-	return Weights{
-		Baseline:           s.Baseline,
-		DealBreakerCap:     s.DealBreakerCap,
-		Salary:             s.Weights.Salary,
-		TechOverlap:        s.Weights.TechOverlap,
-		Startup:            s.Weights.Startup,
-		AIIntensity:        s.Weights.AIIntensity,
-		CompensationExtras: s.Weights.CompensationExtras,
-		WorkArrangement:    s.Weights.WorkArrangement,
+// NeutralRating is the rating assigned to a dynamic rubric the LLM did not
+// return (so a missing rating never silently zeroes the score).
+const NeutralRating = RatingNeutral
+
+// Compute derives the fit score from the rubric set. System rubrics are rated
+// here in Go; dynamic rubrics take their rating from dynamicRatings (defaulting
+// to neutral when absent). The weighted average is mapped to 0–100.
+func Compute(job *models.JobPosting, profile *models.Profile, rubrics []config.Rubric, dynamicRatings map[string]int) Result {
+	if job == nil || len(rubrics) == 0 {
+		return Result{}
 	}
-}
-
-// Weights holds the tunable knobs. Build via FromSettings for production, or
-// literal in tests.
-type Weights struct {
-	Baseline           int // starting score after hard filter passes
-	DealBreakerCap     int // hard floor when an avoided_tech token matches
-	Salary             int
-	TechOverlap        int
-	Startup            int
-	AIIntensity        int
-	CompensationExtras int
-	WorkArrangement    int
-}
-
-// capReason constants — recorded in jobs.score_cap_reason and rendered in
-// fit_reason so the user sees why a score landed where it did.
-const (
-	CapNone                   = ""
-	CapDealBreakerTech        = "deal_breaker_tech"
-	CapSalaryUnderFloor       = "salary_under_floor"        // ≤10% under
-	CapSalaryUnderFloorSevere = "salary_under_floor_severe" // >10% under
-	CapNonRemote              = "non_remote"
-	CapLocationMiss           = "location_miss"
-)
-
-// capValue is the score assigned when the corresponding cap reason fires.
-// Defined here (not in Weights) because they are scoring invariants, not
-// user-tunables — the user said "<60 = very bad fit", so we encode the bands.
-const (
-	capHardFilterMinor  = 60 // small salary miss
-	capHardFilterSevere = 50 // large salary miss
-	capNonRemote        = 55
-	capLocationMiss     = 55
-)
-
-// Compute derives the fit score. Pipeline order is load-bearing:
-//  1. Deal-breaker check (caps at DealBreakerCap; returns immediately).
-//  2. Hard-filter caps (lowest applicable wins; positive dimensions ignored).
-//  3. Baseline + 6 weighted dimensions (only when no cap fired).
-//  4. Clamp to 100.
-func Compute(job *models.JobPosting, profile *models.Profile, w Weights) Result {
-	if job == nil {
-		return Result{Score: w.baselineOrDefault()}
+	if dynamicRatings == nil {
+		dynamicRatings = map[string]int{}
 	}
 
-	// 1. Deal-breaker check. Tokens come from profile.avoided_tech;
-	//    a hit caps at DealBreakerCap.
-	if token := dealBreakerMatch(job.TechStack, avoidedTechFromProfile(profile)); token != "" {
-		return Result{
-			Score:     w.dealBreakerCapOrDefault(),
-			CapReason: CapDealBreakerTech,
-			CapDetail: fmt.Sprintf("Deal-breaker tech %q in stack", token),
+	out := Result{Rubrics: make([]RubricScore, 0, len(rubrics))}
+	var weighted, totalWeight float64
+	for _, r := range rubrics {
+		rating, reason := rateRubric(r, job, profile, dynamicRatings)
+		w := r.Weight
+		if w < 1 {
+			w = 1
+		}
+		out.Rubrics = append(out.Rubrics, RubricScore{
+			ID: r.ID, Kind: r.Kind, Rating: rating, Weight: w, Reason: reason,
+		})
+		weighted += float64(w) * float64(rating)
+		totalWeight += float64(w)
+	}
+	if totalWeight == 0 {
+		return out
+	}
+	avg := weighted / totalWeight              // ∈ [1,5]
+	out.Score = int(avg/5.0*100.0 + 0.5)       // round to nearest; rating/5×100
+	return out
+}
+
+// rateRubric returns the 1–5 rating and a short reason for one rubric.
+func rateRubric(r config.Rubric, job *models.JobPosting, profile *models.Profile, dynamicRatings map[string]int) (int, string) {
+	if r.Kind == "system" {
+		switch r.ID {
+		case config.RubricSalary:
+			return salaryRating(job, profile)
+		case config.RubricArrangement:
+			return arrangementRating(job, profile)
+		case config.RubricLocation:
+			return locationRating(job, profile)
 		}
 	}
-
-	// 2. Hard-filter caps.
-	if cap := hardFilterCap(job, profile); cap != nil {
-		return Result{Score: cap.score, CapReason: cap.reason, CapDetail: cap.detail}
+	// Dynamic rubric (or an unrecognized system id): take the LLM rating,
+	// defaulting to neutral when absent.
+	if v, ok := dynamicRatings[r.ID]; ok {
+		if v < RatingMiss {
+			v = RatingMiss
+		}
+		if v > RatingStrong {
+			v = RatingStrong
+		}
+		return v, ""
 	}
-
-	// 3. Baseline + dimensions.
-	score := w.baselineOrDefault()
-	var dims []Dimension
-
-	if d := salaryDimension(job, profile, w); d.Points > 0 {
-		dims = append(dims, d)
-		score += d.Points
-	}
-	if d := techOverlapDimension(job, profile, w); d.Points > 0 {
-		dims = append(dims, d)
-		score += d.Points
-	}
-	if d := startupDimension(job, w); d.Points > 0 {
-		dims = append(dims, d)
-		score += d.Points
-	}
-	if d := aiIntensityDimension(job, w); d.Points > 0 {
-		dims = append(dims, d)
-		score += d.Points
-	}
-	if d := compensationExtrasDimension(job, w); d.Points > 0 {
-		dims = append(dims, d)
-		score += d.Points
-	}
-	if d := workArrangementDimension(job, profile, w); d.Points > 0 {
-		dims = append(dims, d)
-		score += d.Points
-	}
-
-	if score > 100 {
-		score = 100
-	}
-	return Result{Score: score, CapReason: CapNone, Dimensions: dims}
+	return NeutralRating, "not rated"
 }
 
-// FitReason renders the dimension breakdown as a single-line summary. When a
-// cap fired, CapDetail names the specific offender (which deal-breaker token,
-// how far under floor, which preferred location); otherwise the per-dimension
-// points lead. This is what the user sees in the `fit_reason` column and in the
-// web UI's score caption.
+// FitReason renders the per-rubric breakdown as a single-line summary. This is
+// what the user sees in the fit_reason column and the web UI's score caption.
 func FitReason(r Result) string {
-	if r.CapReason != CapNone {
-		if r.CapDetail != "" {
-			return fmt.Sprintf("%s → capped at %d", r.CapDetail, r.Score)
+	if len(r.Rubrics) == 0 {
+		return fmt.Sprintf("no rubrics scored → %d", r.Score)
+	}
+	parts := make([]string, 0, len(r.Rubrics))
+	for _, rb := range r.Rubrics {
+		s := fmt.Sprintf("%s %d/5 (w%d)", rb.ID, rb.Rating, rb.Weight)
+		if rb.Reason != "" {
+			s += " " + rb.Reason
 		}
-		return fmt.Sprintf("capped at %d (%s)", r.Score, r.CapReason)
-	}
-	if len(r.Dimensions) == 0 {
-		return fmt.Sprintf("no positive signals matched your profile → %d", r.Score)
-	}
-	parts := make([]string, 0, len(r.Dimensions))
-	for _, d := range r.Dimensions {
-		parts = append(parts, fmt.Sprintf("+%d %s (%s)", d.Points, d.Name, d.Reason))
+		parts = append(parts, s)
 	}
 	return strings.Join(parts, ", ") + fmt.Sprintf(" | total %d", r.Score)
 }
 
-// --- helpers ---
+// --- system rubric raters ---
 
-func (w Weights) baselineOrDefault() int {
-	if w.Baseline <= 0 {
-		return 60
+// salaryRating: tiers by how the job's max salary (FX-converted to the floor's
+// currency) compares to the floor. No salary data or no floor → neutral.
+func salaryRating(job *models.JobPosting, profile *models.Profile) (int, string) {
+	if profile == nil || profile.PrefMinSalary == nil || *profile.PrefMinSalary <= 0 || !job.HasSalary() {
+		return RatingNeutral, "no floor/salary"
 	}
-	return w.Baseline
+	floor := *profile.PrefMinSalary
+	converted := convertSalaryTo(job.SalaryMax(), job.SalaryCurrency, profile.PrefMinSalaryCurrency)
+	ratio := converted / floor
+	switch {
+	case ratio >= 1.30:
+		return RatingStrong, fmt.Sprintf("%s vs %s floor, +%.0f%%", money(converted, profile.PrefMinSalaryCurrency), money(floor, profile.PrefMinSalaryCurrency), (ratio-1)*100)
+	case ratio >= 1.10:
+		return RatingGood, fmt.Sprintf("%s vs %s floor, +%.0f%%", money(converted, profile.PrefMinSalaryCurrency), money(floor, profile.PrefMinSalaryCurrency), (ratio-1)*100)
+	case ratio >= 1.00:
+		return RatingNeutral, fmt.Sprintf("%s vs %s floor", money(converted, profile.PrefMinSalaryCurrency), money(floor, profile.PrefMinSalaryCurrency))
+	case ratio >= 0.90:
+		return RatingLow, fmt.Sprintf("%s under %s floor", money(converted, profile.PrefMinSalaryCurrency), money(floor, profile.PrefMinSalaryCurrency))
+	default:
+		return RatingMiss, fmt.Sprintf("%s well under %s floor", money(converted, profile.PrefMinSalaryCurrency), money(floor, profile.PrefMinSalaryCurrency))
+	}
 }
 
-func (w Weights) dealBreakerCapOrDefault() int {
-	if w.DealBreakerCap <= 0 {
-		return 30
+// arrangementRating: rewards a detected arrangement that matches a preference.
+// Hybrid is partial when only remote is preferred. No preference → neutral.
+func arrangementRating(job *models.JobPosting, profile *models.Profile) (int, string) {
+	if profile == nil || !profile.HasWorkArrangementPreference() {
+		return RatingNeutral, "no arrangement preference"
 	}
-	return w.DealBreakerCap
+	arr := job.DetectArrangement()
+	if arr == "" {
+		return RatingNeutral, "arrangement unknown"
+	}
+	if profile.PrefersArrangement(arr) {
+		return RatingStrong, arr
+	}
+	if arr == "hybrid" {
+		return RatingNeutral, "hybrid (partial)"
+	}
+	return RatingMiss, arr
 }
 
-// dealBreakerMatch returns the matched deal-breaker token (lowercased) or "".
-// Case-insensitive substring match against the extracted tech_stack.
-func dealBreakerMatch(techStack string, dealBreakers []string) string {
-	if techStack == "" || len(dealBreakers) == 0 {
-		return ""
+// locationRating: full rating when the job location matches a preferred token;
+// miss otherwise. No preference or unknown location → neutral.
+func locationRating(job *models.JobPosting, profile *models.Profile) (int, string) {
+	if profile == nil || len(profile.PrefLocations) == 0 {
+		return RatingNeutral, "no location preference"
 	}
-	lowerStack := strings.ToLower(techStack)
-	for _, db := range dealBreakers {
-		t := strings.ToLower(strings.TrimSpace(db))
-		if t == "" {
-			continue
-		}
-		if strings.Contains(lowerStack, t) {
-			return t
-		}
+	if strings.TrimSpace(job.Location) == "" {
+		return RatingNeutral, "location unknown"
 	}
-	return ""
-}
-
-// avoidedTechFromProfile returns the profile-level avoided_tech tokens, or nil
-// if the profile is nil or has no avoided tech.
-func avoidedTechFromProfile(profile *models.Profile) []string {
-	if profile == nil {
-		return nil
-	}
-	return profile.PrefAvoidedTech
-}
-
-type capResult struct {
-	score  int
-	reason string
-	detail string // human-readable sentence naming the specific offender
-}
-
-// hardFilterCap mirrors internal/filter.PassesHardFilter but returns graduated
-// cap values + reasons instead of a bool. Returns nil when no cap fires (i.e.
-// the old PassesHardFilter would have returned true). A nil profile fires no
-// caps.
-func hardFilterCap(job *models.JobPosting, profile *models.Profile) *capResult {
-	if profile == nil {
-		return nil
-	}
-	var fired []capResult
-
-	// Salary floor: only cap when the job actually has a salary below it.
-	if profile.PrefMinSalary != nil && *profile.PrefMinSalary > 0 && job.HasSalary() {
-		floor := *profile.PrefMinSalary
-		converted := convertSalaryTo(job.SalaryMax(), job.SalaryCurrency, profile.PrefMinSalaryCurrency)
-		if converted < floor {
-			missPct := (floor - converted) / floor
-			detail := fmt.Sprintf("Salary %s is %.0f%% under your %s floor",
-				money(converted, profile.PrefMinSalaryCurrency), missPct*100, money(floor, profile.PrefMinSalaryCurrency))
-			if missPct > 0.10 {
-				fired = append(fired, capResult{capHardFilterSevere, CapSalaryUnderFloorSevere, detail})
-			} else {
-				fired = append(fired, capResult{capHardFilterMinor, CapSalaryUnderFloor, detail})
-			}
-		}
-	}
-
-	// Work arrangement: cap when the user has a preference and the job's
-	// detected arrangement doesn't match any preferred arrangement (including
-	// when the job has no arrangement signal at all).
-	if profile.HasWorkArrangementPreference() {
-		arrangement := job.DetectArrangement()
-		if arrangement == "" || !profile.PrefersArrangement(arrangement) {
-			detail := fmt.Sprintf("Role has no signal matching your preferred work arrangement (%s)", strings.Join(profile.PrefWorkArrangement, ", "))
-			fired = append(fired, capResult{capNonRemote, CapNonRemote, detail})
-		}
-	}
-
-	// Preferred locations: cap only when job location is known and matches none.
 	blob := strings.ToLower(job.Location + " " + job.RemoteType)
-	if len(profile.PrefLocations) > 0 && strings.TrimSpace(job.Location) != "" {
-		if !locationMatches(blob, profile.PrefLocations) {
-			detail := fmt.Sprintf("Location %q not in your preferred (%s)", job.Location, strings.Join(profile.PrefLocations, ", "))
-			fired = append(fired, capResult{capLocationMiss, CapLocationMiss, detail})
-		}
+	if locationMatches(blob, profile.PrefLocations) {
+		return RatingStrong, job.Location
 	}
-
-	if len(fired) == 0 {
-		return nil
-	}
-	// Lowest applicable cap wins.
-	lowest := fired[0]
-	for _, c := range fired[1:] {
-		if c.score < lowest.score {
-			lowest = c
-		}
-	}
-	return &lowest
+	return RatingMiss, job.Location
 }
+
+// --- helpers ---
 
 func convertSalaryTo(amount float64, fromCur, toCur string) float64 {
 	if toCur == "" {
-		return amount // legacy raw compare
+		return amount
 	}
 	from := strings.TrimSpace(fromCur)
 	if from == "" {
@@ -300,7 +204,7 @@ func convertSalaryTo(amount float64, fromCur, toCur string) float64 {
 	}
 	conv, err := fx.Convert(amount, from, toCur)
 	if err != nil {
-		return amount // unknown rate: best-effort raw compare, mirror filter.go behavior
+		return amount
 	}
 	return conv
 }
@@ -318,199 +222,9 @@ func locationMatches(jobBlob string, prefLocations []string) bool {
 	return false
 }
 
-// --- dimensions ---
-
-// salaryDimension: tiered by how far the job's max salary exceeds the floor.
-// Below-floor is handled by hardFilterCap; this dimension only adds points for
-// at-or-above-floor jobs. Scale: at floor = ~33% of weight, +10% = ~66%, +30% = full.
-func salaryDimension(job *models.JobPosting, profile *models.Profile, w Weights) Dimension {
-	max := w.Salary
-	if max <= 0 || profile == nil || profile.PrefMinSalary == nil || *profile.PrefMinSalary <= 0 || !job.HasSalary() {
-		return Dimension{Name: "salary"}
-	}
-	floor := *profile.PrefMinSalary
-	converted := convertSalaryTo(job.SalaryMax(), job.SalaryCurrency, profile.PrefMinSalaryCurrency)
-	if converted < floor {
-		return Dimension{Name: "salary"} // cap path owns the below-floor case
-	}
-	ratio := converted / floor
-	var pts int
-	var tier string
-	switch {
-	case ratio >= 1.30:
-		pts = max
-		tier = fmt.Sprintf("%s vs %s floor, +%.0f%%", money(converted, profile.PrefMinSalaryCurrency), money(floor, profile.PrefMinSalaryCurrency), (ratio-1)*100)
-	case ratio >= 1.10:
-		pts = (max * 2) / 3
-		tier = fmt.Sprintf("%s vs %s floor, +%.0f%%", money(converted, profile.PrefMinSalaryCurrency), money(floor, profile.PrefMinSalaryCurrency), (ratio-1)*100)
-	default:
-		pts = max / 3
-		tier = fmt.Sprintf("%s vs %s floor", money(converted, profile.PrefMinSalaryCurrency), money(floor, profile.PrefMinSalaryCurrency))
-	}
-	return Dimension{Name: "salary", Points: pts, Reason: tier}
-}
-
 func money(amount float64, currency string) string {
 	if currency == "" {
 		return fmt.Sprintf("$%.0f", amount)
 	}
 	return fmt.Sprintf("%s%.0f", currency, amount)
-}
-
-// techOverlapDimension: count of preferred_tech items found in the extracted
-// tech_stack (case-insensitive whole-word match). Tiers: 0=0, 1-2=~30%,
-// 3-4=~60%, ≥5=full.
-func techOverlapDimension(job *models.JobPosting, profile *models.Profile, w Weights) Dimension {
-	max := w.TechOverlap
-	if max <= 0 || profile == nil || len(profile.PrefPreferredTech) == 0 || job.TechStack == "" {
-		return Dimension{Name: "tech_overlap"}
-	}
-	stack := techStackTokens(job.TechStack)
-	matched := []string{}
-	for _, pref := range profile.PrefPreferredTech {
-		p := strings.ToLower(strings.TrimSpace(pref))
-		if p == "" {
-			continue
-		}
-		for _, s := range stack {
-			if s == p {
-				matched = append(matched, pref)
-				break
-			}
-		}
-	}
-	n := len(matched)
-	var pts int
-	switch {
-	case n >= 5:
-		pts = max
-	case n >= 3:
-		pts = (max * 3) / 5
-	case n >= 1:
-		pts = (max * 2) / 5
-	}
-	reason := fmt.Sprintf("%d of %d preferred", n, len(profile.PrefPreferredTech))
-	if n > 0 && n <= 4 {
-		reason += " (" + strings.Join(matched, ", ") + ")"
-	}
-	return Dimension{Name: "tech_overlap", Points: pts, Reason: reason}
-}
-
-// techStackTokens splits a comma-separated tech_stack into a normalized token set.
-func techStackTokens(s string) []string {
-	parts := strings.Split(s, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		t := strings.ToLower(strings.TrimSpace(p))
-		if t == "" {
-			continue
-		}
-		out = append(out, t)
-	}
-	return out
-}
-
-// startupDimension: stage-based, refined by size band. Seed/early = full;
-// growth = ~60%; mature/public = 0. Small size adds +1 (capped at max).
-func startupDimension(job *models.JobPosting, w Weights) Dimension {
-	max := w.Startup
-	if max <= 0 {
-		return Dimension{Name: "startup"}
-	}
-	var pts int
-	switch strings.ToLower(strings.TrimSpace(job.CompanyStage)) {
-	case "seed":
-		pts = max
-	case "early":
-		pts = max
-	case "growth":
-		pts = (max * 3) / 5
-	default:
-		pts = 0
-	}
-	reason := job.CompanyStage
-	if reason == "" {
-		reason = "stage unknown"
-	}
-	// Size refinement: 1-50 employees adds +1 (capped at max).
-	if pts > 0 && pts < max {
-		switch job.CompanySizeBand {
-		case "1-10", "11-50":
-			pts++
-			reason += fmt.Sprintf(", %s", job.CompanySizeBand)
-		}
-		if pts > max {
-			pts = max
-		}
-	}
-	return Dimension{Name: "startup", Points: pts, Reason: reason}
-}
-
-// aiIntensityDimension: core (AI is the product) = full; mentioned = ~40%; none = 0.
-func aiIntensityDimension(job *models.JobPosting, w Weights) Dimension {
-	max := w.AIIntensity
-	if max <= 0 {
-		return Dimension{Name: "ai_intensity"}
-	}
-	switch strings.ToLower(strings.TrimSpace(job.AIIntensity)) {
-	case "core":
-		return Dimension{Name: "ai_intensity", Points: max, Reason: "core"}
-	case "mentioned":
-		return Dimension{Name: "ai_intensity", Points: (max * 2) / 5, Reason: "mentioned"}
-	default:
-		return Dimension{Name: "ai_intensity", Reason: "none"}
-	}
-}
-
-// compensationExtrasDimension: 1 point per enabled extra (capped at max), +1 if
-// all three present.
-func compensationExtrasDimension(job *models.JobPosting, w Weights) Dimension {
-	max := w.CompensationExtras
-	if max <= 0 {
-		return Dimension{Name: "compensation_extras"}
-	}
-	count := 0
-	var on []string
-	if job.HasBonus {
-		count++
-		on = append(on, "bonus")
-	}
-	if job.HasEquity {
-		count++
-		on = append(on, "equity")
-	}
-	if job.HasRetirementMatch {
-		count++
-		on = append(on, "retirement")
-	}
-	if count == 0 {
-		return Dimension{Name: "compensation_extras"}
-	}
-	pts := count
-	if count == 3 {
-		pts++ // all three is exceptional
-	}
-	if pts > max {
-		pts = max
-	}
-	return Dimension{Name: "compensation_extras", Points: pts, Reason: strings.Join(on, "+")}
-}
-
-// workArrangementDimension: rewards the job's detected arrangement when it
-// matches a preferred arrangement. Each matching arrangement contributes the
-// full weight. When the user has no preference (empty or all-three), or when
-// the job's arrangement doesn't match any preference, the dimension is neutral.
-func workArrangementDimension(job *models.JobPosting, profile *models.Profile, w Weights) Dimension {
-	max := w.WorkArrangement
-	if max <= 0 || profile == nil {
-		return Dimension{Name: "work_arrangement"}
-	}
-	if !profile.HasWorkArrangementPreference() {
-		return Dimension{Name: "work_arrangement"}
-	}
-	arrangement := job.DetectArrangement()
-	if arrangement == "" || !profile.PrefersArrangement(arrangement) {
-		return Dimension{Name: "work_arrangement"}
-	}
-	return Dimension{Name: "work_arrangement", Points: max, Reason: arrangement}
 }
