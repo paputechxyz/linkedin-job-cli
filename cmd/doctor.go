@@ -59,7 +59,7 @@ Exits 1 if any check fails, 0 if all pass.`,
 					fmt.Printf("  [✓] LLM responded: %q\n", reply)
 				}
 			} else {
-				fmt.Println("  [·] ping skipped (--ping to send a hello call)")
+				// --ping not set: stay quiet rather than advertising the flag on every run.
 			}
 		}
 		fmt.Println()
