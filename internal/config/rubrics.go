@@ -30,6 +30,11 @@ func MergeRubrics(existing []Rubric, changes []Rubric) []Rubric {
 			if c.Items != nil {
 				cur.Items = c.Items
 			}
+			if c.AppliesTo != nil {
+				// A non-nil change replaces: non-empty sets/replaces the list,
+				// an empty slice clears it (makes the rubric unconditional).
+				cur.AppliesTo = c.AppliesTo
+			}
 			out[idx] = cur
 			continue
 		}

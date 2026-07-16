@@ -50,9 +50,9 @@ existing jobs against the new rubric set.`,
 
 		rubricChanges := make([]config.Rubric, 0, len(changes))
 		for _, c := range changes {
-			rubricChanges = append(rubricChanges, config.Rubric{
-				ID: c.ID, Weight: c.Weight, Description: c.Description, Items: c.Items,
-			})
+		rubricChanges = append(rubricChanges, config.Rubric{
+			ID: c.ID, Weight: c.Weight, Description: c.Description, Items: c.Items, AppliesTo: c.AppliesTo,
+		})
 		}
 		merged := config.MergeRubrics(existing, rubricChanges)
 
