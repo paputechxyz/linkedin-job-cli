@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"linkedin-jobs/internal/models"
+	"linkedin-jobs/internal/score"
 	"linkedin-jobs/internal/store"
 )
 
@@ -119,9 +120,7 @@ func Detail(w io.Writer, j *models.JobPosting) {
 	fmt.Fprintln(w)
 	if j.FitScore != nil {
 		fmt.Fprintf(w, "Fit score:  %d/100\n", *j.FitScore)
-		if j.FitReason != "" {
-			fmt.Fprintf(w, "Fit reason: %s\n", j.FitReason)
-		}
+		renderRubricBreakdown(w, j)
 	}
 	if hasEnrichment(j) {
 		fmt.Fprintln(w, "\nStructured:")
@@ -174,6 +173,57 @@ func hasEnrichment(j *models.JobPosting) bool {
 	return j.CompanyOverview != "" || j.Industry != "" || j.TechStack != "" ||
 		j.Seniority != "" || j.EmploymentType != "" || j.CompanySizeBand != "" ||
 		j.CompanyStage != "" || j.VisaSponsorship != ""
+}
+
+// renderRubricBreakdown writes the per-rubric scoring breakdown as bullet
+// points with star bars, e.g.:
+//
+//	Rubrics:
+//	  • salary             ★★★☆☆ (3/5, w5) no floor/salary
+//	  • work_arrangement   ★★★★★ (5/5, w5) hybrid
+//
+// Falls back to the flat FitReason string when RubricScores is absent or
+// unparseable (e.g. legacy jobs scored before the column existed).
+func renderRubricBreakdown(w io.Writer, j *models.JobPosting) {
+	if j.RubricScores == "" {
+		if j.FitReason != "" {
+			fmt.Fprintf(w, "Fit reason: %s\n", j.FitReason)
+		}
+		return
+	}
+	var rs []score.RubricScore
+	if err := json.Unmarshal([]byte(j.RubricScores), &rs); err != nil || len(rs) == 0 {
+		if j.FitReason != "" {
+			fmt.Fprintf(w, "Fit reason: %s\n", j.FitReason)
+		}
+		return
+	}
+	idW := 0
+	for _, r := range rs {
+		if len(r.ID) > idW {
+			idW = len(r.ID)
+		}
+	}
+	fmt.Fprintln(w, "Rubrics:")
+	for _, r := range rs {
+		line := fmt.Sprintf("  • %-*s  %s (%d/5, w%d)", idW, r.ID, starsFor(r.Rating), r.Rating, r.Weight)
+		if r.Reason != "" {
+			line += " " + r.Reason
+		}
+		fmt.Fprintln(w, line)
+	}
+}
+
+// starsFor renders a 5-star bar: filled stars for the rating, empty for the
+// remainder. rating is clamped to [0,5].
+func starsFor(rating int) string {
+	if rating < 0 {
+		rating = 0
+	}
+	if rating > 5 {
+		rating = 5
+	}
+	return strings.Repeat("★", rating) + strings.Repeat("☆", 5-rating)
 }
 
 // Stats writes aggregate stats.
