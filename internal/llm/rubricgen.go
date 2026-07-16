@@ -16,6 +16,7 @@ const rubricGenPrompt = `From the preferences paragraph below, extract the user'
   - "id": a short snake_case identifier (e.g. "preferred_tech", "free_snacks", "avoided_tech", "ai_intensity"),
   - "description": one phrase on what to look for in a job posting,
   - "items": a list of strings, ONLY when the criterion is a list of things (e.g. preferred tech, avoided tech). Omit "items" for single criteria like "free snacks" or "startup stage".
+  - "applies_to": an OPTIONAL list of work arrangements this rubric should be scored against, drawn from "remote", "hybrid", "onsite". Emit it ONLY when the user's constraint is conditional on arrangement. The canonical case is a location-constraint rubric that applies to hybrid/onsite but not remote (e.g. "hybrid must be in Toronto" → applies_to: ["hybrid", "onsite"]; a remote job is location-agnostic). If the constraint applies to every arrangement, omit "applies_to".
   Do NOT generate rubrics for salary or work arrangement — those are system rubrics scored automatically. Extract them as the structured fields below instead. Group list-type criteria into ONE rubric with all items (e.g. one "preferred_tech" rubric, NOT one rubric per technology).
 
 "work_arrangement": list of preferred arrangements among remote/hybrid/onsite (only those the paragraph mentions),
@@ -44,6 +45,7 @@ type GenRubric struct {
 	ID          string   `json:"id"`
 	Description string   `json:"description"`
 	Items       []string `json:"items"`
+	AppliesTo   []string `json:"applies_to"`
 }
 
 // GenerateRubrics extracts rubrics + structured profile params from a paragraph.
@@ -74,6 +76,7 @@ type amendChange struct {
 	ID          string   `json:"id"`
 	Description string   `json:"description,omitempty"`
 	Items       []string `json:"items,omitempty"`
+	AppliesTo   []string `json:"applies_to,omitempty"`
 	Weight      int      `json:"weight,omitempty"`
 }
 
@@ -83,7 +86,7 @@ const amendPrompt = `Here is the user's current set of scoring rubrics (JSON):
 The user wants to amend them with this follow-up paragraph:
 %s
 
-Return ONLY a JSON array (no prose, no code fences) of the rubrics to ADD or CHANGE. For each, include "id", and whichever of "description", "items", and "weight" apply. Do NOT include rubrics the paragraph does not mention — they must be preserved unchanged. A weight edit returns just {"id": "...", "weight": N}. A new rubric returns id, description, and items if it is a list.`
+Return ONLY a JSON array (no prose, no code fences) of the rubrics to ADD or CHANGE. For each, include "id", and whichever of "description", "items", "applies_to", and "weight" apply. Do NOT include rubrics the paragraph does not mention — they must be preserved unchanged. A weight edit returns just {"id": "...", "weight": N}. A new rubric returns id, description, and items if it is a list. Use "applies_to" (a list of arrangements from remote/hybrid/onsite) ONLY when the rubric should be scored conditionally — e.g. a hybrid-only location constraint has applies_to: ["hybrid", "onsite"] so remote jobs skip it; to clear an existing applies_to and make the rubric unconditional, return an empty array [].`
 
 // GenerateAmend returns the rubric changes implied by a follow-up paragraph
 // against the existing set. The caller merges them (MergeRubrics) so untouched

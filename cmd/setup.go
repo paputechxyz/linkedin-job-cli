@@ -71,7 +71,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		// Dynamic rubrics merge onto the always-present system defaults.
 		changes := make([]config.Rubric, 0, len(gen.Rubrics))
 		for _, r := range gen.Rubrics {
-			changes = append(changes, config.Rubric{ID: r.ID, Kind: "dynamic", Weight: 5, Description: r.Description, Items: r.Items})
+			changes = append(changes, config.Rubric{ID: r.ID, Kind: "dynamic", Weight: 5, Description: r.Description, Items: r.Items, AppliesTo: r.AppliesTo})
 		}
 		rubrics := config.MergeRubrics(config.DefaultScoringSettings().Rubrics, changes)
 

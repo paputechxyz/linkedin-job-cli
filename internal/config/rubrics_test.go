@@ -50,3 +50,68 @@ func TestMergeRubrics_WeightOnlyEditKeepsSystem(t *testing.T) {
 		t.Errorf("location = %+v, want weight 10 system + preserved description", merged[0])
 	}
 }
+
+// AppliesTo must round-trip through MergeRubrics so setup/amend can produce
+// arrangement-scoped rubrics (e.g. a hybrid-only location constraint).
+func TestMergeRubrics_AppliesTo(t *testing.T) {
+	existing := []Rubric{
+		{ID: "location", Kind: "dynamic", Weight: 5, AppliesTo: []string{"hybrid", "onsite"}},
+		{ID: "preferred_tech", Kind: "dynamic", Weight: 5},
+	}
+	t.Run("new rubric carries applies_to", func(t *testing.T) {
+		merged := MergeRubrics(existing, []Rubric{
+			{ID: "hybrid_location", Description: "hybrid in Toronto", AppliesTo: []string{"hybrid", "onsite"}},
+		})
+		var got Rubric
+		for _, r := range merged {
+			if r.ID == "hybrid_location" {
+				got = r
+			}
+		}
+		if len(got.AppliesTo) != 2 || got.AppliesTo[0] != "hybrid" || got.AppliesTo[1] != "onsite" {
+			t.Errorf("hybrid_location.AppliesTo = %v, want [hybrid onsite]", got.AppliesTo)
+		}
+	})
+	t.Run("change sets applies_to on existing rubric", func(t *testing.T) {
+		merged := MergeRubrics(existing, []Rubric{
+			{ID: "preferred_tech", AppliesTo: []string{"onsite"}},
+		})
+		var got Rubric
+		for _, r := range merged {
+			if r.ID == "preferred_tech" {
+				got = r
+			}
+		}
+		if len(got.AppliesTo) != 1 || got.AppliesTo[0] != "onsite" {
+			t.Errorf("preferred_tech.AppliesTo = %v, want [onsite]", got.AppliesTo)
+		}
+	})
+	t.Run("nil change leaves applies_to untouched", func(t *testing.T) {
+		merged := MergeRubrics(existing, []Rubric{
+			{ID: "location", Weight: 8}, // no AppliesTo in the change
+		})
+		var got Rubric
+		for _, r := range merged {
+			if r.ID == "location" {
+				got = r
+			}
+		}
+		if len(got.AppliesTo) != 2 || got.AppliesTo[0] != "hybrid" {
+			t.Errorf("location.AppliesTo = %v, want preserved [hybrid onsite]", got.AppliesTo)
+		}
+	})
+	t.Run("empty slice clears applies_to", func(t *testing.T) {
+		merged := MergeRubrics(existing, []Rubric{
+			{ID: "location", AppliesTo: []string{}},
+		})
+		var got Rubric
+		for _, r := range merged {
+			if r.ID == "location" {
+				got = r
+			}
+		}
+		if len(got.AppliesTo) != 0 {
+			t.Errorf("location.AppliesTo = %v, want cleared (unconditional)", got.AppliesTo)
+		}
+	})
+}
