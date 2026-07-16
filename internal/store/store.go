@@ -359,16 +359,6 @@ func (s *Store) FindByContentHash(hash string) (*models.JobPosting, error) {
 	return scanJob(row)
 }
 
-// Unenriched returns jobs that have a description but have not been enriched.
-func (s *Store) Unenriched() ([]*models.JobPosting, error) {
-	rows, err := s.db.Query(jobCols + ` FROM jobs WHERE enriched_at IS NULL AND description IS NOT NULL AND description != ''`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanJobs(rows)
-}
-
 // Unscored returns non-filtered jobs that have not been scored, for re-scoring
 // after a profile edit. (Enriched jobs that predate scoring, plus new jobs.)
 func (s *Store) Unscored() ([]*models.JobPosting, error) {

@@ -77,8 +77,6 @@ A `fit_reason` showing the per-rubric breakdown is always stored (e.g. `salary 4
 
 ## Re-scoring
 
-- **`enrich <job-id>`:** enrich + score a single job. Outputs JSON with `--json`.
-- **`enrich --all`:** enrich all unenriched jobs. No stdout (stderr progress only). Follow up with `list` or `show`.
 - **`rescore-all`:** re-enrich + re-score EVERY stored job (ignores dedup) against the current rubric set. Always calls LLM. Explicit triage statuses (saved/applied/rejected) are preserved.
 
 After generating/amending rubrics or editing weights in `settings.yaml`, run `rescore-all` to re-score with the updated rubric set.

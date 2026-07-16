@@ -323,6 +323,14 @@ func companyOrDash(c string) string {
 	return c
 }
 
+// orNA2 renders a string for diagnostic output, falling back to "N/A" when empty.
+func orNA2(s string) string {
+	if s == "" {
+		return "N/A"
+	}
+	return s
+}
+
 // meetsDisplaySalaryFloor reports whether a job's max salary clears the floor.
 // With no currency it's a raw numeric compare (legacy); with a currency the job
 // salary is converted to that currency first. Jobs without salary never clear

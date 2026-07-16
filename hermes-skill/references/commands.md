@@ -234,20 +234,6 @@ linkedin-jobs purge [flags]
 
 ## Enrich/Score Commands
 
-### enrich
-
-Enrich + fit-score one job, or all unenriched jobs. Requires an LLM provider.
-
-```bash
-linkedin-jobs enrich [<job-id>] [--all]
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--all` | bool | false | Enrich all jobs that lack enrichment |
-
-`--json`: yes in single-job mode only (`enrich <job-id> --json`). `enrich --all` produces stderr progress only (no stdout) — follow up with `list` or `show` to present results. **Approval gate:** confirm before `--all` (unbounded LLM cost).
-
 ### rescore-all
 
 Re-enrich + re-score every stored job via the LLM, and re-judge filter status. Always calls LLM (one call per job), ignores dedup. Use after editing preferences/weights.

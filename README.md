@@ -364,12 +364,11 @@ number (like a salary floor) it omitted.
 
 ```bash
 linkedin-jobs profile show            # show active profile knobs
-linkedin-jobs enrich 4430749190       # enrich+score one job
-linkedin-jobs enrich --all            # backfill all unenriched jobs
 ```
 
 Every fetched job is enriched and scored (one LLM call per new candidate);
-duplicates are skipped by content-hash.
+duplicates are skipped by content-hash. Run `rescore-all` to re-run enrichment
+and scoring across the whole DB after editing rubrics.
 
 ### Pre-score gate
 
@@ -503,7 +502,7 @@ context or ran context-free.
 
 ```
 main.go
-cmd/                       cobra commands (recommended, search, list, enrich, score, profile, config, hr, …)
+cmd/                       cobra commands (recommended, search, list, score, profile, config, hr, …)
 internal/
   auth/                    session resolution (cookie env/file/browser), Chrome cookie-store reader, guided browser login, csrf
   config/                  env-based config + YAML settings
