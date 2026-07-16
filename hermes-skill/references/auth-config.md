@@ -79,11 +79,11 @@ linkedin-jobs auth status     # fast mid-session boolean check. Only meaningful
 
 ### Anonymous (no session)
 
-`search`, `hr`, `watch`, and `job` work without a session. No login needed.
+`search`, `hr`, and `job` work without a session. No login needed.
 
 ## LLM Configuration
 
-An LLM provider is required for scoring — fetch+score commands (`recommended`/`url`/`search`/`watch`/`job`) exit with a setup prompt when none is configured.
+An LLM provider is required for scoring — fetch+score commands (`recommended`/`url`/`search`/`job`) exit with a setup prompt when none is configured.
 
 ### Provider Resolution (first match wins)
 

@@ -125,7 +125,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		fmt.Println("  [✗] No LLM provider configured.")
 		fmt.Println("      A provider is required for scoring — without one, the fetch+score")
-		fmt.Println("      commands (recommended/url/search/watch/job) exit and ask you to")
+		fmt.Println("      commands (recommended/url/search/job) exit and ask you to")
 		fmt.Println("      configure one. To set up:")
 		fmt.Println()
 		fmt.Println("      export OPENAI_API_KEY=sk-...          # or LJ_LLM_API_KEY")
@@ -163,7 +163,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 			fmt.Println("      See the README for setting up a session on this platform.")
 		}
 		fmt.Println()
-		fmt.Println("      'search', 'hr', 'watch', and 'job' work anonymously — no session needed.")
+		fmt.Println("      'search', 'hr', and 'job' work anonymously — no session needed.")
 	}
 	fmt.Println()
 

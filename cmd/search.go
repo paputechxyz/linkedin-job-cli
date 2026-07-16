@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"linkedin-jobs/internal/models"
 )
 
 var (
@@ -24,8 +26,12 @@ var searchCmd = &cobra.Command{
 	Long: `Searches LinkedIn's public (logged-out) job board and ingests results through
 the same pipeline as 'recommended'. Works without a session; no login needed.
 --top N caps the number of jobs processed end-to-end (detail fetch + LLM score).
-Jobs failing any active user gate (--remote/--hybrid/--onsite/--min-salary) are dropped
-in-memory after the detail fetch and never stored or scored.
+Jobs already in the DB (by LinkedIn ID) are skipped entirely — only brand-new
+jobs are detail-fetched, scored, and displayed. Pass --force-overwrite to
+re-process existing jobs (bypasses the new-only pre-filter and content-hash
+dedup; overwrites stored values). Jobs failing any active user gate
+(--remote/--hybrid/--onsite/--min-salary) are dropped in-memory after the detail
+fetch and never stored or scored.
 
 Examples:
   linkedin-jobs search "Staff Engineer" Toronto --min-salary 200k
@@ -61,7 +67,18 @@ Examples:
 		if searchTop > 0 && len(jobs) > searchTop {
 			jobs = jobs[:searchTop]
 		}
-		ingest(jobs, provider, ingestOptions{
+
+		// New-only pre-filter: drop jobs whose LinkedIn ID is already stored so
+		// we skip detail-fetch, scoring, and display for jobs seen before. The
+		// content-hash dedup inside ingest still guards against structural
+		// duplicates that slip in under new IDs. --force-overwrite bypasses
+		// this pre-filter (and the ingest dedup) to re-process everything.
+		target := jobs
+		if !searchForceOW {
+			target = filterNewIDs(jobs)
+		}
+
+		ingest(target, provider, ingestOptions{
 			minSalary:         minSal,
 			minSalaryCurrency: currency,
 			remote:            searchRemote,
@@ -83,6 +100,33 @@ func init() {
 	searchCmd.Flags().BoolVar(&searchRemote, "remote", false, "only keep remote-friendly jobs")
 	searchCmd.Flags().BoolVar(&searchHybrid, "hybrid", false, "only keep hybrid-friendly jobs (combine with --remote/--onsite for OR)")
 	searchCmd.Flags().BoolVar(&searchOnsite, "onsite", false, "only keep on-site jobs (combine with --remote/--hybrid for OR)")
-	searchCmd.Flags().BoolVar(&searchForceOW, "force-overwrite", false, "re-parse and re-score jobs already in the DB (bypass dedup; overwrites existing values)")
+	searchCmd.Flags().BoolVar(&searchForceOW, "force-overwrite", false, "re-parse and re-score jobs already in the DB (bypass the new-only pre-filter and dedup; overwrites existing values)")
 	rootCmd.AddCommand(searchCmd)
+}
+
+// filterNewIDs returns only the jobs whose LinkedIn ID is not already stored.
+// Used by 'search' to skip existing jobs entirely — no detail fetch, no score,
+// no display — so re-running a query shows only what's new since the last run.
+func filterNewIDs(jobs []*models.JobPosting) []*models.JobPosting {
+	st, err := openStore()
+	if err != nil {
+		die("failed to open DB: %v", err)
+	}
+	defer st.Close()
+	ids := make([]string, len(jobs))
+	for i, j := range jobs {
+		ids[i] = j.ID
+	}
+	existing, err := st.ExistingIDs(ids)
+	if err != nil {
+		die("lookup failed: %v", err)
+	}
+	var fresh []*models.JobPosting
+	for _, j := range jobs {
+		if !existing[j.ID] {
+			fresh = append(fresh, j)
+		}
+	}
+	fmt.Fprintf(os.Stderr, "Found %d jobs, %d new since last run.\n", len(jobs), len(fresh))
+	return fresh
 }

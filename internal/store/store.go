@@ -376,7 +376,7 @@ func (s *Store) Get(id string) (*models.JobPosting, error) {
 	return scanJob(row)
 }
 
-// Exists returns the set of job ids already stored (for diffing in watch mode).
+// Exists returns the set of job ids already stored (for the search new-only pre-filter).
 func (s *Store) ExistingIDs(ids []string) (map[string]bool, error) {
 	out := make(map[string]bool, len(ids))
 	if len(ids) == 0 {

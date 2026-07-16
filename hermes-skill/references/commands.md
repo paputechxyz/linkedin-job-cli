@@ -33,7 +33,7 @@ linkedin-jobs recommended [flags]
 
 ### search
 
-Search LinkedIn's public job board anonymously. **No session required.**
+Search LinkedIn's public job board anonymously. **No session required.** Jobs already in the DB (by LinkedIn ID) are skipped entirely — only new jobs are detail-fetched, scored, and displayed. Pass `--force-overwrite` to re-process existing jobs.
 
 ```bash
 linkedin-jobs search <keywords> [location] [flags]
@@ -49,7 +49,7 @@ Args: `keywords` (required), `location` (optional, e.g. `"Toronto"` or `"Remote,
 | `--remote` | bool | false | Only remote-friendly jobs |
 | `--hybrid` | bool | false | Only hybrid-friendly jobs |
 | `--onsite` | bool | false | Only on-site jobs |
-| `--force-overwrite` | bool | false | Re-parse and re-score jobs already in the DB |
+| `--force-overwrite` | bool | false | Re-parse and re-score jobs already in the DB (bypasses new-only pre-filter and dedup) |
 
 `--json`: yes.
 
@@ -74,28 +74,6 @@ For URLs with `keywords=`, replays the URL's filters against the authenticated V
 | `--force-overwrite` | bool | false | Re-parse and re-score jobs already in the DB |
 
 `--json`: yes.
-
-### watch
-
-Run a search and show only NEW jobs not seen before. **Anonymous.** Compares job IDs against the SQLite store — "new" means IDs not already in the DB.
-
-```bash
-linkedin-jobs watch <keywords> <location> [flags]
-```
-
-Args: `keywords` and `location` (both required).
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--top` | int | 25 | Cap on jobs to pull from LinkedIn each run |
-| `--min-salary` | string | "" | Only keep jobs paying at or above this |
-| `--salary-currency` | string | "" | Currency for `--min-salary`; requires `--min-salary` |
-| `--remote` | bool | false | Only remote-friendly jobs |
-| `--hybrid` | bool | false | Only hybrid-friendly jobs |
-| `--onsite` | bool | false | Only on-site jobs |
-| `--force-overwrite` | bool | false | Re-process existing jobs (bypass new-only pre-filter and dedup) |
-
-`--json`: yes. Like every fetch+score command, `watch` requires a configured LLM provider and exits with a setup prompt if none is found.
 
 ### job
 

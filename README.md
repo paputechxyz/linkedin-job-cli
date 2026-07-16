@@ -245,6 +245,10 @@ linkedin-jobs recommended --json                # machine-readable output
 
 ### Search (anonymous)
 
+Searches the public job board. Jobs already in the DB (by LinkedIn ID) are
+skipped entirely — re-running the same query shows only what's new since the
+last run. Pass `--force-overwrite` to re-process existing jobs.
+
 ```bash
 linkedin-jobs search "Staff Engineer" Toronto --min-salary 200k
 linkedin-jobs search "Senior Developer" "Remote, US" --top 3   # cap at 3 jobs
@@ -304,7 +308,7 @@ linkedin-jobs query "engineer" --exclude amazon
 linkedin-jobs stats --top 25
 linkedin-jobs tag 4430749190 applied --note "referred by Sam"
 linkedin-jobs export --format csv -o jobs.csv
-linkedin-jobs watch "Staff Engineer" Toronto --top 10  # only jobs new since last run
+linkedin-jobs search "Staff Engineer" Toronto --top 10  # skips jobs already in the DB; only new ones are fetched/scored
 linkedin-jobs count
 linkedin-jobs purge
 ```
@@ -438,7 +442,7 @@ linkedin-jobs config path             # settings/db file locations
 linkedin-jobs doctor                  # diagnose provider + settings completeness
 ```
 
-No key? Fetch+score commands (`recommended`/`url`/`search`/`watch`/`job`) exit with a setup prompt instead of running — configure a provider first.
+No key? Fetch+score commands (`recommended`/`url`/`search`/`job`) exit with a setup prompt instead of running — configure a provider first.
 
 ### Settings
 

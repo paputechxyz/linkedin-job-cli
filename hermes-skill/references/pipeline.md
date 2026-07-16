@@ -4,7 +4,7 @@ How the linkedin-jobs CLI processes jobs from fetch to display. Understanding th
 
 ## Pipeline Overview
 
-When you run `recommended`, `search`, `url`, `watch`, or `job`, jobs flow through these stages:
+When you run `recommended`, `search`, `url`, or `job`, jobs flow through these stages:
 
 ```
 Fetch job cards
