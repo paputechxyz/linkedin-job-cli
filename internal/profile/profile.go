@@ -23,6 +23,7 @@ func Load(prefs config.ProfileSettings) (*models.Profile, error) {
 		PrefWorkArrangement:   prefs.WorkArrangement,
 		PrefMinSalary:         prefs.MinSalary,
 		PrefMinSalaryCurrency: prefs.MinSalaryCurrency,
+		PrefLocation:          prefs.Location,
 		PrefPreferredTech:     prefs.PreferredTech,
 		PrefAvoidedTech:       prefs.AvoidedTech,
 		UpdatedAt:             nowISO(),

@@ -55,7 +55,7 @@ func TestEnrich_ExtractsFacts(t *testing.T) {
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Title: "Staff Eng", Description: "build stuff"}
-	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"))
+	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"), nil)
 	if err != nil {
 		t.Fatalf("Enrich: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestEnrich_ReturnsRatings(t *testing.T) {
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "d"}
-	_, ratings, err := Enrich(j, p, dynamicRubrics("free_snacks", "ai_intensity"))
+	_, ratings, err := Enrich(j, p, dynamicRubrics("free_snacks", "ai_intensity"), nil)
 	if err != nil {
 		t.Fatalf("Enrich: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestEnrich_ClampsOutOfRangeRatings(t *testing.T) {
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "d"}
-	_, ratings, err := Enrich(j, p, dynamicRubrics("free_snacks", "ai_intensity"))
+	_, ratings, err := Enrich(j, p, dynamicRubrics("free_snacks", "ai_intensity"), nil)
 	if err != nil {
 		t.Fatalf("Enrich: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestEnrich_NoRatingsKey(t *testing.T) {
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "d"}
-	e, ratings, err := Enrich(j, p, dynamicRubrics("free_snacks"))
+	e, ratings, err := Enrich(j, p, dynamicRubrics("free_snacks"), nil)
 	if err != nil {
 		t.Fatalf("Enrich: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestEnrich_EmptyDescription(t *testing.T) {
 	srv, p := fakeCompletions(t, "{}", 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: ""}
-	_, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"))
+	_, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"), nil)
 	if err != ErrEmptyDescription {
 		t.Fatalf("err = %v, want ErrEmptyDescription", err)
 	}
@@ -178,7 +178,7 @@ func TestEnrich_DelimiterFallback(t *testing.T) {
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "d"}
-	e, ratings, err := Enrich(j, p, dynamicRubrics("ai_intensity"))
+	e, ratings, err := Enrich(j, p, dynamicRubrics("ai_intensity"), nil)
 	if err != nil {
 		t.Fatalf("Enrich: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestEnrich_FenceStripped(t *testing.T) {
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "d"}
-	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"))
+	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"), nil)
 	if err != nil {
 		t.Fatalf("Enrich: %v", err)
 	}
@@ -208,5 +208,120 @@ func TestEnrich_FenceStripped(t *testing.T) {
 	}
 	if e.TechStack != "Go" {
 		t.Errorf("tech_stack=%q want Go", e.TechStack)
+	}
+}
+
+// TestEnrich_ExtractsSalaryRange confirms the LLM-extracted salary range
+// survives the JSON path and lands on the Enrichment. Mirrors the real EvenUp
+// posting shape: bare "$" range with a "Compensation Range:" label that the
+// strict text regex missed because there was no badge currency to inherit.
+func TestEnrich_ExtractsSalaryRange(t *testing.T) {
+	content := `{"company_overview":"x","industry":"x","tech_stack":"x","seniority":"senior","employment_type":"full-time","years_experience":5,"company_size_band":"201-1000","company_stage":"growth","is_founding_role":false,"visa_sponsorship":"unknown","work_arrangement":"hybrid","salary_low":184728,"salary_high":249926,"salary_currency":"USD"}`
+	calls := 0
+	srv, p := fakeCompletions(t, content, 200, &calls)
+	defer srv.Close()
+	j := &models.JobPosting{Description: "Compensation Range: $184,728 - $249,926"}
+	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"), nil)
+	if err != nil {
+		t.Fatalf("Enrich: %v", err)
+	}
+	if e.SalaryLow == nil || *e.SalaryLow != 184728 {
+		t.Errorf("salary_low=%v want 184728", e.SalaryLow)
+	}
+	if e.SalaryHigh == nil || *e.SalaryHigh != 249926 {
+		t.Errorf("salary_high=%v want 249926", e.SalaryHigh)
+	}
+	if e.SalaryCurrency != "USD" {
+		t.Errorf("salary_currency=%q want USD", e.SalaryCurrency)
+	}
+}
+
+// TestEnrich_NullSalaryStaysNil ensures "salary_low": null from the LLM
+// (when the posting has no stated figure) does not overwrite an existing
+// description-sourced salary downstream — i.e. the Enrichment comes back with
+// both fields nil so the pipeline's "only override when LLM found something"
+// guard skips the write.
+func TestEnrich_NullSalaryStaysNil(t *testing.T) {
+	content := `{"company_overview":"x","industry":"x","tech_stack":"x","seniority":"senior","salary_low":null,"salary_high":null,"salary_currency":""}`
+	calls := 0
+	srv, p := fakeCompletions(t, content, 200, &calls)
+	defer srv.Close()
+	j := &models.JobPosting{Description: "competitive comp"}
+	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"), nil)
+	if err != nil {
+		t.Fatalf("Enrich: %v", err)
+	}
+	if e.SalaryLow != nil || e.SalaryHigh != nil {
+		t.Errorf("nil LLM salary should stay nil; got low=%v high=%v", e.SalaryLow, e.SalaryHigh)
+	}
+	if e.SalaryCurrency != "" {
+		t.Errorf("currency should be empty when no salary; got %q", e.SalaryCurrency)
+	}
+}
+
+// TestEnrich_RejectsTinyLLMSalary guards against the LLM hallucinating tiny
+// figures (e.g. an hourly rate misread as annual). Anything below 1000 is
+// dropped so it can't pollute real salary data.
+func TestEnrich_RejectsTinyLLMSalary(t *testing.T) {
+	content := `{"salary_low":50,"salary_high":120,"salary_currency":"USD"}`
+	calls := 0
+	srv, p := fakeCompletions(t, content, 200, &calls)
+	defer srv.Close()
+	j := &models.JobPosting{Description: "d"}
+	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"), nil)
+	if err != nil {
+		t.Fatalf("Enrich: %v", err)
+	}
+	if e.SalaryLow != nil || e.SalaryHigh != nil {
+		t.Errorf("tiny LLM salary (<1000) should be dropped; got low=%v high=%v", e.SalaryLow, e.SalaryHigh)
+	}
+}
+
+// TestEnrich_SinglePointSalaryMirroredToRange covers the case where the LLM
+// returns only one side (e.g. "salary: $200,000" with no upper bound). The
+// parser mirrors it so the caller has both a low and a high to persist.
+func TestEnrich_SinglePointSalaryMirroredToRange(t *testing.T) {
+	content := `{"salary_low":200000,"salary_high":null,"salary_currency":"USD"}`
+	calls := 0
+	srv, p := fakeCompletions(t, content, 200, &calls)
+	defer srv.Close()
+	j := &models.JobPosting{Description: "d"}
+	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"), nil)
+	if err != nil {
+		t.Fatalf("Enrich: %v", err)
+	}
+	if e.SalaryLow == nil || *e.SalaryLow != 200000 {
+		t.Errorf("low=%v want 200000", e.SalaryLow)
+	}
+	if e.SalaryHigh == nil || *e.SalaryHigh != 200000 {
+		t.Errorf("high=%v want 200000 (mirrored)", e.SalaryHigh)
+	}
+}
+
+// TestEnrichPrompt_PassesUserLocationToLLM confirms the enrich prompt surfaces
+// the user's preferred location and currency so the LLM can pick the matching
+// salary band when a posting lists several locale-specific ranges.
+func TestEnrichPrompt_PassesUserLocationToLLM(t *testing.T) {
+	j := &models.JobPosting{Title: "SE", Company: "X", Location: "Remote", Description: "desc"}
+	prof := &models.Profile{PrefLocation: "Toronto, Canada", PrefMinSalaryCurrency: "CAD"}
+	prompt := enrichPrompt(j, dynamicRubrics("ai_intensity"), prof)
+	for _, want := range []string{"User's preferred location: Toronto, Canada", "User's preferred salary currency: CAD"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt missing %q\n--- prompt ---\n%s", want, prompt)
+		}
+	}
+}
+
+// TestEnrichPrompt_NilProfileFallsBackToNA confirms a nil profile still yields
+// a well-formed prompt — the location/currency slots render as "N/A" so the LLM
+// is told the user has no preference, rather than seeing empty strings it might
+// misinterpret.
+func TestEnrichPrompt_NilProfileFallsBackToNA(t *testing.T) {
+	j := &models.JobPosting{Title: "SE", Description: "d"}
+	prompt := enrichPrompt(j, dynamicRubrics("ai_intensity"), nil)
+	for _, want := range []string{"User's preferred location: N/A", "User's preferred salary currency: N/A"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("nil profile prompt missing %q", want)
+		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -28,10 +29,16 @@ const enrichPromptTmpl = `Analyze this job posting and return ONLY a JSON object
 "is_founding_role": boolean (founding/founding-engineer role),
 "visa_sponsorship": one of yes|no|unknown,
 "work_arrangement": one of remote|hybrid|onsite|unknown,
+"salary_low": number or null — the LOW end of the cash compensation range stated in the description body. Only set when the posting EXPLICITLY states a dollar/number figure (e.g. "$184,000 - $249,000", "$150,000 CAD", "CA$190k - CA$210k"). Set to null when no figure is given ("competitive", "DOE", equity-only, etc.). Parse the literal numeric value (strip "$", ",", "k" -> *1000, "m" -> *1000000). Do NOT infer market rates or guess.
+"salary_high": number or null — the HIGH end of the same range. Same rules as salary_low. When the posting gives a single point figure rather than a range, set both salary_low and salary_high to that figure.
+"salary_currency": one of USD|CAD|EUR|GBP|AUD|INR|JPY|"" — the ISO 4217 currency of the stated range. Use the posting's explicit code/symbol (CA$/CAD -> CAD, US$/USD -> USD, £ -> GBP, € -> EUR). Empty string "" when no salary range was stated. When the description uses a bare "$" with no currency signal, infer from the user's preferred location: Canada -> CAD, United States -> USD, United Kingdom -> GBP, European Union -> EUR, India -> INR, Japan -> JPY, Australia -> AUD. When the description lists MULTIPLE locale-specific ranges (e.g. "US: $200,000-$300,000 USD; Canada: $150,000-$250,000 CAD"), pick the band matching the USER'S preferred location below — NOT the job's location. If the user's location is unknown or no band matches, fall back to the job's location, then to the first listed band.
 "ratings": an object mapping each rubric id listed below to an integer 1-5, where 1 = strong miss/negative, 2 = weak, 3 = neutral or not mentioned, 4 = good, 5 = strong match. Rate every listed rubric.
 
 Rubrics to rate (id: what to look for):
 %s
+
+User's preferred location: %s
+User's preferred salary currency: %s
 
 Job Title: %s
 Company: %s
@@ -55,11 +62,17 @@ var ErrEmptyDescription = errors.New("job description is empty; cannot enrich")
 // HTTP call so the caller can skip silently persisting a no-op result. A
 // transport/HTTP failure returns an error; an unparseable response never errors
 // (it yields a partial Enrichment + empty ratings).
-func Enrich(j *models.JobPosting, provider *Provider, rubrics []config.Rubric) (models.Enrichment, map[string]int, error) {
+//
+// The profile supplies the user's preferred location/currency so the LLM can
+// pick the right salary band from postings that list several locale-specific
+// ranges (e.g. US: $X USD / Canada: $Y CAD). Pass nil when no profile is
+// loaded — the LLM then falls back to the job's own location for band/currency
+// inference.
+func Enrich(j *models.JobPosting, provider *Provider, rubrics []config.Rubric, prof *models.Profile) (models.Enrichment, map[string]int, error) {
 	if strings.TrimSpace(j.Description) == "" {
 		return models.Enrichment{}, nil, ErrEmptyDescription
 	}
-	content, err := requestEnrichment(j, provider, rubrics)
+	content, err := requestEnrichment(j, provider, rubrics, prof)
 	if err != nil {
 		return models.Enrichment{}, nil, err
 	}
@@ -102,17 +115,65 @@ func dynamicRubricBlock(rubrics []config.Rubric, j *models.JobPosting) string {
 	return strings.Join(lines, "\n")
 }
 
-func enrichPrompt(j *models.JobPosting, rubrics []config.Rubric) string {
+func enrichPrompt(j *models.JobPosting, rubrics []config.Rubric, prof *models.Profile) string {
 	desc := j.Description
 	if len(desc) > 4000 {
-		desc = desc[:4000]
+		// Keep the head (responsibilities, stack, etc.) but always surface any
+		// compensation lines that live past the truncation point — otherwise the
+		// LLM extraction path silently misses salary bands that employers bury
+		// at the end of the posting. The tail scan is cheap and only appends
+		// when something matches.
+		head := desc[:4000]
+		tail := desc[4000:]
+		extra := extractSalaryBearingLines(tail)
+		if extra != "" {
+			desc = head + "\n\n" + extra
+		} else {
+			desc = head
+		}
 	}
-	return fmt.Sprintf(enrichPromptTmpl, dynamicRubricBlock(rubrics, j), j.Title, orNA(j.Company), orNA(j.Location),
+	userLoc := ""
+	userCur := ""
+	if prof != nil {
+		userLoc = strings.TrimSpace(prof.PrefLocation)
+		userCur = strings.TrimSpace(prof.PrefMinSalaryCurrency)
+	}
+	return fmt.Sprintf(enrichPromptTmpl,
+		dynamicRubricBlock(rubrics, j),
+		orNA(userLoc), orNA(userCur),
+		j.Title, orNA(j.Company), orNA(j.Location),
 		j.SalaryDisplay(), desc)
 }
 
-func requestEnrichment(j *models.JobPosting, provider *Provider, rubrics []config.Rubric) (string, error) {
-	return Chat(provider, enrichSystem, enrichPrompt(j, rubrics), 4096, 0.2)
+// salaryLineRE matches lines that look like a salary/compensation statement —
+// either an explicit "Salary:"/"Compensation:" label or any line containing a
+// currency-stated amount. Used to rescue compensation info buried past the
+// 4000-char description truncation so the LLM can still extract it.
+var salaryLineRE = regexp.MustCompile(`(?i)(?:^|\n)[^\n]*(?:salary|compensation|pay range|base pay|annual pay|OTE)[^\n]*|(?:^|\n)[^\n]*(?:USD|CAD|EUR|GBP|AUD|INR|JPY|CA\$|US\$|\$[\d,]+)[^\n]*`)
+
+// extractSalaryBearingLines scans the truncated tail of a description and
+// returns any compensation-related lines joined as a continuation block.
+// Returns "" when the tail carries nothing salary-shaped.
+func extractSalaryBearingLines(tail string) string {
+	matches := salaryLineRE.FindAllString(tail, -1)
+	if len(matches) == 0 {
+		return ""
+	}
+	out := make([]string, 0, len(matches))
+	for _, m := range matches {
+		m = strings.TrimSpace(m)
+		if m != "" {
+			out = append(out, m)
+		}
+	}
+	if len(out) == 0 {
+		return ""
+	}
+	return "Compensation details from later in the posting:\n" + strings.Join(out, "\n")
+}
+
+func requestEnrichment(j *models.JobPosting, provider *Provider, rubrics []config.Rubric, prof *models.Profile) (string, error) {
+	return Chat(provider, enrichSystem, enrichPrompt(j, rubrics, prof), 4096, 0.2)
 }
 
 // truncateForError bounds an error body to 256 bytes and scrubs newlines so a
@@ -138,6 +199,9 @@ type enrichJSON struct {
 	IsFoundingRole  bool   `json:"is_founding_role"`
 	VisaSponsorship string `json:"visa_sponsorship"`
 	WorkArrangement string `json:"work_arrangement"`
+	SalaryLow       *float64 `json:"salary_low"`
+	SalaryHigh      *float64 `json:"salary_high"`
+	SalaryCurrency  string   `json:"salary_currency"`
 	Ratings         map[string]int `json:"ratings"`
 }
 
@@ -185,7 +249,7 @@ func extractJSON(content string) string {
 }
 
 func toEnrichment(ej enrichJSON) models.Enrichment {
-	return models.Enrichment{
+	e := models.Enrichment{
 		CompanyOverview: strings.TrimSpace(ej.CompanyOverview),
 		Industry:        strings.TrimSpace(ej.Industry),
 		TechStack:       strings.TrimSpace(ej.TechStack),
@@ -198,6 +262,57 @@ func toEnrichment(ej enrichJSON) models.Enrichment {
 		VisaSponsorship: normalizeEnum(ej.VisaSponsorship, visaVals),
 		WorkArrangement: normalizeArrangement(ej.WorkArrangement),
 	}
+	// Salary sanity: reject zero/negative, and treat "$0" hallucinations as
+	// "not extracted" so the caller doesn't override real data with junk.
+	if ej.SalaryLow != nil && *ej.SalaryLow >= 1000 {
+		v := *ej.SalaryLow
+		e.SalaryLow = &v
+	}
+	if ej.SalaryHigh != nil && *ej.SalaryHigh >= 1000 {
+		v := *ej.SalaryHigh
+		e.SalaryHigh = &v
+	}
+	// If only one side is provided, mirror it so we have a usable range.
+	if e.SalaryLow != nil && e.SalaryHigh == nil {
+		v := *e.SalaryLow
+		e.SalaryHigh = &v
+	}
+	if e.SalaryHigh != nil && e.SalaryLow == nil {
+		v := *e.SalaryHigh
+		e.SalaryLow = &v
+	}
+	if e.SalaryLow != nil || e.SalaryHigh != nil {
+		e.SalaryCurrency = normalizeCurrency(ej.SalaryCurrency)
+	}
+	return e
+}
+
+// currencyVals is the set of ISO 4217 codes the rest of the pipeline
+// understands (fx.Convert supports the same set). Anything outside is dropped
+// to "" so the caller inherits the existing currency rather than persisting
+// an unsupported code.
+var currencyVals = map[string]string{
+	"usd": "USD", "$": "USD",
+	"cad": "CAD", "ca$": "CAD", "c$": "CAD",
+	"eur": "EUR", "€": "EUR",
+	"gbp": "GBP", "£": "GBP",
+	"aud": "AUD", "a$": "AUD",
+	"inr": "INR", "₹": "INR",
+	"jpy": "JPY", "¥": "JPY",
+}
+
+// normalizeCurrency maps an LLM-returned currency code or symbol to its ISO
+// 4217 uppercase form. Returns "" for unknown / empty so the caller can leave
+// the existing salary_currency untouched.
+func normalizeCurrency(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ""
+	}
+	if c, ok := currencyVals[strings.ToLower(v)]; ok {
+		return c
+	}
+	return ""
 }
 
 var (
@@ -254,6 +369,7 @@ func parseDelimiter(content string) enrichJSON {
 		"company_stage": &ej.CompanyStage, "stage": &ej.CompanyStage,
 		"visa_sponsorship": &ej.VisaSponsorship, "visa": &ej.VisaSponsorship,
 		"work_arrangement": &ej.WorkArrangement, "remote": &ej.WorkArrangement, "arrangement": &ej.WorkArrangement,
+		"salary_currency": &ej.SalaryCurrency, "currency": &ej.SalaryCurrency,
 	}
 	for _, seg := range segs {
 		label, val := splitLabel(seg)
@@ -272,9 +388,43 @@ func parseDelimiter(content string) enrichJSON {
 			}
 		case "is_founding_role", "founding":
 			ej.IsFoundingRole = parseBool(val)
+		case "salary_low", "salary_min":
+			if f, ok := parseSalaryAmount(val); ok && f >= 1000 {
+				ej.SalaryLow = &f
+			}
+		case "salary_high", "salary_max":
+			if f, ok := parseSalaryAmount(val); ok && f >= 1000 {
+				ej.SalaryHigh = &f
+			}
 		}
 	}
 	return ej
+}
+
+// parseSalaryAmount parses a numeric amount that may carry "$"/","/"k"/"m"
+// decoration. Returns ok=false when the value is missing or unparseable.
+func parseSalaryAmount(s string) (float64, bool) {
+	s = strings.TrimSpace(s)
+	s = strings.ReplaceAll(s, "$", "")
+	s = strings.ReplaceAll(s, ",", "")
+	s = strings.TrimSpace(s)
+	if s == "" || s == "null" {
+		return 0, false
+	}
+	mult := 1.0
+	switch {
+	case strings.HasSuffix(strings.ToLower(s), "k"):
+		s = s[:len(s)-1]
+		mult = 1_000
+	case strings.HasSuffix(strings.ToLower(s), "m"):
+		s = s[:len(s)-1]
+		mult = 1_000_000
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, false
+	}
+	return f * mult, true
 }
 
 func splitDelimiters(content string) []string {

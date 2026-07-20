@@ -326,6 +326,25 @@ WHERE id=?`,
 	return err
 }
 
+// SetSalaryFromDescription hard-overrides the salary columns with a
+// description-sourced range. Used by the pipeline when the LLM extracted a
+// salary from the description body that the strict text-extraction regex
+// missed — description data is authoritative over the LinkedIn page-chrome
+// badge, so the override is unconditional on the columns it writes. Currency
+// is preserved when cur is empty (the caller inherited nothing), so an
+// existing non-empty currency (e.g. a USD default) is not blanked.
+func (s *Store) SetSalaryFromDescription(id string, low, high *float64, cur, raw string) error {
+	_, err := s.db.Exec(`
+UPDATE jobs SET
+  salary_low=?, salary_high=?,
+  salary_currency=COALESCE(NULLIF(?, ''), salary_currency),
+  salary_raw=COALESCE(NULLIF(?, ''), salary_raw),
+  salary_source=?
+WHERE id=?`,
+		nullFloat(low), nullFloat(high), cur, raw, models.SalarySourceDescription, id)
+	return err
+}
+
 // SetScore writes the rubric-computed fit_score, machine-generated fit_reason,
 // and the per-rubric breakdown JSON (rubricScores) for a job. Stamps scored_at.
 // Called by the pipeline after the rubric composer runs.
