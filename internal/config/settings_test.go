@@ -85,3 +85,73 @@ func TestSave_StripObsoleteKeys(t *testing.T) {
 }
 
 func ptrFloat(v float64) *float64 { return &v }
+
+// TestLoadSettings_AlwaysDefaultsSalaryFields confirms the salary-floor pair
+// is always populated after load, even when settings.yaml omits them entirely.
+// min_salary defaults to 0 (no floor), min_salary_currency defaults to USD.
+// This is the load-time mirror of the "always present in settings.yaml" rule
+// enforced by the omitempty removal on those two struct tags.
+func TestLoadSettings_AlwaysDefaultsSalaryFields(t *testing.T) {
+	p := settingsFile(t)
+	// settings.yaml exists but has NO profile.min_salary or profile.min_salary_currency.
+	os.WriteFile(p, []byte("profile:\n  preferred_tech:\n    - Go\n"), 0o644)
+	t.Setenv("LJ_SETTINGS_FILE", p)
+
+	s, err := LoadSettings()
+	if err != nil {
+		t.Fatalf("LoadSettings: %v", err)
+	}
+	if s.Profile.MinSalary == nil {
+		t.Errorf("MinSalary should default to non-nil (0), got nil")
+	} else if *s.Profile.MinSalary != 0 {
+		t.Errorf("MinSalary default = %.0f, want 0", *s.Profile.MinSalary)
+	}
+	if s.Profile.MinSalaryCurrency != "USD" {
+		t.Errorf("MinSalaryCurrency default = %q, want USD", s.Profile.MinSalaryCurrency)
+	}
+}
+
+// TestLoadSettings_RejectsUnsupportedCurrency ensures an unknown currency code
+// in settings.yaml falls back to USD rather than poisoning the FX layer. This
+// guards against user typos and stale LLM output alike.
+func TestLoadSettings_RejectsUnsupportedCurrency(t *testing.T) {
+	p := settingsFile(t)
+	os.WriteFile(p, []byte("profile:\n  min_salary: 100000\n  min_salary_currency: XYZ\n"), 0o644)
+	t.Setenv("LJ_SETTINGS_FILE", p)
+
+	s, _ := LoadSettings()
+	if s.Profile.MinSalaryCurrency != "USD" {
+		t.Errorf("unknown currency should fall back to USD; got %q", s.Profile.MinSalaryCurrency)
+	}
+}
+
+// TestSaveProfile_AlwaysWritesSalaryFields confirms SaveProfile round-trips
+// min_salary and min_salary_currency unconditionally — they never get dropped
+// by omitempty. A re-load after a save of zero-value profile must still see
+// min_salary: 0 and min_salary_currency: USD.
+func TestSaveProfile_AlwaysWritesSalaryFields(t *testing.T) {
+	p := settingsFile(t)
+	t.Setenv("LJ_SETTINGS_FILE", p)
+
+	// Save a profile with a deliberately empty salary floor.
+	if err := SaveProfile(ProfileSettings{}); err != nil {
+		t.Fatalf("SaveProfile: %v", err)
+	}
+	raw, _ := os.ReadFile(p)
+	rawStr := string(raw)
+	if !strings.Contains(rawStr, "min_salary:") {
+		t.Errorf("saved YAML missing 'min_salary:'\n%s", rawStr)
+	}
+	if !strings.Contains(rawStr, "min_salary_currency:") {
+		t.Errorf("saved YAML missing 'min_salary_currency:'\n%s", rawStr)
+	}
+
+	// And the round-trip load should see the defaults.
+	s, _ := LoadSettings()
+	if s.Profile.MinSalary == nil || *s.Profile.MinSalary != 0 {
+		t.Errorf("round-trip MinSalary = %v, want 0", s.Profile.MinSalary)
+	}
+	if s.Profile.MinSalaryCurrency != "USD" {
+		t.Errorf("round-trip MinSalaryCurrency = %q, want USD", s.Profile.MinSalaryCurrency)
+	}
+}

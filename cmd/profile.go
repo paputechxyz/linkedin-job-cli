@@ -41,6 +41,7 @@ var profileShowCmd = &cobra.Command{
 		}
 		fmt.Printf("Preference knobs (%s → profile:):\n", config.SettingsPath())
 		fmt.Printf("  work arrangement: %s\n", orNoneSlice(p.PrefWorkArrangement))
+		fmt.Printf("  location:         %s\n", orEmpty(p.PrefLocation))
 		if p.PrefMinSalary != nil {
 			fmt.Printf("  min salary:        %s%.0f %s\n", currencyLabel(p.PrefMinSalaryCurrency), *p.PrefMinSalary, orNoneCurrency(p.PrefMinSalaryCurrency))
 		} else {
@@ -68,6 +69,14 @@ func orNoneSlice(ss []string) string {
 		return "(none)"
 	}
 	return strings.Join(ss, ", ")
+}
+
+// orEmpty renders a free-text profile field, falling back to "(none)" when empty.
+func orEmpty(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "(none)"
+	}
+	return s
 }
 
 // orNoneCurrency hides an empty currency code in display when salary is set.

@@ -20,10 +20,15 @@ type Settings struct {
 // deterministic system rubrics (salary floor, work arrangement) and the LLM
 // enrich prompt (preferred/avoided tech). These flow into models.Profile.Pref*
 // at load time. Pointer types let users express "unset" by deleting the key.
+//
+// min_salary and min_salary_currency are serialized unconditionally (no
+// omitempty) so a fresh settings.yaml always carries the two fields the salary
+// rubric reads — the loader fills nil/"" with 0/USD before scoring runs.
 type ProfileSettings struct {
 	WorkArrangement   []string `yaml:"work_arrangement,omitempty"`
-	MinSalary         *float64 `yaml:"min_salary,omitempty"`
-	MinSalaryCurrency string   `yaml:"min_salary_currency,omitempty"`
+	MinSalary         *float64 `yaml:"min_salary"`
+	MinSalaryCurrency string   `yaml:"min_salary_currency"`
+	Location          string   `yaml:"location,omitempty"`
 	PreferredTech     []string `yaml:"preferred_tech,omitempty"`
 	AvoidedTech       []string `yaml:"avoided_tech,omitempty"`
 }
@@ -129,6 +134,7 @@ func LoadSettings() (Settings, error) {
 	data, err := os.ReadFile(SettingsPath())
 	if err != nil {
 		if os.IsNotExist(err) {
+			normalizeProfile(&s.Profile)
 			return s, nil
 		}
 		return s, err
@@ -144,7 +150,38 @@ func LoadSettings() (Settings, error) {
 			s.Scoring.Rubrics[i].Weight = 5
 		}
 	}
+	normalizeProfile(&s.Profile)
 	return s, nil
+}
+
+// normalizeProfile guarantees the salary-floor fields are always usable by the
+// scorer: min_salary defaults to 0 (no floor) and min_salary_currency defaults
+// to USD when the YAML omitted them or carried an empty/unknown value. This is
+// the load-time mirror of the "always present in settings.yaml" rule enforced
+// at save time by the omitempty removal on those two struct tags.
+func normalizeProfile(p *ProfileSettings) {
+	if p.MinSalary == nil {
+		zero := 0.0
+		p.MinSalary = &zero
+	}
+	cur := strings.ToUpper(strings.TrimSpace(p.MinSalaryCurrency))
+	if !isSupportedCurrency(cur) {
+		p.MinSalaryCurrency = "USD"
+	} else {
+		p.MinSalaryCurrency = cur
+	}
+}
+
+// supportedCurrencies is the set of ISO 4217 codes the salary pipeline knows
+// how to FX-convert and the LLM is allowed to emit. Any other value falls back
+// to USD at load time so the scorer never sees an unsupported code.
+var supportedCurrencies = map[string]bool{
+	"USD": true, "CAD": true, "EUR": true,
+	"GBP": true, "AUD": true, "INR": true, "JPY": true,
+}
+
+func isSupportedCurrency(code string) bool {
+	return supportedCurrencies[code]
 }
 
 // defaultSettingsTemplate is the YAML written when settings.yaml doesn't exist
@@ -169,7 +206,8 @@ scoring:
 profile:
   work_arrangement: []          # remote, hybrid, onsite (any subset)
   min_salary: 0                 # 0 = no salary floor
-  min_salary_currency: USD      # ISO 4217 (USD, CAD, EUR, GBP)
+  min_salary_currency: USD      # ISO 4217 (USD, CAD, EUR, GBP) — always present
+  location: ""                  # city/country; drives currency + salary-band pick
   preferred_tech: []            # tech tokens (also surfaced as a dynamic rubric via setup)
   avoided_tech: []              # tech tokens to penalize (surfaced as a dynamic rubric via setup)
 `

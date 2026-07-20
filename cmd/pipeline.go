@@ -188,7 +188,7 @@ func profileDir() string {
 // rubrics take their rating from the LLM response. Shared by ingest, the enrich
 // command, and rescore-all.
 func enrichAndScoreJob(st *store.Store, j *models.JobPosting, prof *models.Profile, provider *llm.Provider, rubrics []config.Rubric) error {
-	e, ratings, err := llm.Enrich(j, provider, rubrics)
+	e, ratings, err := llm.Enrich(j, provider, rubrics, prof)
 	if err != nil {
 		return err
 	}

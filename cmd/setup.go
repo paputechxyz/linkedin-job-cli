@@ -12,6 +12,7 @@ import (
 	"linkedin-jobs/internal/auth"
 	"linkedin-jobs/internal/config"
 	"linkedin-jobs/internal/llm"
+	"linkedin-jobs/internal/profile"
 )
 
 var setupCmd = &cobra.Command{
@@ -80,8 +81,23 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		if len(gen.WorkArrangement) > 0 {
 			prof.WorkArrangement = gen.WorkArrangement
 		}
+		// Location always wins from the LLM extract when it mentioned one —
+		// even an empty string overwrite is fine because the next block
+		// preserves any pre-existing location when the paragraph was silent.
+		if strings.TrimSpace(gen.Location) != "" {
+			prof.Location = strings.TrimSpace(gen.Location)
+		}
+		// Currency precedence: explicit LLM value > inferred from location >
+		// whatever was already in the profile > USD default. We always end with
+		// a non-empty currency so the salary-floor rubric has a unit to convert
+		// against. The USD fallback is enforced again at load time so manual
+		// edits to settings.yaml that blank the currency still recover.
 		if gen.MinSalaryCurrency != "" {
 			prof.MinSalaryCurrency = gen.MinSalaryCurrency
+		} else if inferred := profile.InferCurrencyFromLocation(prof.Location); inferred != "" {
+			prof.MinSalaryCurrency = inferred
+		} else if prof.MinSalaryCurrency == "" {
+			prof.MinSalaryCurrency = "USD"
 		}
 		if gen.MinSalary != nil {
 			prof.MinSalary = gen.MinSalary
@@ -93,15 +109,22 @@ func runSetup(cmd *cobra.Command, args []string) error {
 			prof.AvoidedTech = gen.AvoidedTech
 		}
 		// A required number the paragraph omitted is prompted, never guessed.
+		// MinSalary is also guaranteed non-nil after this block (defaults to 0)
+		// so the YAML always carries both min_salary and min_salary_currency.
 		if prof.MinSalary == nil || *prof.MinSalary <= 0 {
 			fmt.Println("\n  No salary floor detected in your paragraph.")
 			prof.MinSalary = promptFloatPtr(stdin, "Minimum salary (0 = no floor)", prof.MinSalary)
+		}
+		if prof.MinSalary == nil {
+			zero := 0.0
+			prof.MinSalary = &zero
 		}
 
 		fmt.Println("\n  Extracted rubrics:")
 		printRubrics(rubrics)
 		fmt.Println("\n  Structured params:")
 		fmt.Printf("    work arrangement: %s\n", orNoneSlice(prof.WorkArrangement))
+		fmt.Printf("    location:         %s\n", orEmptyNA(prof.Location))
 		fmt.Printf("    min salary:       %s\n", formatSalaryFloor(prof.MinSalary, prof.MinSalaryCurrency))
 
 		if !confirm(stdin, "Save these rubrics and params?") {
@@ -299,4 +322,12 @@ func formatSalaryFloor(salary *float64, currency string) string {
 		cur = "USD"
 	}
 	return fmt.Sprintf("%s%.0f", cur, *salary)
+}
+
+// orEmptyNA renders a free-text field for display, falling back to "N/A" when empty.
+func orEmptyNA(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "N/A"
+	}
+	return s
 }

@@ -21,11 +21,12 @@ const rubricGenPrompt = `From the preferences paragraph below, extract the user'
 
 "work_arrangement": list of preferred arrangements among remote/hybrid/onsite (only those the paragraph mentions),
 "min_salary": a number for the salary floor, or null if none stated,
-"min_salary_currency": one of USD/CAD/EUR/GBP if inferable, else null,
+"min_salary_currency": one of USD/CAD/EUR/GBP/AUD/INR/JPY if the paragraph explicitly states it, else null (the tool will infer from location),
+"location": a single string naming the user's preferred city AND/OR country (e.g. "Toronto, ON, Canada", "San Francisco, CA, USA", "London, UK", "Berlin, Germany"). Empty string "" when the paragraph does not mention a location. This drives salary-band selection and currency inference, so prefer the most specific city + country the paragraph states.
 "preferred_tech": list of preferred technologies (also emitted as a rubric),
 "avoided_tech": list of technologies to penalize (also emitted as a rubric).
 
-Only include keys the paragraph actually mentions; omit a key rather than guessing. A vague phrase like "high salary" with no number must produce null for min_salary (the tool will ask the user).
+Only include keys the paragraph actually mentions; omit a key rather than guessing. A vague phrase like "high salary" with no number must produce null for min_salary (the tool will ask the user). Location must always be a string (use "" rather than null when not stated) so it round-trips cleanly through YAML.
 
 Paragraph:
 %s`
@@ -36,6 +37,7 @@ type GenResult struct {
 	WorkArrangement   []string    `json:"work_arrangement"`
 	MinSalary         *float64    `json:"min_salary"`
 	MinSalaryCurrency string      `json:"min_salary_currency"`
+	Location          string      `json:"location"`
 	PreferredTech     []string    `json:"preferred_tech"`
 	AvoidedTech       []string    `json:"avoided_tech"`
 }

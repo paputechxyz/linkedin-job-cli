@@ -31,11 +31,14 @@ const enrichPromptTmpl = `Analyze this job posting and return ONLY a JSON object
 "work_arrangement": one of remote|hybrid|onsite|unknown,
 "salary_low": number or null — the LOW end of the cash compensation range stated in the description body. Only set when the posting EXPLICITLY states a dollar/number figure (e.g. "$184,000 - $249,000", "$150,000 CAD", "CA$190k - CA$210k"). Set to null when no figure is given ("competitive", "DOE", equity-only, etc.). Parse the literal numeric value (strip "$", ",", "k" -> *1000, "m" -> *1000000). Do NOT infer market rates or guess.
 "salary_high": number or null — the HIGH end of the same range. Same rules as salary_low. When the posting gives a single point figure rather than a range, set both salary_low and salary_high to that figure.
-"salary_currency": one of USD|CAD|EUR|GBP|AUD|INR|JPY|"" — the ISO 4217 currency of the stated range. Use the posting's explicit code/symbol (CA$/CAD -> CAD, US$/USD -> USD, £ -> GBP, € -> EUR). Empty string "" when no salary range was stated. When the description uses a bare "$" with no currency signal, infer from the job's Location: Canada -> CAD, United States -> USD, United Kingdom -> GBP, European Union -> EUR, India -> INR, Japan -> JPY, Australia -> AUD. If the job lists multiple locale-specific ranges, pick the one matching the job's Location; if none match the location, use the first listed.
+"salary_currency": one of USD|CAD|EUR|GBP|AUD|INR|JPY|"" — the ISO 4217 currency of the stated range. Use the posting's explicit code/symbol (CA$/CAD -> CAD, US$/USD -> USD, £ -> GBP, € -> EUR). Empty string "" when no salary range was stated. When the description uses a bare "$" with no currency signal, infer from the user's preferred location: Canada -> CAD, United States -> USD, United Kingdom -> GBP, European Union -> EUR, India -> INR, Japan -> JPY, Australia -> AUD. When the description lists MULTIPLE locale-specific ranges (e.g. "US: $200,000-$300,000 USD; Canada: $150,000-$250,000 CAD"), pick the band matching the USER'S preferred location below — NOT the job's location. If the user's location is unknown or no band matches, fall back to the job's location, then to the first listed band.
 "ratings": an object mapping each rubric id listed below to an integer 1-5, where 1 = strong miss/negative, 2 = weak, 3 = neutral or not mentioned, 4 = good, 5 = strong match. Rate every listed rubric.
 
 Rubrics to rate (id: what to look for):
 %s
+
+User's preferred location: %s
+User's preferred salary currency: %s
 
 Job Title: %s
 Company: %s
@@ -59,11 +62,17 @@ var ErrEmptyDescription = errors.New("job description is empty; cannot enrich")
 // HTTP call so the caller can skip silently persisting a no-op result. A
 // transport/HTTP failure returns an error; an unparseable response never errors
 // (it yields a partial Enrichment + empty ratings).
-func Enrich(j *models.JobPosting, provider *Provider, rubrics []config.Rubric) (models.Enrichment, map[string]int, error) {
+//
+// The profile supplies the user's preferred location/currency so the LLM can
+// pick the right salary band from postings that list several locale-specific
+// ranges (e.g. US: $X USD / Canada: $Y CAD). Pass nil when no profile is
+// loaded — the LLM then falls back to the job's own location for band/currency
+// inference.
+func Enrich(j *models.JobPosting, provider *Provider, rubrics []config.Rubric, prof *models.Profile) (models.Enrichment, map[string]int, error) {
 	if strings.TrimSpace(j.Description) == "" {
 		return models.Enrichment{}, nil, ErrEmptyDescription
 	}
-	content, err := requestEnrichment(j, provider, rubrics)
+	content, err := requestEnrichment(j, provider, rubrics, prof)
 	if err != nil {
 		return models.Enrichment{}, nil, err
 	}
@@ -106,7 +115,7 @@ func dynamicRubricBlock(rubrics []config.Rubric, j *models.JobPosting) string {
 	return strings.Join(lines, "\n")
 }
 
-func enrichPrompt(j *models.JobPosting, rubrics []config.Rubric) string {
+func enrichPrompt(j *models.JobPosting, rubrics []config.Rubric, prof *models.Profile) string {
 	desc := j.Description
 	if len(desc) > 4000 {
 		// Keep the head (responsibilities, stack, etc.) but always surface any
@@ -123,7 +132,16 @@ func enrichPrompt(j *models.JobPosting, rubrics []config.Rubric) string {
 			desc = head
 		}
 	}
-	return fmt.Sprintf(enrichPromptTmpl, dynamicRubricBlock(rubrics, j), j.Title, orNA(j.Company), orNA(j.Location),
+	userLoc := ""
+	userCur := ""
+	if prof != nil {
+		userLoc = strings.TrimSpace(prof.PrefLocation)
+		userCur = strings.TrimSpace(prof.PrefMinSalaryCurrency)
+	}
+	return fmt.Sprintf(enrichPromptTmpl,
+		dynamicRubricBlock(rubrics, j),
+		orNA(userLoc), orNA(userCur),
+		j.Title, orNA(j.Company), orNA(j.Location),
 		j.SalaryDisplay(), desc)
 }
 
@@ -154,8 +172,8 @@ func extractSalaryBearingLines(tail string) string {
 	return "Compensation details from later in the posting:\n" + strings.Join(out, "\n")
 }
 
-func requestEnrichment(j *models.JobPosting, provider *Provider, rubrics []config.Rubric) (string, error) {
-	return Chat(provider, enrichSystem, enrichPrompt(j, rubrics), 4096, 0.2)
+func requestEnrichment(j *models.JobPosting, provider *Provider, rubrics []config.Rubric, prof *models.Profile) (string, error) {
+	return Chat(provider, enrichSystem, enrichPrompt(j, rubrics, prof), 4096, 0.2)
 }
 
 // truncateForError bounds an error body to 256 bytes and scrubs newlines so a

@@ -28,6 +28,7 @@ func TestLoad_KnobsFromSettings(t *testing.T) {
 		WorkArrangement:   []string{"remote", "hybrid"},
 		MinSalary:         ptr(200000),
 		MinSalaryCurrency: "CAD",
+		Location:          "Toronto, ON, Canada",
 		PreferredTech:     []string{"Go", "Python"},
 		AvoidedTech:       []string{"C#", ".NET"},
 	}
@@ -43,6 +44,9 @@ func TestLoad_KnobsFromSettings(t *testing.T) {
 	}
 	if got.PrefMinSalaryCurrency != "CAD" {
 		t.Errorf("min_salary_currency = %q", got.PrefMinSalaryCurrency)
+	}
+	if got.PrefLocation != "Toronto, ON, Canada" {
+		t.Errorf("location = %q want Toronto, ON, Canada", got.PrefLocation)
 	}
 	if len(got.PrefPreferredTech) != 2 || got.PrefPreferredTech[0] != "Go" {
 		t.Errorf("preferred_tech = %+v", got.PrefPreferredTech)

@@ -55,7 +55,7 @@ func TestEnrich_ExtractsFacts(t *testing.T) {
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Title: "Staff Eng", Description: "build stuff"}
-	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"))
+	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"), nil)
 	if err != nil {
 		t.Fatalf("Enrich: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestEnrich_ReturnsRatings(t *testing.T) {
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "d"}
-	_, ratings, err := Enrich(j, p, dynamicRubrics("free_snacks", "ai_intensity"))
+	_, ratings, err := Enrich(j, p, dynamicRubrics("free_snacks", "ai_intensity"), nil)
 	if err != nil {
 		t.Fatalf("Enrich: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestEnrich_ClampsOutOfRangeRatings(t *testing.T) {
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "d"}
-	_, ratings, err := Enrich(j, p, dynamicRubrics("free_snacks", "ai_intensity"))
+	_, ratings, err := Enrich(j, p, dynamicRubrics("free_snacks", "ai_intensity"), nil)
 	if err != nil {
 		t.Fatalf("Enrich: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestEnrich_NoRatingsKey(t *testing.T) {
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "d"}
-	e, ratings, err := Enrich(j, p, dynamicRubrics("free_snacks"))
+	e, ratings, err := Enrich(j, p, dynamicRubrics("free_snacks"), nil)
 	if err != nil {
 		t.Fatalf("Enrich: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestEnrich_EmptyDescription(t *testing.T) {
 	srv, p := fakeCompletions(t, "{}", 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: ""}
-	_, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"))
+	_, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"), nil)
 	if err != ErrEmptyDescription {
 		t.Fatalf("err = %v, want ErrEmptyDescription", err)
 	}
@@ -178,7 +178,7 @@ func TestEnrich_DelimiterFallback(t *testing.T) {
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "d"}
-	e, ratings, err := Enrich(j, p, dynamicRubrics("ai_intensity"))
+	e, ratings, err := Enrich(j, p, dynamicRubrics("ai_intensity"), nil)
 	if err != nil {
 		t.Fatalf("Enrich: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestEnrich_FenceStripped(t *testing.T) {
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "d"}
-	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"))
+	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"), nil)
 	if err != nil {
 		t.Fatalf("Enrich: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestEnrich_ExtractsSalaryRange(t *testing.T) {
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "Compensation Range: $184,728 - $249,926"}
-	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"))
+	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"), nil)
 	if err != nil {
 		t.Fatalf("Enrich: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestEnrich_NullSalaryStaysNil(t *testing.T) {
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "competitive comp"}
-	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"))
+	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"), nil)
 	if err != nil {
 		t.Fatalf("Enrich: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestEnrich_RejectsTinyLLMSalary(t *testing.T) {
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "d"}
-	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"))
+	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"), nil)
 	if err != nil {
 		t.Fatalf("Enrich: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestEnrich_SinglePointSalaryMirroredToRange(t *testing.T) {
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
 	j := &models.JobPosting{Description: "d"}
-	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"))
+	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"), nil)
 	if err != nil {
 		t.Fatalf("Enrich: %v", err)
 	}
@@ -295,5 +295,33 @@ func TestEnrich_SinglePointSalaryMirroredToRange(t *testing.T) {
 	}
 	if e.SalaryHigh == nil || *e.SalaryHigh != 200000 {
 		t.Errorf("high=%v want 200000 (mirrored)", e.SalaryHigh)
+	}
+}
+
+// TestEnrichPrompt_PassesUserLocationToLLM confirms the enrich prompt surfaces
+// the user's preferred location and currency so the LLM can pick the matching
+// salary band when a posting lists several locale-specific ranges.
+func TestEnrichPrompt_PassesUserLocationToLLM(t *testing.T) {
+	j := &models.JobPosting{Title: "SE", Company: "X", Location: "Remote", Description: "desc"}
+	prof := &models.Profile{PrefLocation: "Toronto, Canada", PrefMinSalaryCurrency: "CAD"}
+	prompt := enrichPrompt(j, dynamicRubrics("ai_intensity"), prof)
+	for _, want := range []string{"User's preferred location: Toronto, Canada", "User's preferred salary currency: CAD"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt missing %q\n--- prompt ---\n%s", want, prompt)
+		}
+	}
+}
+
+// TestEnrichPrompt_NilProfileFallsBackToNA confirms a nil profile still yields
+// a well-formed prompt — the location/currency slots render as "N/A" so the LLM
+// is told the user has no preference, rather than seeing empty strings it might
+// misinterpret.
+func TestEnrichPrompt_NilProfileFallsBackToNA(t *testing.T) {
+	j := &models.JobPosting{Title: "SE", Description: "d"}
+	prompt := enrichPrompt(j, dynamicRubrics("ai_intensity"), nil)
+	for _, want := range []string{"User's preferred location: N/A", "User's preferred salary currency: N/A"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("nil profile prompt missing %q", want)
+		}
 	}
 }
