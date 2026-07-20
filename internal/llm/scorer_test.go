@@ -210,3 +210,90 @@ func TestEnrich_FenceStripped(t *testing.T) {
 		t.Errorf("tech_stack=%q want Go", e.TechStack)
 	}
 }
+
+// TestEnrich_ExtractsSalaryRange confirms the LLM-extracted salary range
+// survives the JSON path and lands on the Enrichment. Mirrors the real EvenUp
+// posting shape: bare "$" range with a "Compensation Range:" label that the
+// strict text regex missed because there was no badge currency to inherit.
+func TestEnrich_ExtractsSalaryRange(t *testing.T) {
+	content := `{"company_overview":"x","industry":"x","tech_stack":"x","seniority":"senior","employment_type":"full-time","years_experience":5,"company_size_band":"201-1000","company_stage":"growth","is_founding_role":false,"visa_sponsorship":"unknown","work_arrangement":"hybrid","salary_low":184728,"salary_high":249926,"salary_currency":"USD"}`
+	calls := 0
+	srv, p := fakeCompletions(t, content, 200, &calls)
+	defer srv.Close()
+	j := &models.JobPosting{Description: "Compensation Range: $184,728 - $249,926"}
+	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"))
+	if err != nil {
+		t.Fatalf("Enrich: %v", err)
+	}
+	if e.SalaryLow == nil || *e.SalaryLow != 184728 {
+		t.Errorf("salary_low=%v want 184728", e.SalaryLow)
+	}
+	if e.SalaryHigh == nil || *e.SalaryHigh != 249926 {
+		t.Errorf("salary_high=%v want 249926", e.SalaryHigh)
+	}
+	if e.SalaryCurrency != "USD" {
+		t.Errorf("salary_currency=%q want USD", e.SalaryCurrency)
+	}
+}
+
+// TestEnrich_NullSalaryStaysNil ensures "salary_low": null from the LLM
+// (when the posting has no stated figure) does not overwrite an existing
+// description-sourced salary downstream — i.e. the Enrichment comes back with
+// both fields nil so the pipeline's "only override when LLM found something"
+// guard skips the write.
+func TestEnrich_NullSalaryStaysNil(t *testing.T) {
+	content := `{"company_overview":"x","industry":"x","tech_stack":"x","seniority":"senior","salary_low":null,"salary_high":null,"salary_currency":""}`
+	calls := 0
+	srv, p := fakeCompletions(t, content, 200, &calls)
+	defer srv.Close()
+	j := &models.JobPosting{Description: "competitive comp"}
+	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"))
+	if err != nil {
+		t.Fatalf("Enrich: %v", err)
+	}
+	if e.SalaryLow != nil || e.SalaryHigh != nil {
+		t.Errorf("nil LLM salary should stay nil; got low=%v high=%v", e.SalaryLow, e.SalaryHigh)
+	}
+	if e.SalaryCurrency != "" {
+		t.Errorf("currency should be empty when no salary; got %q", e.SalaryCurrency)
+	}
+}
+
+// TestEnrich_RejectsTinyLLMSalary guards against the LLM hallucinating tiny
+// figures (e.g. an hourly rate misread as annual). Anything below 1000 is
+// dropped so it can't pollute real salary data.
+func TestEnrich_RejectsTinyLLMSalary(t *testing.T) {
+	content := `{"salary_low":50,"salary_high":120,"salary_currency":"USD"}`
+	calls := 0
+	srv, p := fakeCompletions(t, content, 200, &calls)
+	defer srv.Close()
+	j := &models.JobPosting{Description: "d"}
+	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"))
+	if err != nil {
+		t.Fatalf("Enrich: %v", err)
+	}
+	if e.SalaryLow != nil || e.SalaryHigh != nil {
+		t.Errorf("tiny LLM salary (<1000) should be dropped; got low=%v high=%v", e.SalaryLow, e.SalaryHigh)
+	}
+}
+
+// TestEnrich_SinglePointSalaryMirroredToRange covers the case where the LLM
+// returns only one side (e.g. "salary: $200,000" with no upper bound). The
+// parser mirrors it so the caller has both a low and a high to persist.
+func TestEnrich_SinglePointSalaryMirroredToRange(t *testing.T) {
+	content := `{"salary_low":200000,"salary_high":null,"salary_currency":"USD"}`
+	calls := 0
+	srv, p := fakeCompletions(t, content, 200, &calls)
+	defer srv.Close()
+	j := &models.JobPosting{Description: "d"}
+	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"))
+	if err != nil {
+		t.Fatalf("Enrich: %v", err)
+	}
+	if e.SalaryLow == nil || *e.SalaryLow != 200000 {
+		t.Errorf("low=%v want 200000", e.SalaryLow)
+	}
+	if e.SalaryHigh == nil || *e.SalaryHigh != 200000 {
+		t.Errorf("high=%v want 200000 (mirrored)", e.SalaryHigh)
+	}
+}

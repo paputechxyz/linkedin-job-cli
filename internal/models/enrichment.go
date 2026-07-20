@@ -18,4 +18,13 @@ type Enrichment struct {
 	IsFoundingRole  bool
 	VisaSponsorship string
 	WorkArrangement string // remote|hybrid|onsite|unknown; refines jobs.remote_type
+
+	// LLM-extracted salary, when the description states an explicit compensation
+	// range that the strict text-extraction regex missed (e.g. per-locale bands
+	// with bracketed prose, or labeled bare-$ ranges without badge currency to
+	// inherit). Used as a fallback by the pipeline: text-extraction wins when it
+	// already produced a description-sourced salary; LLM only fills the gap.
+	SalaryLow      *float64
+	SalaryHigh     *float64
+	SalaryCurrency string // ISO 4217; "" lets the caller inherit existing currency
 }

@@ -213,6 +213,32 @@ func enrichAndScoreJob(st *store.Store, j *models.JobPosting, prof *models.Profi
 		j.RemoteType = e.WorkArrangement
 	}
 
+	// Salary cross-check: the text-extraction regex (run in the scraper) is the
+	// high-confidence path — when it produced a description-sourced salary we
+	// keep it as-is. When text-extraction missed but the LLM extracted a range
+	// from the description body, the LLM result is authoritative (description
+	// overrides badge). We do NOT override an existing description-sourced
+	// salary with the LLM's, because the regex's currency-strict rules are more
+	// reliable than LLM currency inference.
+	if (e.SalaryLow != nil || e.SalaryHigh != nil) && j.SalarySource != models.SalarySourceDescription {
+		raw := ""
+		if e.SalaryLow != nil && e.SalaryHigh != nil {
+			raw = fmt.Sprintf("%.0f - %.0f", *e.SalaryLow, *e.SalaryHigh)
+		}
+		if err := st.SetSalaryFromDescription(j.ID, e.SalaryLow, e.SalaryHigh, e.SalaryCurrency, raw); err != nil {
+			return err
+		}
+		j.SalaryLow = e.SalaryLow
+		j.SalaryHigh = e.SalaryHigh
+		if e.SalaryCurrency != "" {
+			j.SalaryCurrency = e.SalaryCurrency
+		}
+		if raw != "" {
+			j.SalaryRaw = raw
+		}
+		j.SalarySource = models.SalarySourceDescription
+	}
+
 	// Compose the weighted-average score from the rubric set + LLM ratings.
 	res := score.Compute(j, prof, rubrics, ratings)
 	reason := score.FitReason(res)
