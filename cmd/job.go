@@ -15,9 +15,9 @@ var jobCmd = &cobra.Command{
 	Short: "Fetch + fit-score a single LinkedIn job by its numeric ID",
 	Args:  cobra.ExactArgs(1),
 	Long: `Fetches a single LinkedIn job posting by its numeric job ID and runs it
-through the same fetch → score pipeline as 'search'. No flags: salary, remote,
-and hard-filter behavior all come from your settings.yaml. The job is always
-(re-)fetched and (re-)scored.
+through the same fetch → score pipeline as 'search'. No flags: scoring context
+(salary floor, work arrangement) comes from your settings.yaml profile. The
+job is always (re-)fetched and (re-)scored.
 
 Example:
   linkedin-jobs job 4434368088`,

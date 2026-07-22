@@ -22,14 +22,9 @@ linkedin-jobs recommended [flags]
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--top` | int | 50 | Max number of recommended jobs to fetch |
-| `--min-salary` | string | "" | Only keep jobs paying at or above this (e.g. `200k`) |
-| `--salary-currency` | string | "" | Currency for `--min-salary` (ISO 4217, e.g. `CAD`); enables FX-aware filtering. Requires `--min-salary`. |
-| `--remote` | bool | false | Only keep remote-friendly jobs |
-| `--hybrid` | bool | false | Only keep hybrid-friendly jobs (OR with `--remote`/`--onsite`) |
-| `--onsite` | bool | false | Only keep on-site jobs (OR with `--remote`/`--hybrid`) |
 | `--force-overwrite` | bool | false | Re-parse and re-score jobs already in the DB (bypass dedup) |
 
-`--json`: yes. Progress to stderr: fetch count, detail fetch `N/total`, gate pass/drop, scoring summary.
+`--json`: yes. Progress to stderr: fetch count, detail fetch `N/total`, scoring summary. Every fetched job is persisted and scored — no ingest-time filters. Use `list`/`serve` filters to exclude at view time.
 
 ### search
 
@@ -44,11 +39,6 @@ Args: `keywords` (required), `location` (optional, e.g. `"Toronto"` or `"Remote,
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--top` | int | 25 | Cap on number of jobs to fetch + process end-to-end |
-| `--min-salary` | string | "" | Only keep jobs paying at or above this |
-| `--salary-currency` | string | "" | Currency for `--min-salary` (ISO 4217); requires `--min-salary` |
-| `--remote` | bool | false | Only remote-friendly jobs |
-| `--hybrid` | bool | false | Only hybrid-friendly jobs |
-| `--onsite` | bool | false | Only on-site jobs |
 | `--force-overwrite` | bool | false | Re-parse and re-score jobs already in the DB (bypasses new-only pre-filter and dedup) |
 
 `--json`: yes.
@@ -66,11 +56,6 @@ For URLs with `keywords=`, replays the URL's filters against the authenticated V
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--top` | int | 0 | Cap on jobs to process (0 = all jobs from the URL) |
-| `--min-salary` | string | "" | Only keep jobs paying at or above this |
-| `--salary-currency` | string | "" | Currency for `--min-salary`; requires `--min-salary` |
-| `--remote` | bool | false | Only remote-friendly jobs |
-| `--hybrid` | bool | false | Only hybrid-friendly jobs |
-| `--onsite` | bool | false | Only on-site jobs |
 | `--force-overwrite` | bool | false | Re-parse and re-score jobs already in the DB |
 
 `--json`: yes.

@@ -1,6 +1,6 @@
 # Scoring Pipeline
 
-How the linkedin-jobs CLI processes jobs from fetch to display. Understanding this pipeline is essential for interpreting scores, explaining why jobs were dropped, and guiding rubric/profile configuration.
+How the linkedin-jobs CLI processes jobs from fetch to display. Understanding this pipeline is essential for interpreting scores and guiding rubric/profile configuration.
 
 ## Pipeline Overview
 
@@ -11,30 +11,16 @@ Fetch job cards
     ↓
 Detail fetch (salary + full description)  ← stderr: "N/total" progress
     ↓
-Pre-score gate (--remote/--hybrid/--onsite/--min-salary)  ← drops pre-store, zero LLM tokens
-    ↓
-Persist all surviving jobs to SQLite  ← dedup memory (content-hash)
+Persist all fetched jobs to SQLite  ← dedup memory (content-hash)
     ↓
 Dedup check  ← skips scoring for already-enriched jobs (zero tokens)
     ↓
 LLM enrich + score (one call per genuine new candidate)
     ↓
-Display (sorted/filtered output)
+Display (full fetched set; ranking via fit_score)
 ```
 
-Only the enrich stage costs LLM tokens. Dedup is deterministic and free. Every new candidate is enriched and scored — there is no hard-filter token-skip anymore.
-
-## Pre-score Gate (CLI Flags)
-
-Triggered by `--remote`, `--hybrid`, `--onsite`, and `--min-salary` CLI flags. Runs **after** the detail fetch but **before** anything is stored or scored.
-
-- **Effect: drops** jobs that fail the gate. Dropped jobs are never stored, never scored, never visible. Each drop is logged to stderr with the reason.
-- **`--remote` / `--hybrid` / `--onsite`**: OR together. A job is kept when its location or `remote_type` contains the token. `--onsite` matches both `onsite` and the hyphenated `On-site` form.
-- **`--min-salary`**: a floor on the job's **max** salary (inclusive). Shorthand: `200k`, `$200,000`, `1.5m`. Jobs with no salary data are **dropped** when a floor is active.
-- **`--salary-currency`**: pairs with `--min-salary` for FX-aware filtering (live ECB reference rates via Frankfurter API, cached per day). Requires `--min-salary`.
-- **No LLM** — purely deterministic. Omit all four flags and the gate is a no-op.
-
-The pre-score gate **drops** jobs for the current run; rubrics and `profile:` knobs **score** them. There are no hard caps — a preference mismatch just lowers the weighted-average score (see Rubric Scoring).
+Only the enrich stage costs LLM tokens. Dedup is deterministic and free. Every new candidate is enriched and scored — nothing is dropped pre-LLM. Preferences (work arrangement, salary floor) live under `profile:` in `settings.yaml` and feed the soft system rubrics, which lower the score on mismatches rather than dropping jobs. Use `list --remote --min-salary ...` or the `serve` UI filters to exclude at view time.
 
 ## Dedup
 
@@ -72,7 +58,6 @@ A `fit_reason` showing the per-rubric breakdown is always stored (e.g. `salary 4
 ## Token-Frugality Features
 
 - **Dedup:** re-fetched or cross-source duplicates skip scoring (zero tokens).
-- **Pre-score gate:** drops jobs before they reach the DB or LLM.
 - **`LJ_LLM_DELAY_SECONDS`:** pauses between successive LLM calls (default 2.0s) to avoid provider rate limits (HTTP 429).
 
 ## Re-scoring

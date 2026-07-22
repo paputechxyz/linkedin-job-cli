@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -20,20 +19,15 @@ import (
 	"linkedin-jobs/internal/store"
 )
 
-// ingestOptions controls the shared fetch → gate → dedup → hard-filter → score → display pipeline.
-// Gates (--remote/--hybrid/--onsite/--min-salary) run AFTER detail fetch (so salary and
-// RemoteType are populated) but BEFORE persist+score: failing jobs are dropped
-// in-memory, never stored, and never sent to the LLM.
+// ingestOptions controls the shared fetch → dedup → score → display pipeline.
+// Every fetched job is persisted and scored; exclusions are a view-time
+// concern (list/serve filters) and ranking reflects misses via the soft
+// system rubrics (salary, work_arrangement) — nothing is dropped pre-LLM.
 type ingestOptions struct {
-	minSalary         float64
-	minSalaryCurrency string // "" = legacy raw numeric compare; else ISO 4217 (e.g. CAD) for FX-aware filtering
-	remote            bool
-	hybrid            bool
-	onsite            bool
-	forceOverwrite    bool // bypass dedup: re-parse + re-score + overwrite jobs already in the DB
-	detailDelay       float64
-	scoreDelay        float64 // pause between successive LLM scoring calls (avoids 429s)
-	jsonOut           bool
+	forceOverwrite bool    // bypass dedup: re-parse + re-score + overwrite jobs already in the DB
+	detailDelay    float64
+	scoreDelay     float64 // pause between successive LLM scoring calls (avoids 429s)
+	jsonOut        bool
 }
 
 // scoringProvider is the pure policy for the mandatory-LLM precondition: it
@@ -66,9 +60,8 @@ func mustResolveProvider() *llm.Provider {
 // ingest runs the pipeline on a batch of job cards and returns the display set
 // (all fetched jobs are persisted to the store regardless). The caller resolves
 // the LLM provider and passes it in — scoring is mandatory, so provider is
-// always non-nil. Gate order keeps token use minimal: dedup and the hard filter
-// are deterministic and free; every genuine new candidate reaches the LLM (one
-// combined enrichment+score call).
+// always non-nil. Every new candidate reaches the LLM (one combined
+// enrichment+score call); dedup is the only thing that skips LLM work.
 func ingest(jobs []*models.JobPosting, provider *llm.Provider, opts ingestOptions) []*models.JobPosting {
 	cfg := loadCfg()
 	settings, _ := config.LoadSettings()
@@ -96,16 +89,14 @@ func ingest(jobs []*models.JobPosting, provider *llm.Provider, opts ingestOption
 	})
 	fmt.Fprintln(os.Stderr)
 
-	// 1b. Apply user gates (--remote/--hybrid/--onsite/--min-salary). Runs after the detail
-	// fetch so salary and RemoteType are populated, but before persist + score.
-	// Jobs failing any active gate are dropped in-memory: never stored, never LLM'd.
-	beforeGate := len(jobs)
-	jobs = applyGates(jobs, opts)
-	if beforeGate != len(jobs) {
-		fmt.Fprintf(os.Stderr, "Gates: %d/%d passed (remote/hybrid/onsite/salary); %d dropped pre-store.\n", len(jobs), beforeGate, beforeGate-len(jobs))
-	}
+	// 1b. No ingest-time gate: every fetched job is persisted + scored.
+	// Preferences (work arrangement, salary floor) live under profile: in
+	// settings.yaml and feed the soft system rubrics, which lower the
+	// weighted-average score on mismatches rather than dropping jobs. View-
+	// time filters on `list`/`serve` (--remote/--min-salary/...) remain the
+	// way to exclude when reading the DB.
 
-	// 2. Compute dedup hash + persist ALL surviving jobs (save-all; dedup memory).
+	// 2. Compute dedup hash + persist ALL jobs (save-all; dedup memory).
 	for _, j := range jobs {
 		j.ContentHash = store.ContentHash(j.Company, j.Title, j.Description, j.ListedAt)
 		if err := st.Upsert(j); err != nil {
@@ -141,8 +132,9 @@ func ingest(jobs []*models.JobPosting, provider *llm.Provider, opts ingestOption
 		fmt.Fprintf(os.Stderr, "Processed: %d scored, %d duplicates skipped.\n", scoredN, dupsN)
 	}
 
-	// 4. Output. No further filtering here — the user gates already ran in
-	// step 1b and trimmed the slice pre-store. What remains is the shown set.
+	// 4. Output. The full fetched set is shown; ranking is via fit_score
+	// (reflects misses through the soft system rubrics). For exclusions at
+	// view time, use `list --remote --min-salary ...` or the `serve` filters.
 	if opts.jsonOut {
 		if err := render.AsJSON(os.Stdout, jobs); err != nil {
 			die("json output failed: %v", err)
@@ -251,93 +243,6 @@ func enrichAndScoreJob(st *store.Store, j *models.JobPosting, prof *models.Profi
 	j.RubricScores = string(rubricJSON)
 	j.ScoredAt = "set"
 	return nil
-}
-
-// applyGates drops jobs that fail any active user gate (--remote/--hybrid/
-// --onsite/--min-salary). Runs after the detail fetch (salary + RemoteType are now
-// populated) and before persist+score: failing jobs are dropped in-memory and
-// never reach the DB or the LLM. --salary-currency is not itself a gate; it
-// only supplies the unit for the --min-salary floor (FX-converted via fx.Convert).
-// --remote, --hybrid, and --onsite OR together when more than one is set.
-//
-// Each dropped job is logged to stderr with its title, company, and a
-// human-readable reason so the user can see WHY a given job vanished (e.g.
-// "salary $150,000 below CA$200,000 floor" or "not remote/hybrid/onsite
-// (remote_type=onsite)").
-func applyGates(jobs []*models.JobPosting, opts ingestOptions) []*models.JobPosting {
-	out := make([]*models.JobPosting, 0, len(jobs))
-	for _, j := range jobs {
-		if reason := gateDropReason(j, opts); reason != "" {
-			fmt.Fprintf(os.Stderr, "  dropped %q @ %s: %s\n", j.Title, companyOrDash(j.Company), reason)
-			continue
-		}
-		out = append(out, j)
-	}
-	return out
-}
-
-// gateDropReason returns a human-readable reason why j fails the active user
-// gates, or "" when j passes every active gate. The first failing gate wins.
-// Mirrors the boolean logic in meetsDisplaySalaryFloor (salary) so the stated
-// reason always matches the actual decision.
-func gateDropReason(j *models.JobPosting, opts ingestOptions) string {
-	// Salary floor.
-	if opts.minSalary > 0 {
-		if !j.HasSalary() {
-			return fmt.Sprintf("no salary data (floor %s)", money(opts.minSalary, opts.minSalaryCurrency))
-		}
-		jobCur := j.SalaryCurrency
-		if jobCur == "" {
-			jobCur = "USD"
-		}
-		jobMax := j.SalaryMax()
-		if opts.minSalaryCurrency == "" {
-			if jobMax < opts.minSalary {
-				return fmt.Sprintf("salary %s below %s floor", money(jobMax, jobCur), money(opts.minSalary, ""))
-			}
-		} else {
-			conv, err := fx.Convert(jobMax, jobCur, opts.minSalaryCurrency)
-			switch {
-			case err != nil && jobMax < opts.minSalary:
-				// FX rate unavailable — meetsDisplaySalaryFloor falls back to raw compare.
-				return fmt.Sprintf("salary %s below %s floor (FX %s->%s unavailable)", money(jobMax, jobCur), money(opts.minSalary, opts.minSalaryCurrency), jobCur, opts.minSalaryCurrency)
-			case err == nil && conv < opts.minSalary:
-				return fmt.Sprintf("salary %s ~= %s below %s floor", money(jobMax, jobCur), money(conv, opts.minSalaryCurrency), money(opts.minSalary, opts.minSalaryCurrency))
-			}
-		}
-	}
-	// Work arrangement (--remote / --hybrid / --onsite OR together).
-	if opts.remote || opts.hybrid || opts.onsite {
-		blob := strings.ToLower(j.Location + " " + j.RemoteType)
-		matchRemote := strings.Contains(blob, "remote")
-		matchHybrid := strings.Contains(blob, "hybrid")
-		// RemoteType is normalized to "onsite", but raw Location text often
-		// carries the hyphenated "On-site" — accept either form (mirrors
-		// linkedin.DetectRemote's normalization).
-		matchOnsite := strings.Contains(blob, "on-site") || strings.Contains(blob, "onsite")
-		if !((opts.remote && matchRemote) || (opts.hybrid && matchHybrid) || (opts.onsite && matchOnsite)) {
-			var wanted []string
-			if opts.remote {
-				wanted = append(wanted, "remote")
-			}
-			if opts.hybrid {
-				wanted = append(wanted, "hybrid")
-			}
-			if opts.onsite {
-				wanted = append(wanted, "onsite")
-			}
-			rt := j.RemoteType
-			if rt == "" {
-				rt = "unknown"
-			}
-			loc := j.Location
-			if loc == "" {
-				loc = "unknown"
-			}
-			return fmt.Sprintf("not %s (remote_type=%s, location=%q)", strings.Join(wanted, "/"), rt, loc)
-		}
-	}
-	return ""
 }
 
 // companyOrDash renders a company for diagnostic output, falling back to the

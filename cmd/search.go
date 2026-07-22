@@ -10,13 +10,8 @@ import (
 )
 
 var (
-	searchTop             int
-	searchMinSalary       string
-	searchSalaryCurrency  string
-	searchRemote          bool
-	searchHybrid          bool
-	searchOnsite          bool
-	searchForceOW         bool
+	searchTop    int
+	searchForceOW bool
 )
 
 var searchCmd = &cobra.Command{
@@ -29,22 +24,14 @@ the same pipeline as 'recommended'. Works without a session; no login needed.
 Jobs already in the DB (by LinkedIn ID) are skipped entirely — only brand-new
 jobs are detail-fetched, scored, and displayed. Pass --force-overwrite to
 re-process existing jobs (bypasses the new-only pre-filter and content-hash
-dedup; overwrites stored values). Jobs failing any active user gate
-(--remote/--hybrid/--onsite/--min-salary) are dropped in-memory after the detail
-fetch and never stored or scored.
+dedup; overwrites stored values). Every fetched job is persisted and scored;
+no ingest-time filters — use 'list --remote --min-salary ...' or the 'serve'
+filters to exclude at view time.
 
 Examples:
-  linkedin-jobs search "Staff Engineer" Toronto --min-salary 200k
-  linkedin-jobs search "Senior Developer" "Remote, US" --top 3
-  linkedin-jobs search "Staff Engineer" Toronto --min-salary 160k --salary-currency CAD`,
+  linkedin-jobs search "Staff Engineer" Toronto
+  linkedin-jobs search "Senior Developer" "Remote, US" --top 3`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Validate the salary floor + currency up front so a typo fails before
-		// we hit LinkedIn (and before the FX-aware filter runs).
-		minSal := parseMinSalary(searchMinSalary)
-		currency := validateSalaryCurrency(searchSalaryCurrency)
-		if currency != "" && minSal == 0 {
-			die("--salary-currency requires --min-salary.")
-		}
 		provider := mustResolveProvider()
 		keywords := args[0]
 		location := ""
@@ -79,15 +66,10 @@ Examples:
 		}
 
 		ingest(target, provider, ingestOptions{
-			minSalary:         minSal,
-			minSalaryCurrency: currency,
-			remote:            searchRemote,
-			hybrid:            searchHybrid,
-			onsite:            searchOnsite,
-			forceOverwrite:    searchForceOW,
-			detailDelay:       resolveDetailDelay(),
-			scoreDelay:        resolveLLMDelay(),
-			jsonOut:           jsonOut,
+			forceOverwrite: searchForceOW,
+			detailDelay:    resolveDetailDelay(),
+			scoreDelay:     resolveLLMDelay(),
+			jsonOut:        jsonOut,
 		})
 		return nil
 	},
@@ -95,11 +77,6 @@ Examples:
 
 func init() {
 	searchCmd.Flags().IntVar(&searchTop, "top", 25, "cap on number of jobs to fetch + process end-to-end")
-	searchCmd.Flags().StringVar(&searchMinSalary, "min-salary", "", "only keep jobs paying at or above this (e.g. 200k)")
-	searchCmd.Flags().StringVar(&searchSalaryCurrency, "salary-currency", "", "currency for --min-salary (ISO 4217, e.g. CAD); enables FX-aware filtering")
-	searchCmd.Flags().BoolVar(&searchRemote, "remote", false, "only keep remote-friendly jobs")
-	searchCmd.Flags().BoolVar(&searchHybrid, "hybrid", false, "only keep hybrid-friendly jobs (combine with --remote/--onsite for OR)")
-	searchCmd.Flags().BoolVar(&searchOnsite, "onsite", false, "only keep on-site jobs (combine with --remote/--hybrid for OR)")
 	searchCmd.Flags().BoolVar(&searchForceOW, "force-overwrite", false, "re-parse and re-score jobs already in the DB (bypass the new-only pre-filter and dedup; overwrites existing values)")
 	rootCmd.AddCommand(searchCmd)
 }

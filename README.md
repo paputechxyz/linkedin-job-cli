@@ -238,10 +238,15 @@ linkedin-jobs auth status      # checks li_at + JSESSIONID are present and valid
 
 ```bash
 linkedin-jobs recommended                       # pull your feed
-linkedin-jobs recommended --min-salary 200k     # only ≥ $200k
-linkedin-jobs recommended --remote              # only remote-friendly
+linkedin-jobs recommended --top 25              # cap at 25 jobs
 linkedin-jobs recommended --json                # machine-readable output
 ```
+
+Every fetched job is persisted and scored. No ingest-time filters: preferences
+(work arrangement, salary floor) live under `profile:` in `settings.yaml` and
+feed the soft system rubrics, which lower the score on mismatches rather than
+dropping jobs. Use `list --remote --min-salary ...` (or the `serve` UI filters)
+to exclude at view time.
 
 ### Search (anonymous)
 
@@ -250,7 +255,7 @@ skipped entirely — re-running the same query shows only what's new since the
 last run. Pass `--force-overwrite` to re-process existing jobs.
 
 ```bash
-linkedin-jobs search "Staff Engineer" Toronto --min-salary 200k
+linkedin-jobs search "Staff Engineer" Toronto
 linkedin-jobs search "Senior Developer" "Remote, US" --top 3   # cap at 3 jobs
 ```
 
@@ -263,13 +268,12 @@ same XHR the browser fires when you scroll `/jobs/search/` — so `--top` pulls
 every page (the anonymous `seeMoreJobPostings` endpoint caps early, e.g. 10 of
 32). For URLs that only carry explicit job IDs
 (`originToLandingJobPostings` from a job-alert email with no keywords, or
-`currentJobId`), those IDs are used directly. All the usual gates and scoring
-flags apply.
+`currentJobId`), those IDs are used directly.
 
 ```bash
 linkedin-jobs url "https://www.linkedin.com/jobs/search/?currentJobId=4415889466&originToLandingJobPostings=4415889466%2C4434154740&keywords=Staff%20Engineer"
-linkedin-jobs url "https://www.linkedin.com/jobs/search/?keywords=Staff%20Engineer&geoId=101788145" --top 50 --min-salary 200k
-linkedin-jobs url "https://www.linkedin.com/jobs/collections/recommended/?start=0" --remote
+linkedin-jobs url "https://www.linkedin.com/jobs/search/?keywords=Staff%20Engineer&geoId=101788145" --top 50
+linkedin-jobs url "https://www.linkedin.com/jobs/collections/recommended/?start=0"
 ```
 
 Authenticated via your captured browser session (see `auth status`); without a
@@ -373,47 +377,6 @@ linkedin-jobs profile show            # show active profile knobs
 Every fetched job is enriched and scored (one LLM call per new candidate);
 duplicates are skipped by content-hash. Run `rescore-all` to re-run enrichment
 and scoring across the whole DB after editing rubrics.
-
-### Pre-score gate
-
-A deterministic, **batch-level** filter triggered by the `--remote`, `--hybrid`,
-`--onsite`, and `--min-salary` CLI flags. It runs after the detail fetch but
-**before** anything is stored or scored, so it costs **zero LLM tokens**: failing
-jobs are dropped in-memory and never reach the DB. Each drop is logged to stderr
-with the title, company, and a human-readable reason (e.g.
-`dropped "Senior Eng" @ Acme: salary $150,000 below CA$200,000 floor`).
-
-- **No LLM** — purely deterministic; runs before the per-job scoring pipeline.
-  Omit all four flags and the gate is a no-op.
-- **`--remote` / `--hybrid` / `--onsite`** — a job is kept when its location or
-  `remote_type` contains the token; the flags **OR** together, so
-  `--remote --hybrid` keeps jobs matching either. On-site matches both
-  `remote_type=onsite` and the hyphenated `On-site` form common in raw location
-  text.
-- **`--min-salary`** — a floor on the job's **max** salary (inclusive: "could
-  this job pay ≥ min?"). Shorthand parsing accepts `200k`, `$200,000`, `1.5m`.
-  Empty or `0` disables it.
-  - **Salary source:** parsed from the **description body first** (the
-    authoritative, currency-stated range the employer posted), falling back to
-    LinkedIn's page-chrome **salary badge** (a low-confidence "est." band). The
-    gate is source-agnostic — either source can clear the floor.
-  - **Currency-aware:** a job with no currency signal is treated as `USD`. Pair
-    the floor with `--salary-currency CAD` to FX-convert the job's max salary
-    into the floor's currency before comparing (live ECB reference rates via the
-    Frankfurter API, cached per day, with a small offline fallback table). If a
-    rate is unavailable it falls back to a raw numeric compare rather than
-    dropping. `--salary-currency` requires `--min-salary`.
-  - **No salary data → dropped** when a floor is active (a floor implies "only
-    show jobs I know pay enough").
-
-```bash
-linkedin-jobs recommended --remote --hybrid --min-salary 200k --salary-currency CAD
-```
-
-The pre-score gate **drops** jobs for this run; your rubrics and `profile:`
-knobs **score** them. Reach for the gate for one-off hard cuts ("only remote
-jobs paying ≥ CA$200k *this run*"); reach for rubrics/profile knobs for standing
-preferences you want applied every run.
 
 ### LLM configuration
 
