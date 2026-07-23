@@ -4,12 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
-	"regexp"
 	"strings"
 	"time"
-
-	"golang.org/x/term"
 
 	"linkedin-jobs/internal/models"
 	"linkedin-jobs/internal/score"
@@ -26,37 +22,42 @@ func AsJSON(w io.Writer, v interface{}) error {
 	return err
 }
 
-// Table writes jobs as a column-aligned table. The title cell is wrapped in an
-// OSC 8 terminal hyperlink (clickable in iTerm2/Terminal.app/kitty/Windows
-// Terminal/etc.) when stdout is a TTY; when piped/redirected the raw title text
-// is emitted so logs and agent-captured output stay clean (the trailing "Links:"
-// list still carries the bare URLs there).
+// Table writes jobs as a column-aligned table. The URL is the rightmost
+// column (full, untruncated) so terminal/agent linkifiers can render it
+// clickable; the last column is written without padding so a long URL never
+// distorts the alignment of the other columns.
 func Table(w io.Writer, jobs []*models.JobPosting) {
 	if len(jobs) == 0 {
 		fmt.Fprintln(w, "No jobs found.")
 		return
 	}
-	cols := []string{"#", "Score", "Title", "Company", "Location", "Work", "Salary", "Source"}
+	cols := []string{"#", "Score", "Title", "Company", "Location", "Work", "Salary", "Source", "URL"}
 	widths := make([]int, len(cols))
 	for i, c := range cols {
-		widths[i] = visibleLen(c)
+		widths[i] = len(c)
 	}
 	rows := make([][]string, len(jobs))
 	for i, j := range jobs {
 		row := []string{
 			fmt.Sprintf("%d", i+1),
 			scoreCell(j),
-			titleCell(j),
+			trunc(j.Title, 38),
 			trunc(orDash(j.Company), 24),
 			trunc(orDash(j.Location), 20),
 			workCell(j),
 			trunc(j.SalaryDisplay(), 26),
 			orDash(j.Source),
+			orNA(j.URL),
 		}
 		rows[i] = row
 		for c, cell := range row {
-			if vw := visibleLen(cell); vw > widths[c] {
-				widths[c] = vw
+			// The URL column is untruncated; exclude it from width tracking so
+			// a long link doesn't push the header separator to hundreds of cols.
+			if c == len(row)-1 {
+				continue
+			}
+			if len(cell) > widths[c] {
+				widths[c] = len(cell)
 			}
 		}
 	}
@@ -72,15 +73,6 @@ func Table(w io.Writer, jobs []*models.JobPosting) {
 		}
 		fmt.Fprintln(w)
 	}
-
-	// Links: print each job's URL keyed by row number so terminals auto-link
-	// them as clickable hyperlinks. Kept separate from the table so the full
-	// (long) URL is shown verbatim instead of distorting the column layout.
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Links:")
-	for i, j := range jobs {
-		fmt.Fprintf(w, "  %d. %s\n", i+1, orNA(j.URL))
-	}
 }
 
 func scoreCell(j *models.JobPosting) string {
@@ -90,26 +82,12 @@ func scoreCell(j *models.JobPosting) string {
 	return fmt.Sprintf("%d", *j.FitScore)
 }
 
-// writeCell writes one left-aligned cell padded to `width` visible columns,
-// then a two-space gutter. Padding is based on display width (visibleLen), not
-// byte length, so cells containing OSC 8 hyperlink escapes still align. The
-// last column is written without padding/gutter.
 func writeCell(w io.Writer, s string, width int, last bool) {
 	if last {
 		fmt.Fprint(w, s)
 		return
 	}
-	fmt.Fprint(w, s)
-	if pad := width - visibleLen(s); pad > 0 {
-		fmt.Fprint(w, strings.Repeat(" ", pad))
-	}
-	fmt.Fprint(w, "  ")
-}
-
-// titleCell returns the (possibly truncated) job title, wrapped in an OSC 8
-// hyperlink to the job's URL when stdout is a TTY.
-func titleCell(j *models.JobPosting) string {
-	return hyperlink(j.URL, trunc(j.Title, 38))
+	fmt.Fprintf(w, "%-*s  ", width, s)
 }
 
 // workCell renders the work arrangement (Remote/Hybrid/Onsite) for the table.
@@ -118,33 +96,6 @@ func workCell(j *models.JobPosting) string {
 		return "—"
 	}
 	return strings.Title(j.RemoteType)
-}
-
-// hyperlink wraps text in an OSC 8 terminal hyperlink pointing at url. When
-// stdout is not a terminal (piped, redirected, agent-captured) the plain text
-// is returned so output stays clean.
-func hyperlink(url, text string) string {
-	if url == "" || !stdoutIsTerminal() {
-		return text
-	}
-	// OSC 8: ESC ] 8 ; ; <url> BEL <text> ESC ] 8 ; ; BEL
-	return "\x1b]8;;" + url + "\x07" + text + "\x1b]8;;\x07"
-}
-
-// stdoutIsTerminal reports whether os.Stdout is an interactive terminal.
-func stdoutIsTerminal() bool {
-	return term.IsTerminal(int(os.Stdout.Fd()))
-}
-
-// osc8RE matches OSC 8 hyperlink escape sequences (open and close, BEL- or
-// ST-terminated) so visibleLen can return the on-screen column width of a cell
-// that contains a clickable link.
-var osc8RE = regexp.MustCompile(`\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)`)
-
-// visibleLen returns the on-screen column width of s: the byte length with all
-// ANSI/OSC escape sequences stripped.
-func visibleLen(s string) int {
-	return len(osc8RE.ReplaceAllString(s, ""))
 }
 
 func lineW(widths []int) int {
