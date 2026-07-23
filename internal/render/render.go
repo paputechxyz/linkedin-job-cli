@@ -162,7 +162,10 @@ func Detail(w io.Writer, j *models.JobPosting) {
 		}
 		fmt.Fprintln(w)
 	}
-	if j.LLMSummary != "" {
+	if j.ShortDescription != "" {
+		fmt.Fprintln(w, "Description:")
+		fmt.Fprintln(w, j.ShortDescription)
+	} else if j.LLMSummary != "" {
 		fmt.Fprintln(w, "Summary:")
 		fmt.Fprintln(w, j.LLMSummary)
 	} else if j.Description != "" {

@@ -18,6 +18,11 @@ type Enrichment struct {
 	IsFoundingRole  bool
 	WorkArrangement string // remote|hybrid|onsite|unknown; refines jobs.remote_type
 
+	// ShortDescription is an LLM-authored tight summary of the job description
+	// (a few short paragraphs), shown in the UI in place of the raw description
+	// body. Empty when the LLM returned nothing usable.
+	ShortDescription string
+
 	// LLM-extracted salary, when the description states an explicit compensation
 	// range that the strict text-extraction regex missed (e.g. per-locale bands
 	// with bracketed prose, or labeled bare-$ ranges without badge currency to

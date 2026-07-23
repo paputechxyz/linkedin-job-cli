@@ -18,6 +18,7 @@ const enrichSystem = "You are an expert technical recruiter assistant. Analyze a
 // block (built at call time from the active rubric set) is interpolated into
 // the "ratings" instruction so the LLM knows which rubrics to rate 1–5.
 const enrichPromptTmpl = `Analyze this job posting and return ONLY a JSON object (no prose, no code fences) with EXACTLY these keys:
+"short_description": a tight summary of the role as 2-3 short paragraphs separated by a blank line (use "\n\n" between paragraphs). Paragraph 1: what the role is and what you would build or own. Paragraph 2: the must-have requirements (years, stack, seniority). Optionally a 3rd short paragraph for standout context. Keep each paragraph to 1-2 sentences. Use real line breaks ("\n\n"), never one giant paragraph. Omit company marketing, benefits, EEO statements, and compensation,
 "company_overview": 1-2 sentences on what the company does,
 "industry": the company's industry,
 "tech_stack": comma-separated technologies required,
@@ -187,6 +188,7 @@ func truncateForError(s string) string {
 }
 
 type enrichJSON struct {
+	ShortDescription string `json:"short_description"`
 	CompanyOverview string `json:"company_overview"`
 	Industry        string `json:"industry"`
 	TechStack       string `json:"tech_stack"`
@@ -248,6 +250,7 @@ func extractJSON(content string) string {
 
 func toEnrichment(ej enrichJSON) models.Enrichment {
 	e := models.Enrichment{
+		ShortDescription: strings.TrimSpace(ej.ShortDescription),
 		CompanyOverview: strings.TrimSpace(ej.CompanyOverview),
 		Industry:        strings.TrimSpace(ej.Industry),
 		TechStack:       strings.TrimSpace(ej.TechStack),
@@ -356,6 +359,7 @@ func parseDelimiter(content string) enrichJSON {
 	var ej enrichJSON
 	segs := splitDelimiters(content)
 	set := map[string]*string{
+		"short_description": &ej.ShortDescription, "short desc": &ej.ShortDescription,
 		"company_overview": &ej.CompanyOverview, "company": &ej.CompanyOverview,
 		"industry":   &ej.Industry,
 		"tech_stack": &ej.TechStack, "stack": &ej.TechStack, "tech stack": &ej.TechStack,

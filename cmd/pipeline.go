@@ -198,6 +198,7 @@ func enrichAndScoreJob(st *store.Store, j *models.JobPosting, prof *models.Profi
 	}
 	// Reflect enrichment onto the in-memory job so the scorer sees fresh values.
 	j.EnrichedAt = "set"
+	j.ShortDescription = e.ShortDescription
 	j.CompanyOverview = e.CompanyOverview
 	j.Industry = e.Industry
 	j.TechStack = e.TechStack

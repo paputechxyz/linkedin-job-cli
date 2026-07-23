@@ -200,6 +200,40 @@ func TestRenderFitReasonStars(t *testing.T) {
 	}
 }
 
+func TestRenderDescriptionShortDescription(t *testing.T) {
+	tpl, err := newPageTemplate()
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	// Enriched job: ShortDescription is shown, full Description is hidden.
+	enriched := scoreForTest(80, "new")
+	enriched.ShortDescription = "Own the payments service.\n\n8+ years Go and Postgres."
+	enriched.Description = "RAW FULL BODY THAT MUST NOT APPEAR"
+	// Un-enriched job: no ShortDescription → fall back to full Description.
+	legacy := scoreForTest(70, "new")
+	legacy.Description = "Legacy full description excerpt as fallback."
+
+	var buf bytes.Buffer
+	if err := tpl.Execute(&buf, pageData{CSRF: "t", F: formVals{Sort: "score"}, Jobs: []jobView{enriched, legacy}}); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "Own the payments service.") {
+		t.Error("enriched job should render its ShortDescription")
+	}
+	if strings.Contains(out, "RAW FULL BODY THAT MUST NOT APPEAR") {
+		t.Error("enriched job must NOT render the full Description body when ShortDescription is present")
+	}
+	if !strings.Contains(out, "Legacy full description excerpt as fallback.") {
+		t.Error("un-enriched job should fall back to full Description")
+	}
+	// The copy button was removed and must not come back.
+	if strings.Contains(out, "btn-copy") || strings.Contains(out, "js-copy") {
+		t.Error("copy button must not be rendered")
+	}
+}
+
 func TestRenderEmptyAndErrorStates(t *testing.T) {
 	tpl, err := newPageTemplate()
 	if err != nil {

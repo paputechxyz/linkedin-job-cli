@@ -22,6 +22,9 @@ type JobPosting struct {
 	// (low confidence, amber). "" means unknown/pre-feature.
 	SalarySource string `json:"salary_source,omitempty"`
 	Description  string `json:"description,omitempty"`
+	// ShortDescription is the LLM-generated tight summary of Description, shown
+	// in the UI instead of the full body. Empty until enrichment runs.
+	ShortDescription string `json:"short_description,omitempty"`
 	Summary      string `json:"summary,omitempty"`
 	LLMSummary   string `json:"llm_summary,omitempty"`
 	RemoteType   string `json:"remote_type,omitempty"`

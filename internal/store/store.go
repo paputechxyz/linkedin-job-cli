@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     salary_currency TEXT,
     salary_source TEXT,
     description TEXT,
+    short_description TEXT,
     summary TEXT,
     llm_summary TEXT,
     remote_type TEXT,
@@ -81,6 +82,7 @@ var addColumns = []struct {
 	{"scored_at", "TEXT"},
 	{"salary_source", "TEXT"},
 	{"rubric_scores", "TEXT"},
+	{"short_description", "TEXT"},
 }
 
 // Store is the SQLite persistence layer.
@@ -312,12 +314,14 @@ func (s *Store) SetEnrichmentAndScore(id string, e models.Enrichment) error {
 	}
 	_, err := s.db.Exec(`
 UPDATE jobs SET
+  short_description=COALESCE(NULLIF(?, ''), short_description),
   company_overview=?, industry=?, tech_stack=?, seniority=?, employment_type=?,
   years_experience=COALESCE(?, years_experience), company_size_band=?, company_stage=?,
   is_founding_role=?,
   remote_type=COALESCE(NULLIF(?, ''), remote_type),
   enriched_at=?, scored_at=?
 WHERE id=?`,
+		e.ShortDescription,
 		e.CompanyOverview, e.Industry, e.TechStack, e.Seniority, e.EmploymentType,
 		years, e.CompanySizeBand, e.CompanyStage, founding,
 		e.WorkArrangement, now, now, id)
@@ -518,7 +522,7 @@ func (s *Store) List(f Filters) ([]*models.JobPosting, error) {
 // SearchFTS runs an offline full-text query over stored jobs.
 func (s *Store) SearchFTS(expr string, limit int) ([]*models.JobPosting, error) {
 	q := `SELECT j.id,j.title,j.company,j.location,j.url,j.salary_raw,j.salary_low,j.salary_high,
-  j.salary_currency,j.salary_source,j.description,j.summary,j.llm_summary,j.remote_type,j.status,j.notes,j.source,j.listed_at,
+  j.salary_currency,j.salary_source,j.description,j.short_description,j.summary,j.llm_summary,j.remote_type,j.status,j.notes,j.source,j.listed_at,
   j.searched_at,j.fetched_at,j.company_overview,j.industry,j.tech_stack,j.seniority,j.employment_type,
   j.years_experience,j.company_size_band,j.company_stage,j.is_founding_role,j.fit_score,
   j.fit_reason,j.content_hash,j.enriched_at,j.scored_at,
@@ -665,7 +669,7 @@ func (s *Store) Delete(id string) error {
 // --- helpers ---
 
 const jobCols = `SELECT id,title,company,location,url,salary_raw,salary_low,salary_high,
-  salary_currency,salary_source,description,summary,llm_summary,remote_type,status,notes,source,listed_at,
+  salary_currency,salary_source,description,short_description,summary,llm_summary,remote_type,status,notes,source,listed_at,
   searched_at,fetched_at,company_overview,industry,tech_stack,seniority,employment_type,
   years_experience,company_size_band,company_stage,is_founding_role,fit_score,
   fit_reason,content_hash,enriched_at,scored_at,
@@ -678,13 +682,13 @@ type scanner interface {
 func scanJob(row scanner) (*models.JobPosting, error) {
 	j := &models.JobPosting{}
 	var sl, sh sql.NullFloat64
-	var company, location, salaryRaw, cur, salarySource, desc, summary, llm, remote, status, notes, source, fetched sql.NullString
+	var company, location, salaryRaw, cur, salarySource, desc, shortDesc, summary, llm, remote, status, notes, source, fetched sql.NullString
 	var listed sql.NullInt64
 	var companyOverview, industry, techStack, seniority, employmentType, companySizeBand, companyStage, fitReason, contentHash, enrichedAt, scoredAt sql.NullString
 	var rubricScores sql.NullString
 	var yearsExp, isFounding, fitScore sql.NullInt64
 	if err := row.Scan(&j.ID, &j.Title, &company, &location, &j.URL, &salaryRaw, &sl, &sh,
-		&cur, &salarySource, &desc, &summary, &llm, &remote, &status, &notes, &source, &listed, &j.SearchedAt, &fetched,
+		&cur, &salarySource, &desc, &shortDesc, &summary, &llm, &remote, &status, &notes, &source, &listed, &j.SearchedAt, &fetched,
 		&companyOverview, &industry, &techStack, &seniority, &employmentType, &yearsExp,
 		&companySizeBand, &companyStage, &isFounding, &fitScore,
 		&fitReason, &contentHash, &enrichedAt, &scoredAt,
@@ -708,6 +712,7 @@ func scanJob(row scanner) (*models.JobPosting, error) {
 	j.SalaryCurrency = cur.String
 	j.SalarySource = salarySource.String
 	j.Description = desc.String
+	j.ShortDescription = shortDesc.String
 	j.Summary = summary.String
 	j.LLMSummary = llm.String
 	j.RemoteType = remote.String

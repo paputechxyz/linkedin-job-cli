@@ -533,6 +533,7 @@ type jobView struct {
 	Founding                          string
 	ListedDate, FetchedDate           string
 	Description                         string
+	ShortDescription                   string
 	LLMSummary, Summary               string
 	CompanyOverview, FitReason, Notes string
 	Rubrics                           []rubricView
@@ -567,6 +568,7 @@ func toJobView(j *models.JobPosting) jobView {
 		CoSize:          j.CompanySizeBand,
 		CoStage:          j.CompanyStage,
 		Description:      j.Description,
+		ShortDescription: j.ShortDescription,
 		LLMSummary:      j.LLMSummary,
 		Summary:         j.Summary,
 		CompanyOverview: j.CompanyOverview,
@@ -1630,8 +1632,8 @@ const pageHTML = `<!DOCTYPE html>
           {{else if .Summary}}
           <details class="job-detail"><summary>Summary (extractive)</summary><div class="detail-body">{{.Summary}}</div></details>
           {{end}}
-          {{if .Description}}
-          <details class="job-detail"><summary>Description</summary><div class="detail-body">{{.Description}}</div></details>
+          {{if or .ShortDescription .Description}}
+          <details class="job-detail"><summary>Description</summary><div class="detail-body">{{if .ShortDescription}}{{.ShortDescription}}{{else}}{{.Description}}{{end}}</div></details>
           {{end}}
           {{if .CompanyOverview}}
           <details class="job-detail"><summary>Company overview</summary><div class="detail-body">{{.CompanyOverview}}</div></details>

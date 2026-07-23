@@ -91,6 +91,28 @@ func TestEnrich_ExtractsFacts(t *testing.T) {
 	}
 }
 
+func TestEnrich_ExtractsShortDescription(t *testing.T) {
+	// The LLM returns a tight multi-paragraph summary with literal \n\n breaks
+	// between paragraphs. parseEnrichment must preserve those internal breaks
+	// (only outer whitespace is trimmed) so the UI can render real paragraphs.
+	content := `{"short_description":"You will own the payments service end to end.\n\nMust have 8+ years of Go and Postgres.","company_overview":"Acme"}`
+	calls := 0
+	srv, p := fakeCompletions(t, content, 200, &calls)
+	defer srv.Close()
+	j := &models.JobPosting{Title: "Staff Eng", Description: "build stuff"}
+	e, _, err := Enrich(j, p, dynamicRubrics("ai_intensity"), nil)
+	if err != nil {
+		t.Fatalf("Enrich: %v", err)
+	}
+	want := "You will own the payments service end to end.\n\nMust have 8+ years of Go and Postgres."
+	if e.ShortDescription != want {
+		t.Errorf("short_description=%q want %q", e.ShortDescription, want)
+	}
+	if !strings.Contains(e.ShortDescription, "\n\n") {
+		t.Errorf("paragraph break \\n\\n must be preserved for rendering, got %q", e.ShortDescription)
+	}
+}
+
 func TestEnrich_ReturnsRatings(t *testing.T) {
 	content := `{"company_overview":"Acme","ratings":{"free_snacks":5,"ai_intensity":4}}`
 	calls := 0
