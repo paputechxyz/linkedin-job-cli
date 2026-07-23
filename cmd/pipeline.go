@@ -122,11 +122,20 @@ func ingest(jobs []*models.JobPosting, provider *llm.Provider, opts ingestOption
 	}
 	scoredN := 0
 	if len(toScore) > 0 {
-		scoredN = enrichAndScoreBatch(st, toScore, profileData, provider, rubrics, resolveLLMConcurrency(), opts.scoreDelay, func(idx, total int, j *models.JobPosting, err error) {
+		concurrency := resolveLLMConcurrency()
+		fmt.Fprintf(os.Stderr, "Scoring %d job(s) %d at a time via %s…\n", len(toScore), concurrency, provider.Source)
+		var done int
+		scoredN = enrichAndScoreBatch(st, toScore, profileData, provider, rubrics, concurrency, opts.scoreDelay, func(idx, total int, j *models.JobPosting, err error) {
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "  ! %s: %v\n", j.Title, err)
+				// Surface the error on its own line so it doesn't corrupt the
+				// in-place \r counter; the counter resumes on the next success.
+				fmt.Fprintf(os.Stderr, "\n  ! %s: %v\n", j.Title, err)
+				return
 			}
+			done++
+			fmt.Fprintf(os.Stderr, "\r  %d/%d scored", done, total)
 		})
+		fmt.Fprintln(os.Stderr)
 	}
 	if scoredN > 0 || dupsN > 0 {
 		fmt.Fprintf(os.Stderr, "Processed: %d scored, %d duplicates skipped.\n", scoredN, dupsN)
