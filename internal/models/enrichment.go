@@ -16,7 +16,6 @@ type Enrichment struct {
 	CompanySizeBand string
 	CompanyStage    string
 	IsFoundingRole  bool
-	VisaSponsorship string
 	WorkArrangement string // remote|hybrid|onsite|unknown; refines jobs.remote_type
 
 	// LLM-extracted salary, when the description states an explicit compensation

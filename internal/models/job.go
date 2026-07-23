@@ -41,9 +41,8 @@ type JobPosting struct {
 	YearsExperience *int   `json:"years_experience,omitempty"`
 	CompanySizeBand string `json:"company_size_band,omitempty"`
 	CompanyStage    string `json:"company_stage,omitempty"`
-	IsFoundingRole  bool   `json:"is_founding_role,omitempty"`
-	VisaSponsorship string `json:"visa_sponsorship,omitempty"`
-	EnrichedAt      string `json:"enriched_at,omitempty"`
+	IsFoundingRole bool   `json:"is_founding_role,omitempty"`
+	EnrichedAt     string `json:"enriched_at,omitempty"`
 
 	// Fit scoring against the user's rubric set.
 	FitScore  *int   `json:"fit_score,omitempty"` // 0-100, nil = unscored

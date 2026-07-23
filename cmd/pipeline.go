@@ -209,7 +209,6 @@ func enrichAndScoreJob(st *store.Store, j *models.JobPosting, prof *models.Profi
 	j.CompanySizeBand = e.CompanySizeBand
 	j.CompanyStage = e.CompanyStage
 	j.IsFoundingRole = e.IsFoundingRole
-	j.VisaSponsorship = e.VisaSponsorship
 	if e.WorkArrangement != "" {
 		j.RemoteType = e.WorkArrangement
 	}

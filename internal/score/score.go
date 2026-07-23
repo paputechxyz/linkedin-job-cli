@@ -133,10 +133,16 @@ func FitReason(r Result) string {
 // --- system rubric raters ---
 
 // salaryRating: tiers by how the job's max salary (FX-converted to the floor's
-// currency) compares to the floor. No salary data or no floor → neutral.
+// currency) compares to the floor. No floor (no preference) → strong: salary is
+// not a criterion, so it never drags the score down. Has a floor but no salary
+// data → neutral (can't judge fit against the floor).
 func salaryRating(job *models.JobPosting, profile *models.Profile) (int, string) {
-	if profile == nil || profile.PrefMinSalary == nil || *profile.PrefMinSalary <= 0 || !job.HasSalary() {
-		return RatingNeutral, "no floor/salary"
+	noFloor := profile == nil || profile.PrefMinSalary == nil || *profile.PrefMinSalary <= 0
+	if noFloor {
+		return RatingStrong, "no salary floor"
+	}
+	if !job.HasSalary() {
+		return RatingNeutral, "no salary"
 	}
 	floor := *profile.PrefMinSalary
 	converted := convertSalaryTo(job.SalaryMax(), job.SalaryCurrency, profile.PrefMinSalaryCurrency)
@@ -156,10 +162,12 @@ func salaryRating(job *models.JobPosting, profile *models.Profile) (int, string)
 }
 
 // arrangementRating: rewards a detected arrangement that matches a preference.
-// Hybrid is partial when only remote is preferred. No preference → neutral.
+// Hybrid is partial when only remote is preferred. No preference (or all three
+// arrangements preferred) → strong: every arrangement type is acceptable, so it
+// never drags the score down.
 func arrangementRating(job *models.JobPosting, profile *models.Profile) (int, string) {
 	if profile == nil || !profile.HasWorkArrangementPreference() {
-		return RatingNeutral, "no arrangement preference"
+		return RatingStrong, "no arrangement preference"
 	}
 	arr := job.DetectArrangement()
 	if arr == "" {

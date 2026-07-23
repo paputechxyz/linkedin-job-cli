@@ -30,7 +30,7 @@ A content-hash of company + title + full description + listed-at. If a job with 
 
 One LLM call per genuine new candidate (one that passed dedup). The LLM:
 
-1. **Extracts structured facts:** company overview, industry, tech stack, seniority, employment type, years of experience, company size/stage, founding role, visa sponsorship, work arrangement.
+1. **Extracts structured facts:** company overview, industry, tech stack, seniority, employment type, years of experience, company size/stage, founding role, work arrangement.
 2. **Rates each dynamic rubric 1-5** for the job (e.g. `preferred_tech: 5`, `avoided_tech: 1`, `free_snacks: 3`). System rubrics are NOT rated by the LLM — they are computed deterministically in Go.
 3. **Does NOT pick the score** — Go derives the 0-100 fit score from the rubric ratings + weights.
 

@@ -127,6 +127,35 @@ func TestCompute_SalaryRating(t *testing.T) {
 	}
 }
 
+// --- no preference → strong (never drag the score) ---
+
+func TestCompute_SalaryNoFloorStrong(t *testing.T) {
+	// No salary floor → any salary (or none) rates strong so it can't pull the
+	// weighted average down. A lone salary rubric must score 100.
+	rubric := sysRubric(config.RubricSalary, 5)
+	cases := []struct {
+		name    string
+		amount  *float64
+		prof    *models.Profile
+	}{
+		{"nil_profile_job_has_salary", floatPtr(120000), nil},
+		{"no_floor_job_has_salary", floatPtr(120000), &models.Profile{}},
+		{"no_floor_job_no_salary", nil, &models.Profile{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			j := &models.JobPosting{SalaryHigh: tc.amount}
+			r := Compute(j, tc.prof, []config.Rubric{rubric}, nil)
+			if r.Score != 100 {
+				t.Errorf("Score=%d want 100 (no floor → strong)", r.Score)
+			}
+			if len(r.Rubrics) != 1 || r.Rubrics[0].Rating != RatingStrong {
+				t.Errorf("rating=%d want %d (strong)", r.Rubrics[0].Rating, RatingStrong)
+			}
+		})
+	}
+}
+
 // --- system work_arrangement rubric ---
 
 func TestCompute_WorkArrangementRating(t *testing.T) {
@@ -142,7 +171,8 @@ func TestCompute_WorkArrangementRating(t *testing.T) {
 	}{
 		{"remote_pref_remote_job", []string{"remote"}, "Remote, Canada", "Remote", RatingStrong, 100},
 		{"remote_pref_onsite_job", []string{"remote"}, "San Francisco, CA", "On-site", RatingMiss, 20},
-		{"no_pref_neutral", nil, "Remote, Canada", "Remote", RatingNeutral, 60},
+		{"no_pref_strong", nil, "Remote, Canada", "Remote", RatingStrong, 100},
+		{"all_three_prefs_strong", []string{"remote", "hybrid", "onsite"}, "Hybrid · Toronto", "Hybrid", RatingStrong, 100},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

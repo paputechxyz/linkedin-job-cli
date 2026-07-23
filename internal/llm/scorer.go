@@ -27,7 +27,6 @@ const enrichPromptTmpl = `Analyze this job posting and return ONLY a JSON object
 "company_size_band": one of 1-10|11-50|51-200|201-1000|1000+,
 "company_stage": one of seed|early|growth|mature|public,
 "is_founding_role": boolean (founding/founding-engineer role),
-"visa_sponsorship": one of yes|no|unknown,
 "work_arrangement": one of remote|hybrid|onsite|unknown,
 "salary_low": number or null — the LOW end of the cash compensation range stated in the description body. Only set when the posting EXPLICITLY states a dollar/number figure (e.g. "$184,000 - $249,000", "$150,000 CAD", "CA$190k - CA$210k"). Set to null when no figure is given ("competitive", "DOE", equity-only, etc.). Parse the literal numeric value (strip "$", ",", "k" -> *1000, "m" -> *1000000). Do NOT infer market rates or guess.
 "salary_high": number or null — the HIGH end of the same range. Same rules as salary_low. When the posting gives a single point figure rather than a range, set both salary_low and salary_high to that figure.
@@ -197,7 +196,6 @@ type enrichJSON struct {
 	CompanySizeBand string `json:"company_size_band"`
 	CompanyStage    string `json:"company_stage"`
 	IsFoundingRole  bool   `json:"is_founding_role"`
-	VisaSponsorship string `json:"visa_sponsorship"`
 	WorkArrangement string `json:"work_arrangement"`
 	SalaryLow       *float64 `json:"salary_low"`
 	SalaryHigh      *float64 `json:"salary_high"`
@@ -259,7 +257,6 @@ func toEnrichment(ej enrichJSON) models.Enrichment {
 		CompanySizeBand: normalizeEnum(ej.CompanySizeBand, sizeVals),
 		CompanyStage:    normalizeEnum(ej.CompanyStage, stageVals),
 		IsFoundingRole:  ej.IsFoundingRole,
-		VisaSponsorship: normalizeEnum(ej.VisaSponsorship, visaVals),
 		WorkArrangement: normalizeArrangement(ej.WorkArrangement),
 	}
 	// Salary sanity: reject zero/negative, and treat "$0" hallucinations as
@@ -320,7 +317,6 @@ var (
 	employmentVals = []string{"full-time", "part-time", "contract", "temporary", "internship"}
 	sizeVals       = []string{"1-10", "11-50", "51-200", "201-1000", "1000+"}
 	stageVals      = []string{"seed", "early", "growth", "mature", "public"}
-	visaVals       = []string{"yes", "no", "unknown"}
 )
 
 func normalizeEnum(v string, allowed []string) string {
@@ -367,7 +363,6 @@ func parseDelimiter(content string) enrichJSON {
 		"employment_type": &ej.EmploymentType, "employment": &ej.EmploymentType,
 		"company_size_band": &ej.CompanySizeBand, "size": &ej.CompanySizeBand, "company size": &ej.CompanySizeBand,
 		"company_stage": &ej.CompanyStage, "stage": &ej.CompanyStage,
-		"visa_sponsorship": &ej.VisaSponsorship, "visa": &ej.VisaSponsorship,
 		"work_arrangement": &ej.WorkArrangement, "remote": &ej.WorkArrangement, "arrangement": &ej.WorkArrangement,
 		"salary_currency": &ej.SalaryCurrency, "currency": &ej.SalaryCurrency,
 	}
