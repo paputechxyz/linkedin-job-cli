@@ -228,15 +228,17 @@ Searches the public job board. Jobs already in the DB (by LinkedIn ID) are
 skipped entirely — re-running the same query shows only what's new since the
 last run. Pass `--force-overwrite` to re-process existing jobs.
 
-The query is a single string split into keywords + location on the **first
-comma** — everything before it is the keyword search, everything after is the
-location. Locations often contain commas ("Remote, US", "Toronto, Ontario,
-Canada") so the first-comma split keeps them intact; omit the comma for a
-keywords-only search.
+The first positional argument is the keyword search. Use `--location` for
+geographic filtering and `--remote`/`--hybrid`/`--onsite` for workplace type;
+these are passed to LinkedIn as structured query params (`location`,
+`f_WT`). LinkedIn geocodes the location server-side, so "Toronto" covers the
+entire GTA. Combine work-type flags for OR (e.g. `--remote --hybrid`).
 
 ```bash
-linkedin-jobs search "Staff Engineer, Toronto"
-linkedin-jobs search "Senior Developer, Remote, US" --top 3   # cap at 3 jobs
+linkedin-jobs search "Senior Software Engineer" --location Toronto --remote
+linkedin-jobs search "Staff Engineer" --location "Mississauga, ON" --hybrid --top 50
+linkedin-jobs search "Backend Developer" --location "San Francisco" --remote --hybrid
+linkedin-jobs search "Go Engineer"                                     # keywords only
 ```
 
 ### URL (authenticated)
@@ -292,7 +294,7 @@ linkedin-jobs query "engineer" --exclude amazon
 linkedin-jobs stats --top 25
 linkedin-jobs tag 4430749190 applied --note "referred by Sam"
 linkedin-jobs export --format csv -o jobs.csv
-linkedin-jobs search "Staff Engineer, Toronto" --top 10  # skips jobs already in the DB; only new ones are fetched/scored
+linkedin-jobs search "Staff Engineer" --location Toronto --top 10  # skips jobs already in the DB; only new ones are fetched/scored
 linkedin-jobs count
 linkedin-jobs purge
 ```

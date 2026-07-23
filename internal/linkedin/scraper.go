@@ -18,14 +18,25 @@ const guestSearchURL = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobP
 
 var jobIDRE = regexp.MustCompile(`jobPosting:(\d+)`)
 
+// SearchParams holds the filterable parameters for an anonymous job search.
+type SearchParams struct {
+	Keywords string
+	Location string
+	WorkType string // "" | "1"(onsite) | "2"(remote) | "3"(hybrid); comma-separated for OR
+	Pages    int
+}
+
 // Search runs an anonymous job search and returns parsed job cards (no
 // salary/description — call FetchDetail for those).
-func (c *Client) Search(keywords, location string, pages int) ([]*models.JobPosting, error) {
+func (c *Client) Search(p SearchParams) ([]*models.JobPosting, error) {
 	var out []*models.JobPosting
 	seen := map[string]bool{}
-	for page := 0; page < pages; page++ {
+	for page := 0; page < p.Pages; page++ {
 		start := page * 25
-		u := guestSearchURL + "?keywords=" + urlEncode(keywords) + "&location=" + urlEncode(location)
+		u := guestSearchURL + "?keywords=" + urlEncode(p.Keywords) + "&location=" + urlEncode(p.Location)
+		if p.WorkType != "" {
+			u += "&f_WT=" + p.WorkType
+		}
 		if start > 0 {
 			u += "&start=" + itoa(start)
 		}

@@ -2,30 +2,52 @@ package cmd
 
 import "testing"
 
-func TestSplitSearchQuery(t *testing.T) {
+func TestResolveWorkType(t *testing.T) {
 	cases := []struct {
-		in              string
-		wantKeywords    string
-		wantLocation    string
+		name                                          string
+		remote, hybrid, onsite                        bool
+		want                                          string
 	}{
-		{"Staff Engineer, Toronto", "Staff Engineer", "Toronto"},
-		// Multi-comma location stays intact (first comma is the splitter).
-		{"Senior Developer, Remote, US", "Senior Developer", "Remote, US"},
-		{"Senior Developer, Toronto, Ontario, Canada", "Senior Developer", "Toronto, Ontario, Canada"},
-		// No comma → keywords-only.
-		{"Staff Engineer", "Staff Engineer", ""},
-		// Whitespace around the comma is trimmed.
-		{"  Staff Engineer ,  Toronto  ", "Staff Engineer", "Toronto"},
-		// Leading comma → empty keywords, location is the rest.
-		{", Toronto", "", "Toronto"},
-		// Empty input.
-		{"", "", ""},
+		{"none", false, false, false, ""},
+		{"remote_only", true, false, false, "2"},
+		{"hybrid_only", false, true, false, "3"},
+		{"onsite_only", false, false, true, "1"},
+		{"remote_hybrid", true, true, false, "2,3"},
+		{"remote_onsite", true, false, true, "1,2"},
+		{"hybrid_onsite", false, true, true, "1,3"},
+		{"all_three", true, true, true, "1,2,3"},
 	}
 	for _, c := range cases {
-		kw, loc := splitSearchQuery(c.in)
-		if kw != c.wantKeywords || loc != c.wantLocation {
-			t.Errorf("splitSearchQuery(%q) = (%q, %q), want (%q, %q)",
-				c.in, kw, loc, c.wantKeywords, c.wantLocation)
-		}
+		t.Run(c.name, func(t *testing.T) {
+			got := resolveWorkType(c.remote, c.hybrid, c.onsite)
+			if got != c.want {
+				t.Errorf("resolveWorkType(remote=%v, hybrid=%v, onsite=%v) = %q, want %q",
+					c.remote, c.hybrid, c.onsite, got, c.want)
+			}
+		})
+	}
+}
+
+func TestWorkTypeLabel(t *testing.T) {
+	cases := []struct {
+		name                                   string
+		remote, hybrid, onsite                 bool
+		want                                   string
+	}{
+		{"none", false, false, false, ""},
+		{"remote_only", true, false, false, "remote"},
+		{"hybrid_only", false, true, false, "hybrid"},
+		{"onsite_only", false, false, true, "onsite"},
+		{"remote_hybrid", true, true, false, "remote/hybrid"},
+		{"all_three", true, true, true, "onsite/remote/hybrid"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := workTypeLabel(c.remote, c.hybrid, c.onsite)
+			if got != c.want {
+				t.Errorf("workTypeLabel(remote=%v, hybrid=%v, onsite=%v) = %q, want %q",
+					c.remote, c.hybrid, c.onsite, got, c.want)
+			}
+		})
 	}
 }
