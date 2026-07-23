@@ -7,26 +7,37 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"linkedin-jobs/internal/linkedin"
 	"linkedin-jobs/internal/models"
 )
 
 var (
-	searchTop    int
-	searchForceOW bool
+	searchTop      int
+	searchForceOW  bool
+	searchLocation string
+	searchRemote   bool
+	searchHybrid   bool
+	searchOnsite   bool
 )
 
 var searchCmd = &cobra.Command{
-	Use:   "search <query>",
+	Use:   "search <keywords>",
 	Short: "Search LinkedIn's public job board (anonymous, no session required)",
 	Args:  cobra.MinimumNArgs(1),
 	Long: `Searches LinkedIn's public (logged-out) job board and ingests results through
 the same pipeline as 'recommended'. Works without a session; no login needed.
 
-The query is a single string split into keywords + location on the FIRST comma:
-everything before the comma is the keyword search; everything after is the
-location. Locations often contain commas themselves ("Remote, US", "Toronto,
-Ontario, Canada"), while keywords rarely do, so the first-comma split keeps
-multi-comma locations intact. Omit the comma for a keywords-only search.
+The first positional argument is the keyword search (e.g. "Senior Software
+Engineer"). Use --location and --remote/--hybrid/--onsite to narrow results;
+these are passed directly to LinkedIn as structured filters:
+
+  --location <text>     Location filter; LinkedIn geocodes it to a region
+                         (e.g. "Toronto" covers the GTA including Mississauga,
+                         Markham, etc.). Omit for a global keywords-only search.
+  --remote               Only remote-eligible roles (f_WT=2)
+  --hybrid               Only hybrid roles (f_WT=3)
+  --onsite               Only on-site roles (f_WT=1)
+  Combine --remote/--hybrid/--onsite for OR (e.g. --remote --hybrid).
 
 --top N caps the number of jobs processed end-to-end (detail fetch + LLM score).
 Jobs already in the DB (by LinkedIn ID) are skipped entirely — only brand-new
@@ -37,11 +48,13 @@ no ingest-time filters — use 'list --remote --min-salary ...' or the 'serve'
 filters to exclude at view time.
 
 Examples:
-  linkedin-jobs search "Staff Engineer, Toronto"
-  linkedin-jobs search "Senior Developer, Remote, US" --top 3`,
+  linkedin-jobs search "Senior Software Engineer" --location Toronto --remote
+  linkedin-jobs search "Staff Engineer" --location "Mississauga, ON" --hybrid --top 50
+  linkedin-jobs search "Backend Developer" --location "San Francisco" --remote --hybrid
+  linkedin-jobs search "Go Engineer"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		provider := mustResolveProvider()
-		keywords, location := splitSearchQuery(strings.Join(args, " "))
+		keywords := strings.TrimSpace(strings.Join(args, " "))
 		c, err := newClient(false)
 		if err != nil {
 			die("%v", err)
@@ -50,8 +63,20 @@ Examples:
 		if pages < 1 {
 			pages = 1
 		}
-		fmt.Fprintf(os.Stderr, "Searching LinkedIn Jobs: %q @ %q…\n", keywords, location)
-		jobs, err := c.Search(keywords, location, pages)
+		fmt.Fprintf(os.Stderr, "Searching LinkedIn Jobs: %q", keywords)
+		if searchLocation != "" {
+			fmt.Fprintf(os.Stderr, " @ %q", searchLocation)
+		}
+		if wt := resolveWorkType(searchRemote, searchHybrid, searchOnsite); wt != "" {
+			fmt.Fprintf(os.Stderr, " [%s]", workTypeLabel(searchRemote, searchHybrid, searchOnsite))
+		}
+		fmt.Fprintln(os.Stderr, "…")
+		jobs, err := c.Search(linkedin.SearchParams{
+			Keywords: keywords,
+			Location: searchLocation,
+			WorkType: resolveWorkType(searchRemote, searchHybrid, searchOnsite),
+			Pages:    pages,
+		})
 		if err != nil {
 			die("search failed: %v", err)
 		}
@@ -82,6 +107,10 @@ Examples:
 func init() {
 	searchCmd.Flags().IntVar(&searchTop, "top", 20, "cap on number of jobs to fetch + process end-to-end (each is LLM-scored; raise to burn more tokens)")
 	searchCmd.Flags().BoolVar(&searchForceOW, "force-overwrite", false, "re-parse and re-score jobs already in the DB (bypass the new-only pre-filter and dedup; overwrites existing values)")
+	searchCmd.Flags().StringVar(&searchLocation, "location", "", "location filter (e.g. Toronto, \"Remote, Ontario, Canada\"); LinkedIn geocodes it server-side")
+	searchCmd.Flags().BoolVar(&searchRemote, "remote", false, "only remote jobs (f_WT=2)")
+	searchCmd.Flags().BoolVar(&searchHybrid, "hybrid", false, "only hybrid jobs (f_WT=3); combine with --remote/--onsite for OR")
+	searchCmd.Flags().BoolVar(&searchOnsite, "onsite", false, "only on-site jobs (f_WT=1); combine with --remote/--hybrid for OR")
 	rootCmd.AddCommand(searchCmd)
 }
 
@@ -112,19 +141,34 @@ func filterNewIDs(jobs []*models.JobPosting) []*models.JobPosting {
 	return fresh
 }
 
-// splitSearchQuery splits a single search string into keywords + location on
-// the FIRST comma. Locations frequently contain commas themselves ("Remote, US",
-// "Toronto, Ontario, Canada"), while job keywords rarely do, so the first-comma
-// split keeps multi-comma locations intact. A query with no comma is keywords-
-// only. Examples:
-//
-//	"Staff Engineer, Toronto"            → ("Staff Engineer", "Toronto")
-//	"Senior Developer, Remote, US"       → ("Senior Developer", "Remote, US")
-//	"Staff Engineer"                     → ("Staff Engineer", "")
-func splitSearchQuery(q string) (keywords, location string) {
-	q = strings.TrimSpace(q)
-	if i := strings.Index(q, ","); i >= 0 {
-		return strings.TrimSpace(q[:i]), strings.TrimSpace(q[i+1:])
+// resolveWorkType maps the boolean work-arrangement flags to the LinkedIn f_WT
+// query parameter value. Multiple flags combine into a comma-separated OR list
+// (e.g. --remote --hybrid → "2,3"). Returns "" when no flag is set.
+func resolveWorkType(remote, hybrid, onsite bool) string {
+	var parts []string
+	if onsite {
+		parts = append(parts, "1")
 	}
-	return q, ""
+	if remote {
+		parts = append(parts, "2")
+	}
+	if hybrid {
+		parts = append(parts, "3")
+	}
+	return strings.Join(parts, ",")
+}
+
+// workTypeLabel produces a human-readable label for the progress message.
+func workTypeLabel(remote, hybrid, onsite bool) string {
+	var parts []string
+	if onsite {
+		parts = append(parts, "onsite")
+	}
+	if remote {
+		parts = append(parts, "remote")
+	}
+	if hybrid {
+		parts = append(parts, "hybrid")
+	}
+	return strings.Join(parts, "/")
 }

@@ -172,6 +172,36 @@ func TestVoyagerSearchQuery_multiGeoId(t *testing.T) {
 	}
 }
 
+// TestVoyagerSearchQuery_workType confirms that f_WT (workplace type) is mapped
+// to the Voyager selectedFilters.workType field rather than silently dropped.
+// Without this mapping, a pasted URL with f_WT=2 (Remote) would lose the filter
+// on the signed-in Voyager path.
+func TestVoyagerSearchQuery_workType(t *testing.T) {
+	const in = "https://www.linkedin.com/jobs/search/?keywords=Staff%20Engineer&geoId=105149290&f_WT=2"
+	got, ok := voyagerSearchQuery(in)
+	if !ok {
+		t.Fatal("expected ok, got false")
+	}
+	want := "workType:List(2)"
+	if !contains(got, want) {
+		t.Errorf("workType: got %q\nwant substring %q", got, want)
+	}
+}
+
+// TestVoyagerSearchQuery_workTypeMulti confirms that comma-separated f_WT
+// values (e.g. f_WT=2,3 for remote OR hybrid) are preserved.
+func TestVoyagerSearchQuery_workTypeMulti(t *testing.T) {
+	const in = "https://www.linkedin.com/jobs/search/?keywords=Staff%20Engineer&f_WT=2,3"
+	got, ok := voyagerSearchQuery(in)
+	if !ok {
+		t.Fatal("expected ok, got false")
+	}
+	want := "workType:List(2,3)"
+	if !contains(got, want) {
+		t.Errorf("workType multi: got %q\nwant substring %q", got, want)
+	}
+}
+
 func TestEscapeRestli(t *testing.T) {
 	if got := escapeRestli(`a(b)c:d,e\f`); got != `a\(b\)c\:d\,e\\f` {
 		t.Errorf("escapeRestli: got %q", got)

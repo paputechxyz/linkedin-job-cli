@@ -99,15 +99,16 @@ func (c *Client) jobsFromVoyagerSearch(rawURL string, maxJobs int) ([]*models.Jo
 	return out, nil
 }
 
-// voyagerSearchQuery builds the Restli compact-JSON `query` param the Voyager
-// jobCards API expects, mapping the standard LinkedIn URL filters onto their
-// Voyager field names:
+//	voyagerSearchQuery builds the Restli compact-JSON `query` param the Voyager
+//	jobCards API expects, mapping the standard LinkedIn URL filters onto their
+//	Voyager field names:
 //
-//	keywords                 -> keywords
-//	geoId                    -> locationUnion.geoId
-//	sortBy                   -> selectedFilters.sortBy
-//	distance                 -> selectedFilters.distance
-//	f_TPR (time posted range) -> selectedFilters.timePostedRange
+//		keywords                 -> keywords
+//		geoId                    -> locationUnion.geoId
+//		sortBy                   -> selectedFilters.sortBy
+//		distance                 -> selectedFilters.distance
+//		f_TPR (time posted range) -> selectedFilters.timePostedRange
+//		f_WT  (workplace type)    -> selectedFilters.workType
 //
 // Returns ok=false when there is no keywords filter (the endpoint requires it).
 // Only the filters present in the URL are emitted; unknown filters are ignored
@@ -156,6 +157,9 @@ func voyagerSearchQuery(rawURL string) (string, bool) {
 	}
 	if v := strings.TrimSpace(q.Get("f_TPR")); v != "" {
 		filters = append(filters, "timePostedRange:List("+v+")")
+	}
+	if v := strings.TrimSpace(q.Get("f_WT")); v != "" {
+		filters = append(filters, "workType:List("+v+")")
 	}
 	if len(filters) > 0 {
 		b.WriteString(",selectedFilters:(")

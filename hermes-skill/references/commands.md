@@ -31,17 +31,29 @@ linkedin-jobs recommended [flags]
 Search LinkedIn's public job board anonymously. **No session required.** Jobs already in the DB (by LinkedIn ID) are skipped entirely — only new jobs are detail-fetched, scored, and displayed. Pass `--force-overwrite` to re-process existing jobs.
 
 ```bash
-linkedin-jobs search "<query>" [flags]
+linkedin-jobs search "<keywords>" [flags]
 ```
 
-Arg: `<query>` (required) — a single string split into keywords + location on the **first comma**. Everything before the comma is the keyword search; everything after is the location (locations often contain commas, e.g. `"Remote, US"` or `"Toronto, Ontario, Canada"`, so the first-comma split keeps them intact). Omit the comma for keywords-only. Examples: `"Staff Engineer, Toronto"`, `"Senior Developer, Remote, US"`, `"Staff Engineer"`.
+Arg: `<keywords>` (required) — the keyword search (e.g. `"Senior Software Engineer"`). Use `--location` for geographic filtering and `--remote`/`--hybrid`/`--onsite` for workplace type; these are passed to LinkedIn as structured filters.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--location` | string | "" | Location filter (e.g. `Toronto`, `"Remote, Ontario, Canada"`); LinkedIn geocodes it server-side |
+| `--remote` | bool | false | Only remote jobs (`f_WT=2`); combine with `--hybrid`/`--onsite` for OR |
+| `--hybrid` | bool | false | Only hybrid jobs (`f_WT=3`); combine with `--remote`/`--onsite` for OR |
+| `--onsite` | bool | false | Only on-site jobs (`f_WT=1`); combine with `--remote`/`--hybrid` for OR |
 | `--top` | int | 20 | Cap on number of jobs to fetch + process end-to-end (each is LLM-scored; raise to burn more tokens) |
 | `--force-overwrite` | bool | false | Re-parse and re-score jobs already in the DB (bypasses new-only pre-filter and dedup) |
 
 `--json`: yes.
+
+Examples:
+```bash
+linkedin-jobs search "Senior Software Engineer" --location Toronto --remote
+linkedin-jobs search "Staff Engineer" --location "Mississauga, ON" --hybrid --top 50
+linkedin-jobs search "Backend Developer" --location "San Francisco" --remote --hybrid
+linkedin-jobs search "Go Engineer"
+```
 
 ### url
 

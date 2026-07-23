@@ -34,7 +34,7 @@ Capture it once with:
     linkedin-jobs url "<url>"        # score every job on a pasted search URL
 
 Anonymous search works without a session:
-    linkedin-jobs search "Staff Engineer" Toronto --min-salary 200k`,
+    linkedin-jobs search "Staff Engineer" --location Toronto --remote`,
 	SilenceUsage: true,
 }
 
