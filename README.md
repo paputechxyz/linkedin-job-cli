@@ -1,36 +1,38 @@
 # linkedin-jobs
 
 Pull your personalized **LinkedIn "Recommended for you"** feed from your own
-browser session, search the public job board, filter by salary, enrich and
-fit-score with an LLM, and persist everything to a local SQLite store with
+browser session, search the public job board, and score every job with
+**custom rubrics you describe in plain English** — write a preferences
+paragraph once and the LLM turns it into a weighted scoring model that rates
+each posting your way. Everything persists to a local SQLite store with
 offline full-text search.
 
 ## Highlights
 
-- **`recommended`** — your personalized job feed, authenticated via your own
-  LinkedIn browser session (your cookie; no password stored).
-- **`search`** — anonymous public job-board search (no login required).
-- **`url`** — paste any LinkedIn search/collection URL (job-alert email link,
-  saved search, browser URL) and score every job on that page; authenticated via
-  your session (like `recommended`) so `--top` pulls the full result set.
-- **`hr`** — paste a job URL and get the best person to reach out to (ranked
-  contacts + reasoning + a tailored hook + company-scoped LinkedIn search links).
+- `**recommended**` — your personalized job feed, authenticated via your own
+LinkedIn browser session (your cookie; no password stored).
+- `**search**` — anonymous public job-board search (no login required).
+- `**url**` — paste any LinkedIn search/collection URL (job-alert email link,
+saved search, browser URL) and score every job on that page; authenticated via
+your session (like `recommended`) so `--top` pulls the full result set.
+- `**hr**` — paste a job URL and get the best person to reach out to (ranked
+contacts + reasoning + a tailored hook + company-scoped LinkedIn search links).
 - **Salary parsing** — handles `CA$173,000.00 - CA$220,000.00`, `$212,500/yr`,
-  `$120k`, USD/CAD.
+`$120k`, USD/CAD.
 - **LLM enrichment + fit scoring** — OpenAI-compatible API extracts structured
-  facts and rates each job against your rubrics, producing a 0-100 fit score.
+facts and rates each job against your rubrics, producing a 0-100 fit score.
 - **SQLite + FTS5** — every fetched job is stored and instantly searchable
-  offline across title, company, and description.
+offline across title, company, and description.
 - **Agent-native** — every read command supports `--json`.
 - **Pipeline tracking** — tag jobs `saved` / `applied` / `rejected` with notes.
 - **Dynamic rubric scoring** — write a preferences paragraph once; the LLM
-  extracts your rubrics (plus system defaults for salary, work arrangement, and
-  location). Each job is rated 1-5 per rubric and combined into one normalized
-  0-100 weighted average, with a per-rubric `fit_reason` breakdown.
+extracts your rubrics (plus system defaults for salary, work arrangement, and
+location). Each job is rated 1-5 per rubric and combined into one normalized
+0-100 weighted average, with a per-rubric `fit_reason` breakdown.
 - **Tunable** — every rubric weight is editable (1-10, default 5) in
-  `settings.yaml`; `amend` changes a few rubrics, `reset` starts fresh.
+`settings.yaml`; `amend` changes a few rubrics, `reset` starts fresh.
 - **Profile** — salary floor, locations, and work arrangement live under the
-  `profile:` section of `settings.yaml` and feed the system rubrics.
+`profile:` section of `settings.yaml` and feed the system rubrics.
 - **Export** — JSON / CSV / Markdown.
 
 ## Install
@@ -109,12 +111,11 @@ rm -rf ~/.linkedin-jobs        # config, cache, db
 If you don't use an agent, or want the binary on `PATH` yourself:
 
 - **Prebuilt binary** — download the asset for your platform from the
-  [latest release](https://github.com/paputechxyz/linkedin-job-cli/releases/latest),
-  put it on `PATH` (e.g. `~/.local/bin`), and `chmod +x` it. Assets:
-  `linkedin-jobs_{darwin,linux}_{arm64,amd64}` and
-  `linkedin-jobs_windows_amd64.exe`.
+[latest release](https://github.com/paputechxyz/linkedin-job-cli/releases/latest),
+put it on `PATH` (e.g. `~/.local/bin`), and `chmod +x` it. Assets:
+`linkedin-jobs_{darwin,linux}_{arm64,amd64}` and
+`linkedin-jobs_windows_amd64.exe`.
 - **From source** — requires Go 1.26+:
-
   ```bash
   just build
   ```
@@ -148,23 +149,8 @@ linkedin-jobs auth login
 **Stage 1 — silent read (no browser window opens):**
 
 1. The CLI locates Chrome's encrypted cookie database
-   (`~/Library/Application Support/Google/Chrome/Default/Network/Cookies`).
-2. Chrome holds a lock on this file while running, so the CLI copies it (plus
-   its WAL sidecars) to a temp directory, then opens the copy read-only.
-3. It retrieves the Chrome "Safe Storage" passphrase from the macOS Keychain
-   via `security find-generic-password`. **The first time, macOS shows a
-   keychain prompt** — click **Always Allow** so every future run is silent.
-4. Each LinkedIn cookie value is decrypted: PBKDF2-HMAC-SHA1 key derivation
-   (salt `saltysalt`, 1003 iterations) → AES-128-CBC decrypt (IV of 16 spaces)
-   → PKCS7 unpad. Chrome 130+ (DB version ≥ 24) prepends a SHA256 host digest
-   that is stripped automatically.
-5. The `li_at` cookie (your auth token) is long-lived and persisted to disk.
-   `JSESSIONID` (the CSRF token source) is session-only and usually **absent**
-   from the DB. When missing, the CLI fetches a fresh one by making a GET to
-   `https://www.linkedin.com/` with `li_at` and reading the `JSESSIONID` from
-   the `Set-Cookie` response.
-6. If both `li_at` and `JSESSIONID` are present, the session is assembled and
-   written. **No browser window ever opens.**
+2. Chrome holds a lock on this file while running, so the CLI copies it to a temp directory, then opens the copy read-only.
+3. It retrieves the Chrome "Safe Storage" passphrase from the macOS Keychain. **The first time, macOS shows a keychain prompt** — click **Always Allow** so every future run is silent.
 
 **Stage 2 — guided browser login (fallback):**
 
@@ -173,35 +159,23 @@ keychain was denied, or the cookies are stale — the CLI launches a **headed**
 Chrome window via the Chrome DevTools Protocol (`chromedp`):
 
 1. A dedicated **managed profile** is used (`~/.linkedin-jobs/chrome-profile/`),
-   not your real Chrome profile, so it never conflicts with your running
-   browser. This profile persists across runs and accumulates LinkedIn trust.
-2. Anti-bot flags reduce automation detection: `headless` disabled,
-   `enable-automation` disabled, `AutomationControlled` blink feature removed.
-3. The window navigates to `https://www.linkedin.com/login`. **You log in
-   normally** — type credentials, handle 2FA, complete any verification
-   challenge LinkedIn throws. The CLI never sees or stores your password.
-4. The CLI polls every 2 seconds (via CDP `Network.getCookies`) for the `li_at`
-   cookie to appear. `li_at` is `HttpOnly`, so it can only be read through the
-   DevTools Protocol, not through JavaScript.
-5. Once `li_at` appears, all `linkedin.com` cookies are captured, the browser
-   closes, and the session is written.
+ not your real Chrome profile, so it never conflicts with your running
+ browser. This profile persists across runs and accumulates LinkedIn trust.
+2. Log in normally, all `linkedin.com` cookies are captured, the browser
+ closes, and the session is written.
 
 **Timeout:** the guided flow waits up to 5 minutes for you to complete login.
 LinkedIn may challenge a fresh managed profile on first login (email/SMS
-verification, "unusual activity") — complete it in the window and the capture
+verification) — complete it in the window and the capture
 proceeds automatically.
 
 #### Where cookies are stored
 
-| `LJ_COOKIES_FILE` env | Write target |
-|---|---|
-| set | that path |
-| unset | `~/.linkedin-jobs/cookies.txt` (created automatically, `0600` perms) |
 
-The written file is a raw `Cookie:` header (`li_at=...; JSESSIONID="ajax:..."; ...`).
-`auth.Resolve` picks it up as a third resolution source (after `LJ_COOKIE` and
-`LJ_COOKIES_FILE`), so `recommended`, `url`, and `auth status` find it
-automatically with no env vars.
+| `LJ_COOKIES_FILE` env | Write target                                                         |
+| --------------------- | -------------------------------------------------------------------- |
+| set                   | that path                                                            |
+| unset                 | `~/.linkedin-jobs/cookies.txt` (created automatically, `0600` perms) |
 
 #### Refreshing a stale session
 
@@ -242,7 +216,7 @@ linkedin-jobs recommended --top 25              # cap at 25 jobs
 linkedin-jobs recommended --json                # machine-readable output
 ```
 
-Every fetched job is persisted and scored. No ingest-time filters: preferences
+Every fetched job is persisted and scored. Preferences
 (work arrangement, salary floor) live under `profile:` in `settings.yaml` and
 feed the soft system rubrics, which lower the score on mismatches rather than
 dropping jobs. Use `list --remote --min-salary ...` (or the `serve` UI filters)
@@ -345,11 +319,11 @@ your criteria as **dynamic rubrics** and merges them onto three **system
 rubrics** that always apply:
 
 - **System rubrics** (computed deterministically in Go): `salary` (vs your
-  floor), `work_arrangement` (remote/hybrid/onsite match), `location` (preferred
-  location match).
+floor), `work_arrangement` (remote/hybrid/onsite match), `location` (preferred
+location match).
 - **Dynamic rubrics** (rated 1-5 by the LLM per job): everything else — e.g.
-  `preferred_tech`, `avoided_tech`, `free_snacks`, `ai_intensity`. List-type
-  criteria (preferred/avoided tech) collapse into one rubric carrying `items`.
+`preferred_tech`, `avoided_tech`, `free_snacks`, `ai_intensity`. List-type
+criteria (preferred/avoided tech) collapse into one rubric carrying `items`.
 
 Each rubric has a **weight** (1-10, default 5) tunable in `settings.yaml`. The
 final score is a weight-normalized average of every rubric's 1-5 rating mapped
@@ -434,7 +408,7 @@ scoring:
     - id: location               # dynamic: LLM rates jurisdiction/proximity fit
       kind: dynamic              # from the description, e.g. "remote flexible anywhere"
       weight: 5
-      description: "Hybrid must be in Toronto/Mississauga; remote is flexible"
+      description: "Hybrid or Onsite must be in Toronto; remote is flexible"
       applies_to: [hybrid, onsite]  # optional: skip this rubric for other arrangements
 profile:                         # structured inputs for the system rubrics
   work_arrangement: [remote, hybrid]
@@ -448,18 +422,20 @@ When scoring runs, the CLI prints which profile context it loaded (knobs from
 `settings.yaml`), so you can tell at a glance whether scores reflect your actual
 context or ran context-free.
 
-## Configuration & env
+## Configuration &amp; env
 
-| Variable          | Purpose                                            | Default                          |
-|-------------------|----------------------------------------------------|----------------------------------|
-| `LJ_DB_PATH`      | SQLite database path                               | `~/.linkedin-jobs/linkedin_jobs.db` |
-| `LJ_LLM_DELAY_SECONDS` | seconds to pause between successive LLM scoring calls (avoids 429s) | `2.0` |
-| `ANTHROPIC_API_KEY` | Claude provider (auto-detected by config)        | —                                |
-| `LJ_COOKIES_FILE` | path to a file with a raw `Cookie:` header          | —                                |
-| `LJ_COOKIE`       | raw cookie header string                            | —                                |
-| `OPENAI_API_KEY`  | LLM key (or `LJ_LLM_API_KEY`)                      | —                                |
-| `LJ_LLM_BASE_URL` | OpenAI-compatible base URL (or `OPENAI_BASE_URL`)  | `https://api.openai.com/v1`      |
-| `LJ_LLM_MODEL`    | model name                                          | `gpt-4o-mini`                    |
+
+| Variable               | Purpose                                                             | Default                             |
+| ---------------------- | ------------------------------------------------------------------- | ----------------------------------- |
+| `LJ_DB_PATH`           | SQLite database path                                                | `~/.linkedin-jobs/linkedin_jobs.db` |
+| `LJ_LLM_DELAY_SECONDS` | seconds to pause between successive LLM scoring calls (avoids 429s) | `2.0`                               |
+| `ANTHROPIC_API_KEY`    | Claude provider (auto-detected by config)                           | —                                   |
+| `LJ_COOKIES_FILE`      | path to a file with a raw `Cookie:` header                          | —                                   |
+| `LJ_COOKIE`            | raw cookie header string                                            | —                                   |
+| `OPENAI_API_KEY`       | LLM key (or `LJ_LLM_API_KEY`)                                       | —                                   |
+| `LJ_LLM_BASE_URL`      | OpenAI-compatible base URL (or `OPENAI_BASE_URL`)                   | `https://api.openai.com/v1`         |
+| `LJ_LLM_MODEL`         | model name                                                          | `gpt-4o-mini`                       |
+
 
 > `settings.yaml` always resolves to `~/.linkedin-jobs/settings.yaml` unless
 > `$LJ_SETTINGS_FILE` is set. There is no persisted provider file — set an env
@@ -487,3 +463,4 @@ internal/
 ## Notes
 
 - This tool is for personal job-search use. Respect LinkedIn's Terms of Service.
+
