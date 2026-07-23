@@ -88,7 +88,7 @@ const amendPrompt = `Here is the user's current set of scoring rubrics (JSON):
 The user wants to amend them with this follow-up paragraph:
 %s
 
-Return ONLY a JSON array (no prose, no code fences) of the rubrics to ADD or CHANGE. For each, include "id", and whichever of "description", "items", "applies_to", and "weight" apply. Do NOT include rubrics the paragraph does not mention — they must be preserved unchanged. A weight edit returns just {"id": "...", "weight": N}. A new rubric returns id, description, and items if it is a list. Use "applies_to" (a list of arrangements from remote/hybrid/onsite) ONLY when the rubric should be scored conditionally — e.g. a hybrid-only location constraint has applies_to: ["hybrid", "onsite"] so remote jobs skip it; to clear an existing applies_to and make the rubric unconditional, return an empty array [].`
+Return ONLY a JSON array (no prose, no code fences) of the rubrics to ADD or CHANGE. Even a single change must be wrapped in an array, e.g. a weight edit returns [{"id": "...", "weight": N}]. For each element, include "id", and whichever of "description", "items", "applies_to", and "weight" apply. Do NOT include rubrics the paragraph does not mention — they must be preserved unchanged. A new rubric returns id, description, and items if it is a list. Use "applies_to" (a list of arrangements from remote/hybrid/onsite) ONLY when the rubric should be scored conditionally — e.g. a hybrid-only location constraint has applies_to: ["hybrid", "onsite"] so remote jobs skip it; to clear an existing applies_to and make the rubric unconditional, return an empty array [].`
 
 // GenerateAmend returns the rubric changes implied by a follow-up paragraph
 // against the existing set. The caller merges them (MergeRubrics) so untouched
@@ -104,18 +104,41 @@ func GenerateAmend(existing []config.Rubric, paragraph string, provider *Provide
 	if jstr == "" {
 		return nil, fmt.Errorf("could not parse amend response: %s", truncateForError(content))
 	}
-	// The response may be a bare array or wrapped in an object; unwrap "rubrics".
-	if strings.TrimSpace(jstr) != "" && jstr[0] == '{' {
-		var wrap struct {
-			Rubrics []amendChange `json:"rubrics"`
-		}
-		if err := json.Unmarshal([]byte(jstr), &wrap); err == nil && wrap.Rubrics != nil {
-			return wrap.Rubrics, nil
-		}
-	}
-	var changes []amendChange
-	if err := json.Unmarshal([]byte(jstr), &changes); err != nil {
+	changes, err := parseAmendChanges(jstr)
+	if err != nil {
 		return nil, fmt.Errorf("invalid amend JSON: %w", err)
 	}
 	return changes, nil
+}
+
+// parseAmendChanges accepts the three shapes an LLM may emit for an amend
+// response: a bare JSON array [...], a wrapper object {"rubrics": [...]}, or
+// (defensively) a single bare object {...} describing one change. All are
+// normalized to a slice.
+func parseAmendChanges(jstr string) ([]amendChange, error) {
+	trimmed := strings.TrimSpace(jstr)
+	if trimmed == "" {
+		return nil, fmt.Errorf("empty response")
+	}
+	// Array form: [...].
+	if trimmed[0] == '[' {
+		var changes []amendChange
+		if err := json.Unmarshal([]byte(jstr), &changes); err != nil {
+			return nil, err
+		}
+		return changes, nil
+	}
+	// Object forms: try the {"rubrics": [...]} wrapper first.
+	var wrap struct {
+		Rubrics []amendChange `json:"rubrics"`
+	}
+	if err := json.Unmarshal([]byte(jstr), &wrap); err == nil && wrap.Rubrics != nil {
+		return wrap.Rubrics, nil
+	}
+	// Fall back to a single bare object {"id": "...", "weight": N}.
+	var single amendChange
+	if err := json.Unmarshal([]byte(jstr), &single); err == nil && single.ID != "" {
+		return []amendChange{single}, nil
+	}
+	return nil, fmt.Errorf("could not parse amend response: %s", truncateForError(jstr))
 }
