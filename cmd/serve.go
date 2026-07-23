@@ -21,7 +21,9 @@ import (
 
 	"linkedin-jobs/internal/fx"
 	"linkedin-jobs/internal/models"
+	"linkedin-jobs/internal/render"
 	"linkedin-jobs/internal/salary"
+	"linkedin-jobs/internal/score"
 	"linkedin-jobs/internal/store"
 )
 
@@ -308,7 +310,7 @@ type formVals struct {
 	Q, Company, Title, Location, Status, Source string
 	MinSalary, MinSalaryCurrency, MinScore      string
 	Sort                                        string
-	Remote, Hybrid, Onsite, HasSalary             bool
+	Remote, Hybrid, Onsite, HasSalary           bool
 	PageSize                                    int
 	SinceSearched                               string
 }
@@ -534,6 +536,19 @@ type jobView struct {
 	Description, DescPreview          string
 	LLMSummary, Summary               string
 	CompanyOverview, FitReason, Notes string
+	Rubrics                           []rubricView
+}
+
+// rubricView is one rubric's evaluated contribution, render-ready for the web
+// UI. Stars is the pre-computed 5-char bar (e.g. "★★★★☆") so the template
+// needs no arithmetic; Rating/Weight back the "(4/5, w5)" annotation; Reason
+// is the optional human note appended after the bar.
+type rubricView struct {
+	ID     string
+	Stars  string
+	Rating int
+	Weight int
+	Reason string
 }
 
 func toJobView(j *models.JobPosting) jobView {
@@ -576,7 +591,12 @@ func toJobView(j *models.JobPosting) jobView {
 	}
 	// Score caption: a truncated, always-visible summary of the fit reason,
 	// shown next to the badge. Full reason stays in the expandable <details>.
-	if j.FitReason != "" {
+	// Prefer the per-rubric star strip when structured RubricScores is present
+	// (matches the skill.md star format); otherwise fall back to the flat line.
+	v.Rubrics = rubricViews(j)
+	if len(v.Rubrics) > 0 {
+		v.ScoreBlurb = starStrip(v.Rubrics)
+	} else if j.FitReason != "" {
 		v.ScoreBlurb = preview(j.FitReason, 110)
 	}
 	v.ScoreCapped = false // caps retired; field kept for template compatibility
@@ -617,6 +637,43 @@ func preview(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// rubricViews parses the job's persisted RubricScores JSON into render-ready
+// per-rubric star bars (id + Stars + rating/weight + reason). Returns nil when
+// there's nothing structured to show (legacy jobs scored before the column
+// existed, or unparseable payload) so the template falls back to the flat
+// FitReason string.
+func rubricViews(j *models.JobPosting) []rubricView {
+	if j.RubricScores == "" {
+		return nil
+	}
+	var rs []score.RubricScore
+	if err := json.Unmarshal([]byte(j.RubricScores), &rs); err != nil || len(rs) == 0 {
+		return nil
+	}
+	out := make([]rubricView, 0, len(rs))
+	for _, r := range rs {
+		out = append(out, rubricView{
+			ID:     r.ID,
+			Stars:  render.StarsFor(r.Rating),
+			Rating: r.Rating,
+			Weight: r.Weight,
+			Reason: r.Reason,
+		})
+	}
+	return out
+}
+
+// starStrip joins each rubric's star bar into one compact, at-a-glance strip
+// for the score caption (e.g. "★★★★★ ★★★★★ ★★★★☆"). The full labelled
+// breakdown lives in the expandable <details>.
+func starStrip(rubrics []rubricView) string {
+	bars := make([]string, 0, len(rubrics))
+	for _, r := range rubrics {
+		bars = append(bars, r.Stars)
+	}
+	return strings.Join(bars, " ")
 }
 
 // shortDate renders an RFC3339 fetched_at as a short local timestamp.
@@ -781,7 +838,7 @@ func (ws *webServer) pageLinks(f formVals, page, pages int) []pageLink {
 	}
 	add(1)
 	add(pages)
-	for i := page - 2; i <= page + 2; i++ {
+	for i := page - 2; i <= page+2; i++ {
 		add(i)
 	}
 	var nums []int
@@ -1189,11 +1246,15 @@ const pageHTML = `<!DOCTYPE html>
     border: 1px solid var(--line-strong);
   }
 
-  /* Score caption: always-visible, truncated reason sitting under the badge. */
+  /* Score caption: always-visible fit summary under the badge. Now renders a
+     per-rubric star strip ("★★★★★ ★★★★☆ …"); the full labelled breakdown is in
+     the expandable <details>. Mono + letter-spacing keep the star glyphs
+     evenly spaced; the flat FitReason text fallback still reads fine here. */
   .job-head-aside { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
   .score-blurb {
-    max-width: 240px; padding: 2px 8px; border-radius: 6px;
-    font-size: 0.78rem; line-height: 1.3; text-align: right;
+    max-width: 300px; padding: 2px 8px; border-radius: 6px;
+    font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.3;
+    letter-spacing: 1px; text-align: right;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     color: var(--ink-2);
   }
@@ -1341,6 +1402,32 @@ const pageHTML = `<!DOCTYPE html>
   }
   .fit-reason { color: var(--ink-1); }
 
+  /* Per-rubric star breakdown inside the expandable Fit reason block. Mirrors
+     the skill.md format: "<id> <★★★★☆> (4/5, w5) <reason>". Grid columns keep
+     ids aligned, star bars intact, and reasons wrapped on one row each. */
+  .rubric-list { list-style: none; margin: 0; padding: 0; white-space: normal; display: grid; gap: 5px; }
+  .rubric {
+    display: grid;
+    grid-template-columns: minmax(96px, auto) auto 1fr;
+    align-items: baseline; gap: 4px 10px;
+    font-size: 0.8125rem; line-height: 1.4;
+  }
+  .rubric-id {
+    font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-2);
+    text-transform: lowercase; letter-spacing: 0.01em;
+  }
+  .rubric-stars {
+    font-family: var(--font-mono); letter-spacing: 1px; white-space: nowrap;
+    color: var(--score-mid); font-size: 0.85rem;
+  }
+  @media (prefers-color-scheme: dark) { .rubric-stars { color: var(--score-mid); } }
+  .rubric-meta { color: var(--ink-3); font-size: 0.75rem; word-break: break-word; }
+  @media (max-width: 560px) {
+    /* Narrow cards: let the reason wrap under the id+stars row. */
+    .rubric { grid-template-columns: auto 1fr; }
+    .rubric-meta { grid-column: 1 / -1; }
+  }
+
   /* Dates line */
   .dates {
     margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line);
@@ -1400,7 +1487,7 @@ const pageHTML = `<!DOCTYPE html>
     .score-badge--high { width: 52px; height: 52px; font-size: 1.3125rem; }
     .score-badge--mid { width: 44px; height: 44px; font-size: 1.0625rem; }
     .score-badge--low, .score-badge--none { width: 40px; height: 40px; }
-    .score-blurb { max-width: 160px; }
+    .score-blurb { max-width: 220px; }
     .actions-row form, .filtered-tag { margin-left: 0; }
     .actions-row .field { flex: 1 1 100%; }
   }
@@ -1597,7 +1684,7 @@ const pageHTML = `<!DOCTYPE html>
             <button type="submit" class="btn-delete js-delete" title="Delete this job permanently">Delete</button>
           </form>
         </div>
-        {{if or .LLMSummary .Summary .Description .CompanyOverview .FitReason .Notes}}
+        {{if or .LLMSummary .Summary .Description .CompanyOverview .Rubrics .FitReason .Notes}}
         <div class="details-grid">
           {{if .LLMSummary}}
           <details class="job-detail"><summary>Summary</summary><div class="detail-body">{{.LLMSummary}}</div></details>
@@ -1610,7 +1697,21 @@ const pageHTML = `<!DOCTYPE html>
           {{if .CompanyOverview}}
           <details class="job-detail"><summary>Company overview</summary><div class="detail-body">{{.CompanyOverview}}</div></details>
           {{end}}
-          {{if .FitReason}}
+          {{if .Rubrics}}
+          <details class="job-detail"><summary>Fit reason</summary>
+            <div class="detail-body fit-reason">
+              <ul class="rubric-list">
+                {{range .Rubrics}}
+                <li class="rubric">
+                  <span class="rubric-id">{{.ID}}</span>
+                  <span class="rubric-stars" title="{{.Rating}} of 5">{{.Stars}}</span>
+                  <span class="rubric-meta">{{.Rating}}/5 · w{{.Weight}}{{if .Reason}} · {{.Reason}}{{end}}</span>
+                </li>
+                {{end}}
+              </ul>
+            </div>
+          </details>
+          {{else if .FitReason}}
           <details class="job-detail"><summary>Fit reason</summary><div class="detail-body fit-reason">{{.FitReason}}</div></details>
           {{end}}
           {{if .Notes}}
