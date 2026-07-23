@@ -51,7 +51,7 @@ which lower the score on mismatches rather than dropping jobs. Use
 }
 
 func init() {
-	recommendedCmd.Flags().IntVar(&recLimit, "top", 50, "max number of recommended jobs to fetch")
+	recommendedCmd.Flags().IntVar(&recLimit, "top", 20, "max number of recommended jobs to fetch (each is LLM-scored; raise to burn more tokens)")
 	recommendedCmd.Flags().BoolVar(&recForceOW, "force-overwrite", false, "re-parse and re-score jobs already in the DB (bypass dedup; overwrites existing values)")
 	rootCmd.AddCommand(recommendedCmd)
 }

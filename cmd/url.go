@@ -72,7 +72,7 @@ Examples:
 }
 
 func init() {
-	urlCmd.Flags().IntVar(&urlTop, "top", 0, "cap on number of jobs to process end-to-end (0 = all jobs from the URL)")
+	urlCmd.Flags().IntVar(&urlTop, "top", 20, "cap on number of jobs to process end-to-end (each is LLM-scored; 0 = all jobs from the URL)")
 	urlCmd.Flags().BoolVar(&urlForceOW, "force-overwrite", false, "re-parse and re-score jobs already in the DB (bypass dedup; overwrites existing values)")
 	rootCmd.AddCommand(urlCmd)
 }

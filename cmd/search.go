@@ -76,7 +76,7 @@ Examples:
 }
 
 func init() {
-	searchCmd.Flags().IntVar(&searchTop, "top", 25, "cap on number of jobs to fetch + process end-to-end")
+	searchCmd.Flags().IntVar(&searchTop, "top", 20, "cap on number of jobs to fetch + process end-to-end (each is LLM-scored; raise to burn more tokens)")
 	searchCmd.Flags().BoolVar(&searchForceOW, "force-overwrite", false, "re-parse and re-score jobs already in the DB (bypass the new-only pre-filter and dedup; overwrites existing values)")
 	rootCmd.AddCommand(searchCmd)
 }
