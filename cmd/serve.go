@@ -529,7 +529,7 @@ type jobView struct {
 	Score, ScoreClass                 string
 	ScoreCapped                       bool
 	Industry, Seniority, EmpType      string
-	CoSize, CoStage, Years, Visa      string
+	CoSize, CoStage, Years            string
 	Founding                          string
 	ListedDate, FetchedDate           string
 	Description                         string
@@ -565,9 +565,8 @@ func toJobView(j *models.JobPosting) jobView {
 		Seniority:       j.Seniority,
 		EmpType:         j.EmploymentType,
 		CoSize:          j.CompanySizeBand,
-		CoStage:         j.CompanyStage,
-		Visa:            j.VisaSponsorship,
-		Description:     j.Description,
+		CoStage:          j.CompanyStage,
+		Description:      j.Description,
 		LLMSummary:      j.LLMSummary,
 		Summary:         j.Summary,
 		CompanyOverview: j.CompanyOverview,
@@ -1601,7 +1600,6 @@ const pageHTML = `<!DOCTYPE html>
           {{if .Years}}<span class="chip">{{.Years}} yrs</span>{{end}}
           {{if .CoSize}}<span class="chip">{{.CoSize}}</span>{{end}}
           {{if .CoStage}}<span class="chip">{{.CoStage}}</span>{{end}}
-          {{if .Visa}}<span class="chip">visa: {{.Visa}}</span>{{end}}
           {{if .Founding}}<span class="chip chip--founding">Founding</span>{{end}}
         </div>
         <div class="actions-row">

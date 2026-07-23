@@ -43,7 +43,6 @@ CREATE TABLE IF NOT EXISTS jobs (
     company_size_band TEXT,
     company_stage TEXT,
     is_founding_role INTEGER DEFAULT 0,
-    visa_sponsorship TEXT,
     fit_score INTEGER,
     fit_reason TEXT,
     content_hash TEXT,
@@ -75,7 +74,6 @@ var addColumns = []struct {
 	{"company_size_band", "TEXT"},
 	{"company_stage", "TEXT"},
 	{"is_founding_role", "INTEGER DEFAULT 0"},
-	{"visa_sponsorship", "TEXT"},
 	{"fit_score", "INTEGER"},
 	{"fit_reason", "TEXT"},
 	{"content_hash", "TEXT"},
@@ -316,12 +314,12 @@ func (s *Store) SetEnrichmentAndScore(id string, e models.Enrichment) error {
 UPDATE jobs SET
   company_overview=?, industry=?, tech_stack=?, seniority=?, employment_type=?,
   years_experience=COALESCE(?, years_experience), company_size_band=?, company_stage=?,
-  is_founding_role=?, visa_sponsorship=?,
+  is_founding_role=?,
   remote_type=COALESCE(NULLIF(?, ''), remote_type),
   enriched_at=?, scored_at=?
 WHERE id=?`,
 		e.CompanyOverview, e.Industry, e.TechStack, e.Seniority, e.EmploymentType,
-		years, e.CompanySizeBand, e.CompanyStage, founding, e.VisaSponsorship,
+		years, e.CompanySizeBand, e.CompanyStage, founding,
 		e.WorkArrangement, now, now, id)
 	return err
 }
@@ -522,7 +520,7 @@ func (s *Store) SearchFTS(expr string, limit int) ([]*models.JobPosting, error) 
 	q := `SELECT j.id,j.title,j.company,j.location,j.url,j.salary_raw,j.salary_low,j.salary_high,
   j.salary_currency,j.salary_source,j.description,j.summary,j.llm_summary,j.remote_type,j.status,j.notes,j.source,j.listed_at,
   j.searched_at,j.fetched_at,j.company_overview,j.industry,j.tech_stack,j.seniority,j.employment_type,
-  j.years_experience,j.company_size_band,j.company_stage,j.is_founding_role,j.visa_sponsorship,j.fit_score,
+  j.years_experience,j.company_size_band,j.company_stage,j.is_founding_role,j.fit_score,
   j.fit_reason,j.content_hash,j.enriched_at,j.scored_at,
   j.rubric_scores FROM jobs j JOIN (SELECT id, rank FROM jobs_fts WHERE jobs_fts MATCH ?`
 	args := []interface{}{expr}
@@ -669,7 +667,7 @@ func (s *Store) Delete(id string) error {
 const jobCols = `SELECT id,title,company,location,url,salary_raw,salary_low,salary_high,
   salary_currency,salary_source,description,summary,llm_summary,remote_type,status,notes,source,listed_at,
   searched_at,fetched_at,company_overview,industry,tech_stack,seniority,employment_type,
-  years_experience,company_size_band,company_stage,is_founding_role,visa_sponsorship,fit_score,
+  years_experience,company_size_band,company_stage,is_founding_role,fit_score,
   fit_reason,content_hash,enriched_at,scored_at,
   rubric_scores`
 
@@ -682,13 +680,13 @@ func scanJob(row scanner) (*models.JobPosting, error) {
 	var sl, sh sql.NullFloat64
 	var company, location, salaryRaw, cur, salarySource, desc, summary, llm, remote, status, notes, source, fetched sql.NullString
 	var listed sql.NullInt64
-	var companyOverview, industry, techStack, seniority, employmentType, companySizeBand, companyStage, visaSponsorship, fitReason, contentHash, enrichedAt, scoredAt sql.NullString
+	var companyOverview, industry, techStack, seniority, employmentType, companySizeBand, companyStage, fitReason, contentHash, enrichedAt, scoredAt sql.NullString
 	var rubricScores sql.NullString
 	var yearsExp, isFounding, fitScore sql.NullInt64
 	if err := row.Scan(&j.ID, &j.Title, &company, &location, &j.URL, &salaryRaw, &sl, &sh,
 		&cur, &salarySource, &desc, &summary, &llm, &remote, &status, &notes, &source, &listed, &j.SearchedAt, &fetched,
 		&companyOverview, &industry, &techStack, &seniority, &employmentType, &yearsExp,
-		&companySizeBand, &companyStage, &isFounding, &visaSponsorship, &fitScore,
+		&companySizeBand, &companyStage, &isFounding, &fitScore,
 		&fitReason, &contentHash, &enrichedAt, &scoredAt,
 		&rubricScores); err != nil {
 		if err == sql.ErrNoRows {
@@ -733,7 +731,6 @@ func scanJob(row scanner) (*models.JobPosting, error) {
 	j.CompanySizeBand = companySizeBand.String
 	j.CompanyStage = companyStage.String
 	j.IsFoundingRole = isFounding.Valid && isFounding.Int64 != 0
-	j.VisaSponsorship = visaSponsorship.String
 	if fitScore.Valid {
 		v := int(fitScore.Int64)
 		j.FitScore = &v

@@ -50,7 +50,7 @@ func dynamicRubrics(ids ...string) []config.Rubric {
 }
 
 func TestEnrich_ExtractsFacts(t *testing.T) {
-	content := `{"company_overview":"Makes dev tools","industry":"DevTools","tech_stack":"Go,K8s","seniority":"staff","employment_type":"full-time","years_experience":7,"company_size_band":"11-50","company_stage":"early","is_founding_role":true,"visa_sponsorship":"yes","work_arrangement":"remote"}`
+	content := `{"company_overview":"Makes dev tools","industry":"DevTools","tech_stack":"Go,K8s","seniority":"staff","employment_type":"full-time","years_experience":7,"company_size_band":"11-50","company_stage":"early","is_founding_role":true,"work_arrangement":"remote"}`
 	calls := 0
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()
@@ -85,9 +85,6 @@ func TestEnrich_ExtractsFacts(t *testing.T) {
 	}
 	if !e.IsFoundingRole {
 		t.Errorf("is_founding_role should be true")
-	}
-	if e.VisaSponsorship != "yes" {
-		t.Errorf("visa_sponsorship=%q", e.VisaSponsorship)
 	}
 	if e.WorkArrangement != "remote" {
 		t.Errorf("work_arrangement=%q", e.WorkArrangement)
@@ -216,7 +213,7 @@ func TestEnrich_FenceStripped(t *testing.T) {
 // posting shape: bare "$" range with a "Compensation Range:" label that the
 // strict text regex missed because there was no badge currency to inherit.
 func TestEnrich_ExtractsSalaryRange(t *testing.T) {
-	content := `{"company_overview":"x","industry":"x","tech_stack":"x","seniority":"senior","employment_type":"full-time","years_experience":5,"company_size_band":"201-1000","company_stage":"growth","is_founding_role":false,"visa_sponsorship":"unknown","work_arrangement":"hybrid","salary_low":184728,"salary_high":249926,"salary_currency":"USD"}`
+	content := `{"company_overview":"x","industry":"x","tech_stack":"x","seniority":"senior","employment_type":"full-time","years_experience":5,"company_size_band":"201-1000","company_stage":"growth","is_founding_role":false,"work_arrangement":"hybrid","salary_low":184728,"salary_high":249926,"salary_currency":"USD"}`
 	calls := 0
 	srv, p := fakeCompletions(t, content, 200, &calls)
 	defer srv.Close()

@@ -160,9 +160,6 @@ func Detail(w io.Writer, j *models.JobPosting) {
 		if j.IsFoundingRole {
 			fmt.Fprintln(w, "  Founding:    yes")
 		}
-		if j.VisaSponsorship != "" {
-			fmt.Fprintf(w, "  Visa:        %s\n", j.VisaSponsorship)
-		}
 		fmt.Fprintln(w)
 	}
 	if j.LLMSummary != "" {
@@ -181,7 +178,7 @@ func Detail(w io.Writer, j *models.JobPosting) {
 func hasEnrichment(j *models.JobPosting) bool {
 	return j.CompanyOverview != "" || j.Industry != "" || j.TechStack != "" ||
 		j.Seniority != "" || j.EmploymentType != "" || j.CompanySizeBand != "" ||
-		j.CompanyStage != "" || j.VisaSponsorship != ""
+		j.CompanyStage != ""
 }
 
 // renderRubricBreakdown writes the per-rubric scoring breakdown as bullet
