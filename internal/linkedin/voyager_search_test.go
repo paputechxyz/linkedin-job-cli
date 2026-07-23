@@ -155,6 +155,23 @@ func TestVoyagerSearchQuery(t *testing.T) {
 	}
 }
 
+// TestVoyagerSearchQuery_multiGeoId confirms that a URL carrying multiple
+// comma-separated geoIds (the browser emits geoId=A,B when two regions are
+// selected) is translated to a Restli List(...) rather than a bare comma,
+// which would corrupt the query and silently fall back to the capped guest
+// endpoint.
+func TestVoyagerSearchQuery_multiGeoId(t *testing.T) {
+	const in = "https://www.linkedin.com/jobs/search/?keywords=Staff%20Engineer&geoId=100025096%2C101788145"
+	got, ok := voyagerSearchQuery(in)
+	if !ok {
+		t.Fatal("expected ok, got false")
+	}
+	want := "locationUnion:(geoId:List(100025096,101788145))"
+	if !contains(got, want) {
+		t.Errorf("multi-geoId: got %q\nwant substring %q", got, want)
+	}
+}
+
 func TestEscapeRestli(t *testing.T) {
 	if got := escapeRestli(`a(b)c:d,e\f`); got != `a\(b\)c\:d\,e\\f` {
 		t.Errorf("escapeRestli: got %q", got)

@@ -127,9 +127,25 @@ func voyagerSearchQuery(rawURL string) (string, bool) {
 	b.WriteString("(keywords:")
 	b.WriteString(escapeRestli(keywords))
 	if geoID := strings.TrimSpace(q.Get("geoId")); geoID != "" {
+		// geoId may carry multiple comma-separated values (e.g.
+		// "100025096,101788145" when the user picked two regions in the
+		// browser). A bare comma breaks the Restli compact-JSON structure, so
+		// multiple values are wrapped in List(...); a single value stays flat.
 		b.WriteString(",locationUnion:(geoId:")
-		b.WriteString(geoID)
-		b.WriteString(")")
+		parts := strings.Split(geoID, ",")
+		if len(parts) == 1 {
+			b.WriteString(strings.TrimSpace(parts[0]))
+		} else {
+			b.WriteString("List(")
+			for i, p := range parts {
+				if i > 0 {
+					b.WriteString(",")
+				}
+				b.WriteString(strings.TrimSpace(p))
+			}
+			b.WriteString(")")
+		}
+		b.WriteString("))")
 	}
 	var filters []string
 	if v := strings.TrimSpace(q.Get("sortBy")); v != "" {
