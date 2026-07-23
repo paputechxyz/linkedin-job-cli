@@ -17,6 +17,10 @@ func clearProviderEnv(t *testing.T) string {
 	t.Setenv("ANTHROPIC_BASE_URL", "")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("LJ_LLM_API_KEY", "")
+	// Default to disabling the claude-cli backend so opencode/error tests are
+	// isolated from a real `claude` login on the dev/CI machine. Tests that
+	// exercise the claude-cli branch re-enable it explicitly.
+	t.Setenv(claudeCLIDisableEnv, "1")
 	if runtime.GOOS != "windows" {
 		t.Setenv("HOME", home)
 	} else {
@@ -191,5 +195,155 @@ func TestRedacted(t *testing.T) {
 	p := &Provider{APIKey: "sk-abcdefgh"} // 11 chars -> 7 stars + last 4
 	if r := p.Redacted(); r != "*******efgh" {
 		t.Errorf("Redacted=%q want *******efgh", r)
+	}
+}
+
+// --- claude-cli backend ---
+
+// enableFakeClaudeCLI stubs the PATH lookup + auth check so a logged-in
+// `claude` is reported without depending on a real binary. Re-enables the
+// backend (clearProviderEnv disables it by default).
+func enableFakeClaudeCLI(t *testing.T, authed bool) {
+	t.Helper()
+	t.Setenv(claudeCLIDisableEnv, "")
+	prevLook, prevAuth := claudeLookPath, claudeAuthStatus
+	claudeLookPath = func(string) (string, error) { return "/fake/claude", nil }
+	claudeAuthStatus = func(string) bool { return authed }
+	t.Cleanup(func() {
+		claudeLookPath = prevLook
+		claudeAuthStatus = prevAuth
+	})
+}
+
+func TestResolve_FromClaudeCLI(t *testing.T) {
+	clearProviderEnv(t)
+	enableFakeClaudeCLI(t, true)
+	p, err := Resolve(config.Config{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if p.Kind != backendClaudeCLI || p.Source != "claude-cli" {
+		t.Errorf("expected claude-cli backend, got %+v", p)
+	}
+	if p.cliPath != "/fake/claude" {
+		t.Errorf("cliPath=%q want /fake/claude", p.cliPath)
+	}
+	// No explicit model => empty so `claude -p` picks its default.
+	if p.Model != "" {
+		t.Errorf("Model=%q want empty (claude default)", p.Model)
+	}
+	// Synthetic key is not a secret; Redacted must surface it verbatim.
+	if p.Redacted() != claudeCLIDisplayKey {
+		t.Errorf("Redacted=%q want %q", p.Redacted(), claudeCLIDisplayKey)
+	}
+}
+
+func TestResolve_ClaudeCLIModelOverride(t *testing.T) {
+	clearProviderEnv(t)
+	enableFakeClaudeCLI(t, true)
+	t.Setenv("LJ_LLM_MODEL", "sonnet")
+	p, err := Resolve(config.Config{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if p.Model != "sonnet" {
+		t.Errorf("Model=%q want sonnet", p.Model)
+	}
+}
+
+func TestResolve_LLMEnvBeatsClaudeCLI(t *testing.T) {
+	clearProviderEnv(t)
+	enableFakeClaudeCLI(t, true)
+	p, err := Resolve(config.Config{LLMBaseURL: "u", LLMAPIKey: "k", LLMModel: "m"})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if p.Source != "env" || p.Kind != backendHTTP {
+		t.Errorf("explicit env key must win: %+v", p)
+	}
+}
+
+func TestResolve_AnthropicEnvBeatsClaudeCLI(t *testing.T) {
+	clearProviderEnv(t)
+	enableFakeClaudeCLI(t, true)
+	t.Setenv("ANTHROPIC_API_KEY", "ant-key")
+	p, err := Resolve(config.Config{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if p.Source != "anthropic-env" {
+		t.Errorf("ANTHROPIC_API_KEY must win: %+v", p)
+	}
+}
+
+func TestResolve_ClaudeCLIBeatsOpencode(t *testing.T) {
+	home := clearProviderEnv(t)
+	enableFakeClaudeCLI(t, true)
+	// opencode creds exist too — claude-cli must take priority.
+	writeJSON(t, filepath.Join(home, ".local", "share", "opencode", "auth.json"),
+		map[string]map[string]string{"zai-coding-plan": {"type": "api", "key": "zai-secret"}})
+	p, err := Resolve(config.Config{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if p.Kind != backendClaudeCLI {
+		t.Errorf("claude-cli must beat opencode: %+v", p)
+	}
+}
+
+func TestResolve_ClaudeCLIDisabledFallsToOpencode(t *testing.T) {
+	home := clearProviderEnv(t)
+	enableFakeClaudeCLI(t, true)
+	// Re-disable the backend; opencode creds should then resolve.
+	t.Setenv(claudeCLIDisableEnv, "1")
+	writeJSON(t, filepath.Join(home, ".local", "share", "opencode", "auth.json"),
+		map[string]map[string]string{"zai-coding-plan": {"type": "api", "key": "zai-secret"}})
+	writeJSON(t, filepath.Join(home, ".config", "opencode", "opencode.json"),
+		map[string]string{"model": "zai-coding-plan/glm-5.2"})
+	p, err := Resolve(config.Config{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if p.Source != "opencode" {
+		t.Errorf("disabled claude-cli must fall through to opencode: %+v", p)
+	}
+}
+
+func TestResolve_ClaudeCLINotAuthedFallsToOpencode(t *testing.T) {
+	home := clearProviderEnv(t)
+	enableFakeClaudeCLI(t, false) // present but not logged in
+	writeJSON(t, filepath.Join(home, ".local", "share", "opencode", "auth.json"),
+		map[string]map[string]string{"zai-coding-plan": {"type": "api", "key": "zai-secret"}})
+	writeJSON(t, filepath.Join(home, ".config", "opencode", "opencode.json"),
+		map[string]string{"model": "zai-coding-plan/glm-5.2"})
+	p, err := Resolve(config.Config{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if p.Source != "opencode" {
+		t.Errorf("unauthenticated claude must fall through to opencode: %+v", p)
+	}
+}
+
+func TestResolve_ClaudeCLINotOnPath(t *testing.T) {
+	clearProviderEnv(t)
+	t.Setenv(claudeCLIDisableEnv, "")
+	prevLook, prevAuth := claudeLookPath, claudeAuthStatus
+	claudeLookPath = func(string) (string, error) { return "", os.ErrNotExist }
+	claudeAuthStatus = func(string) bool { return true }
+	t.Cleanup(func() { claudeLookPath, claudeAuthStatus = prevLook, prevAuth })
+	_, err := Resolve(config.Config{})
+	if err != ErrNoProvider {
+		t.Fatalf("want ErrNoProvider, got %v", err)
+	}
+}
+
+func TestResolve_ClaudeCLIFallsToError(t *testing.T) {
+	// claude present but not authed, no opencode, no key => ErrNoProvider.
+	clearProviderEnv(t)
+	enableFakeClaudeCLI(t, false)
+	_, err := Resolve(config.Config{})
+	if err != ErrNoProvider {
+		t.Fatalf("want ErrNoProvider, got %v", err)
 	}
 }

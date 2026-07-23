@@ -1,7 +1,7 @@
 ---
 name: linkedin-jobs
 description: "Use when the user wants to search, fetch, score, or manage LinkedIn job postings — pull their personalized recommended feed, search the public job board, score fit against their preferences, find who to reach out to for a job, manage a job pipeline, or configure their job-search profile. Wraps the linkedin-jobs CLI."
-version: 0.1.38
+version: 0.1.39
 author: Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -59,7 +59,7 @@ first unresolved gate and guide the user through it before continuing.
 
 2. **Diagnose everything:** `linkedin-jobs doctor`. One command reports the LLM provider, `settings.yaml` completeness, and every `LJ_*` env var (set/unset, secrets redacted). It is the single source of truth for what's configured. To verify the LinkedIn session, look for the `LJ_COOKIES_FILE` line under `== Environment ==`.
 
-3. **Configure the LLM (only if `doctor` reports no provider).** A provider is required — fetch+score commands (`recommended`/`url`/`search`/`job`) exit with a setup prompt when none is configured. Resolution (first match wins): `LJ_LLM_API_KEY` / `OPENAI_API_KEY` → `ANTHROPIC_API_KEY` → opencode/Hermes session credentials. **When invoked inside an opencode/Hermes session, no `LJ_LLM_*` is needed** — the session injects `ANTHROPIC_API_KEY` + `ANTHROPIC_BASE_URL` and the CLI reuses that session LLM. To set explicitly, have the user export in their shell:
+3. **Configure the LLM (only if `doctor` reports no provider).** A provider is required — fetch+score commands (`recommended`/`url`/`search`/`job`) exit with a setup prompt when none is configured. Resolution (first match wins): `LJ_LLM_API_KEY` / `OPENAI_API_KEY` → `ANTHROPIC_API_KEY` → **`claude` CLI (Claude Code session reuse)** → opencode/Hermes session credentials. **When invoked inside an opencode/Hermes session, no `LJ_LLM_*` is needed** — the session injects `ANTHROPIC_API_KEY` + `ANTHROPIC_BASE_URL` and the CLI reuses that session LLM. **When invoked inside a Claude Code session (OAuth login), no `LJ_LLM_*` is needed either** — the CLI detects a logged-in `claude` on PATH (`claude auth status`) and shells out to `claude -p` per call, reusing the user's Claude Pro/Max subscription. (The OAuth token itself cannot be used as a bare API key, so it must route through `claude -p`.) Set `LJ_LLM_DISABLE_CLAUDE_CLI=1` to force the HTTP/key path. To set an explicit key instead, have the user export in their shell:
    ```
    export LJ_LLM_API_KEY=sk-...                      # OpenAI-compatible key
    export LJ_LLM_MODEL=gpt-4o-mini                   # optional

@@ -38,7 +38,9 @@ Exits 1 if any check fails, 0 if all pass.`,
 		if err != nil {
 			ok = false
 			fmt.Printf("  [✗] no provider resolved: %v\n", err)
-			fmt.Println("      fix: set OPENAI_API_KEY / LJ_LLM_* / ANTHROPIC_API_KEY (or rely on opencode discovery)")
+			fmt.Println("      fix: set OPENAI_API_KEY / LJ_LLM_* / ANTHROPIC_API_KEY,")
+			fmt.Println("            log in with `claude` (Claude Code session reuse),")
+			fmt.Println("            or rely on opencode discovery")
 		} else {
 			fmt.Printf("  [✓] provider resolved: source=%s model=%s base=%s key=%s\n",
 				p.Source, p.Model, p.BaseURL, p.Redacted())
@@ -113,6 +115,7 @@ var doctorEnvKeys = []string{
 	"LJ_LLM_DELAY_SECONDS",
 	"ANTHROPIC_API_KEY",
 	"ANTHROPIC_BASE_URL",
+	"LJ_LLM_DISABLE_CLAUDE_CLI",
 }
 
 var settingsTopSchema = map[string][]string{

@@ -16,7 +16,23 @@ import (
 // assistant message content. Used by enrichment and the `hr` outreach research.
 // An HTTP failure returns an error (body truncated + scrubbed); an empty
 // choices array returns a descriptive error.
+//
+// Providers whose Kind is backendClaudeCLI are routed to the `claude` CLI
+// instead of an HTTP call (see claudecli.go).
 func Chat(p *Provider, system, user string, maxTokens int, temperature float64) (string, error) {
+	if p.Kind == backendClaudeCLI {
+		return chatClaudeCLI(p, system, user, maxTokens, temperature)
+	}
+	return chatHTTP(p, system, user, maxTokens, temperature)
+}
+
+// chatClaudeCLI fulfills Chat via the resolved `claude` CLI subprocess.
+func chatClaudeCLI(p *Provider, system, user string, maxTokens int, temperature float64) (string, error) {
+	return claudeRun(p.cliPath, p.Model, system, user, maxTokens, temperature)
+}
+
+// chatHTTP fulfills Chat via the provider's OpenAI-compatible HTTP endpoint.
+func chatHTTP(p *Provider, system, user string, maxTokens int, temperature float64) (string, error) {
 	if maxTokens <= 0 {
 		maxTokens = 2048
 	}

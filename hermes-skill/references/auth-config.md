@@ -89,9 +89,10 @@ An LLM provider is required for scoring — fetch+score commands (`recommended`/
 
 1. `LJ_LLM_API_KEY` or `OPENAI_API_KEY` env var
 2. `ANTHROPIC_API_KEY` env var — Anthropic's endpoint by default; when `ANTHROPIC_BASE_URL` redirects it (e.g. an opencode/Hermes session pointing it at z.ai), the CLI honors the redirected endpoint and takes the model from opencode config
-3. opencode's stored credentials (reuses the provider configured in opencode, e.g. GLM Coding Plan key → `glm-5.2`)
+3. **`claude` CLI (Claude Code session reuse)** — when `claude` is on PATH and `claude auth status` reports a login, the CLI shells out to `claude -p` for each LLM call. This lets it reuse the user's Claude Pro/Max subscription **without a separate API key**, which is exactly what a Claude Code OAuth session needs (its OAuth token is not exposed to subprocesses and cannot be used as a bare API key). Set `LJ_LLM_DISABLE_CLAUDE_CLI=1` to force the HTTP path.
+4. opencode's stored credentials (reuses the provider configured in opencode, e.g. GLM Coding Plan key → `glm-5.2`)
 
-Explicit env vars win over opencode discovery, so you can override the discovered provider. When you invoke this CLI from inside an opencode/Hermes session, no `LJ_LLM_*` is needed — the session injects `ANTHROPIC_API_KEY` + `ANTHROPIC_BASE_URL`, and the CLI reuses that session LLM. Set `LJ_LLM_*` to override it.
+Explicit env vars win over both claude-cli and opencode discovery, so you can override either. When you invoke this CLI from inside an opencode/Hermes session, no `LJ_LLM_*` is needed — the session injects `ANTHROPIC_API_KEY` + `ANTHROPIC_BASE_URL`, and the CLI reuses that session LLM. When you invoke it from inside a **Claude Code** session (OAuth login), the `claude` CLI branch handles it automatically — again no `LJ_LLM_*` needed. Set `LJ_LLM_*` to override either.
 
 ### LLM Settings
 
@@ -101,6 +102,7 @@ Explicit env vars win over opencode discovery, so you can override the discovere
 | `LJ_LLM_MODEL` | Model name | `gpt-4o-mini` |
 | `LJ_LLM_BASE_URL` / `OPENAI_BASE_URL` | OpenAI-compatible base URL (Ollama, vLLM, Azure) | `https://api.openai.com/v1` |
 | `ANTHROPIC_API_KEY` | Claude provider (auto-detected) | — |
+| `LJ_LLM_DISABLE_CLAUDE_CLI` | Disable the `claude` CLI backend (force HTTP) | — |
 | `LJ_LLM_DELAY_SECONDS` | Pause between successive LLM calls (avoids 429s) | `2.0` |
 
 **Data residency:** `LJ_LLM_BASE_URL` can point to a self-hosted endpoint (Ollama at `http://localhost:11434/v1`, vLLM, etc.) for users who need data residency control. The scoring pipeline transmits job descriptions and preference knobs to the configured provider.
@@ -163,6 +165,7 @@ profile:                         # structured inputs for the system rubrics
 | `LJ_LLM_MODEL` | Model name | `gpt-4o-mini` |
 | `LJ_LLM_DELAY_SECONDS` | Seconds to pause between LLM calls | `2.0` |
 | `ANTHROPIC_API_KEY` | Claude provider (auto-detected) | — |
+| `LJ_LLM_DISABLE_CLAUDE_CLI` | Disable the `claude` CLI backend (force HTTP) | — |
 
 ## File Locations
 

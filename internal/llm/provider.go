@@ -11,6 +11,12 @@ import (
 	"linkedin-jobs/internal/config"
 )
 
+// backend kinds select how Chat() talks to the model.
+const (
+	backendHTTP      = ""           // default: OpenAI-compatible HTTP /chat/completions
+	backendClaudeCLI = "claude-cli" // shell out to the `claude` CLI (Claude Code)
+)
+
 // Provider is a resolved OpenAI-compatible LLM provider. The HTTP client sends
 // Authorization: Bearer <APIKey> plus any extra Headers (e.g. Anthropic's
 // x-api-key / anthropic-version).
@@ -19,11 +25,16 @@ type Provider struct {
 	APIKey  string
 	Model   string
 	Headers map[string]string
-	Source  string // config | opencode | anthropic-env | env
+	Source  string // config | opencode | anthropic-env | env | claude-cli
+	Kind    string // backendHTTP (default) | backendClaudeCLI
+
+	// cliPath is the resolved `claude` binary path when Kind == backendClaudeCLI.
+	// Empty for HTTP providers.
+	cliPath string
 }
 
 // ErrNoProvider means no provider could be resolved.
-var ErrNoProvider = errors.New("no LLM provider configured: set OPENAI_API_KEY / LJ_LLM_* / ANTHROPIC_API_KEY")
+var ErrNoProvider = errors.New("no LLM provider configured: set OPENAI_API_KEY / LJ_LLM_* / ANTHROPIC_API_KEY (or log in with `claude`)")
 
 // providerPreset maps a known provider id to its OpenAI-compatible endpoint.
 // injectKeyHeader names a header that should carry the API key in addition to
@@ -59,8 +70,9 @@ func (p *Provider) Apply(req *http.Request) {
 //  1. LJ_LLM_* / OPENAI_* env (explicit env override)
 //  2. ANTHROPIC_API_KEY env (Anthropic preset; honors a redirected
 //     ANTHROPIC_BASE_URL, e.g. an opencode/Hermes session pointing it at z.ai)
-//  3. opencode stored credentials (implicit discovery)
-//  4. ErrNoProvider
+//  3. claude CLI (reuses a logged-in Claude Code session's subscription)
+//  4. opencode stored credentials (implicit discovery)
+//  5. ErrNoProvider
 //
 // Resolution is env-driven only — there is no persisted provider file. cfg
 // supplies the env-layer values.
@@ -87,6 +99,9 @@ func Resolve(cfg config.Config) (*Provider, error) {
 		}
 		p := buildProvider(presets["anthropic"], key)
 		p.Source = "anthropic-env"
+		return p, nil
+	}
+	if p, ok := FromClaudeCLI(); ok {
 		return p, nil
 	}
 	if p, ok := FromOpencode(); ok {
@@ -183,7 +198,12 @@ func buildProvider(p providerPreset, key string) *Provider {
 }
 
 // Redacted returns the API key with only the last 4 chars visible, for display.
+// The claude-cli backend carries no real secret (its key is a synthetic label),
+// so it is returned verbatim.
 func (p *Provider) Redacted() string {
+	if p.Kind == backendClaudeCLI {
+		return p.APIKey
+	}
 	k := p.APIKey
 	if len(k) <= 4 {
 		return strings.Repeat("*", len(k))
