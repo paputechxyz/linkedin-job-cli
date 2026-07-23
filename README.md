@@ -228,9 +228,15 @@ Searches the public job board. Jobs already in the DB (by LinkedIn ID) are
 skipped entirely — re-running the same query shows only what's new since the
 last run. Pass `--force-overwrite` to re-process existing jobs.
 
+The query is a single string split into keywords + location on the **first
+comma** — everything before it is the keyword search, everything after is the
+location. Locations often contain commas ("Remote, US", "Toronto, Ontario,
+Canada") so the first-comma split keeps them intact; omit the comma for a
+keywords-only search.
+
 ```bash
-linkedin-jobs search "Staff Engineer" Toronto
-linkedin-jobs search "Senior Developer" "Remote, US" --top 3   # cap at 3 jobs
+linkedin-jobs search "Staff Engineer, Toronto"
+linkedin-jobs search "Senior Developer, Remote, US" --top 3   # cap at 3 jobs
 ```
 
 ### URL (authenticated)
@@ -286,7 +292,7 @@ linkedin-jobs query "engineer" --exclude amazon
 linkedin-jobs stats --top 25
 linkedin-jobs tag 4430749190 applied --note "referred by Sam"
 linkedin-jobs export --format csv -o jobs.csv
-linkedin-jobs search "Staff Engineer" Toronto --top 10  # skips jobs already in the DB; only new ones are fetched/scored
+linkedin-jobs search "Staff Engineer, Toronto" --top 10  # skips jobs already in the DB; only new ones are fetched/scored
 linkedin-jobs count
 linkedin-jobs purge
 ```

@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -15,11 +16,18 @@ var (
 )
 
 var searchCmd = &cobra.Command{
-	Use:   "search [keywords] [location]",
+	Use:   "search <query>",
 	Short: "Search LinkedIn's public job board (anonymous, no session required)",
 	Args:  cobra.MinimumNArgs(1),
 	Long: `Searches LinkedIn's public (logged-out) job board and ingests results through
 the same pipeline as 'recommended'. Works without a session; no login needed.
+
+The query is a single string split into keywords + location on the FIRST comma:
+everything before the comma is the keyword search; everything after is the
+location. Locations often contain commas themselves ("Remote, US", "Toronto,
+Ontario, Canada"), while keywords rarely do, so the first-comma split keeps
+multi-comma locations intact. Omit the comma for a keywords-only search.
+
 --top N caps the number of jobs processed end-to-end (detail fetch + LLM score).
 Jobs already in the DB (by LinkedIn ID) are skipped entirely — only brand-new
 jobs are detail-fetched, scored, and displayed. Pass --force-overwrite to
@@ -29,15 +37,11 @@ no ingest-time filters — use 'list --remote --min-salary ...' or the 'serve'
 filters to exclude at view time.
 
 Examples:
-  linkedin-jobs search "Staff Engineer" Toronto
-  linkedin-jobs search "Senior Developer" "Remote, US" --top 3`,
+  linkedin-jobs search "Staff Engineer, Toronto"
+  linkedin-jobs search "Senior Developer, Remote, US" --top 3`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		provider := mustResolveProvider()
-		keywords := args[0]
-		location := ""
-		if len(args) > 1 {
-			location = args[1]
-		}
+		keywords, location := splitSearchQuery(strings.Join(args, " "))
 		c, err := newClient(false)
 		if err != nil {
 			die("%v", err)
@@ -106,4 +110,21 @@ func filterNewIDs(jobs []*models.JobPosting) []*models.JobPosting {
 	}
 	fmt.Fprintf(os.Stderr, "Found %d jobs, %d new since last run.\n", len(jobs), len(fresh))
 	return fresh
+}
+
+// splitSearchQuery splits a single search string into keywords + location on
+// the FIRST comma. Locations frequently contain commas themselves ("Remote, US",
+// "Toronto, Ontario, Canada"), while job keywords rarely do, so the first-comma
+// split keeps multi-comma locations intact. A query with no comma is keywords-
+// only. Examples:
+//
+//	"Staff Engineer, Toronto"            → ("Staff Engineer", "Toronto")
+//	"Senior Developer, Remote, US"       → ("Senior Developer", "Remote, US")
+//	"Staff Engineer"                     → ("Staff Engineer", "")
+func splitSearchQuery(q string) (keywords, location string) {
+	q = strings.TrimSpace(q)
+	if i := strings.Index(q, ","); i >= 0 {
+		return strings.TrimSpace(q[:i]), strings.TrimSpace(q[i+1:])
+	}
+	return q, ""
 }

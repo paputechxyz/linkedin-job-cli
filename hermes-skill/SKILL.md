@@ -1,7 +1,7 @@
 ---
 name: linkedin-jobs
 description: "Use when the user wants to search, fetch, score, or manage LinkedIn job postings — pull their personalized recommended feed, search the public job board, score fit against their preferences, find who to reach out to for a job, manage a job pipeline, or configure their job-search profile. Wraps the linkedin-jobs CLI."
-version: 0.1.36
+version: 0.1.37
 author: Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -91,7 +91,7 @@ Commands grouped by intent. Auth column: **auth** = requires LinkedIn session, *
 |---------|---------|------|--------|
 | **Fetch** | | | |
 | `recommended` | Pull personalized "Recommended for you" feed | auth | yes |
-| `search <keywords> [location]` | Search public job board; skips jobs already in DB | anon | yes |
+| `search <query>` | Search public job board (keywords + location split on first comma); skips jobs already in DB | anon | yes |
 | `url <linkedin-url>` | Score every job on a search/collection URL | auth | yes |
 | `job <job-id>` | Fetch + score a single job by numeric ID | either | yes |
 | **Store/Query** | | | |
@@ -155,13 +155,13 @@ they finish, re-check with `doctor` and proceed to Recipe #2.
 `auth status` → if "No session" or "incomplete": tell the user to run `linkedin-jobs auth login` in their terminal (macOS + Chrome). Explain: it reads cookies silently from Chrome (no browser opens if already logged in), or launches a guided Chrome window for login. First run triggers a macOS keychain prompt — click "Always Allow". After they confirm it ran, re-check: `auth status` → should show "Session available [source: login]". Then proceed to Recipe #2.
 
 ### 3. Search anonymous (only when no session is available)
-`search "Staff Engineer" Toronto --json --top 25` → summarize results. **Only use this when the user has explicitly opted out of cookies** — see Pitfall #1. Default to Recipe #2 (`recommended`) whenever `LJ_COOKIES_FILE` is set.
+`search "Staff Engineer, Toronto" --json --top 25` → summarize results. The query is one string split into keywords + location on the first comma. **Only use this when the user has explicitly opted out of cookies** — see Pitfall #1. Default to Recipe #2 (`recommended`) whenever `LJ_COOKIES_FILE` is set.
 
 ### 4. Score a URL
 `url "<url>" --json` → summarize. Requires auth session.
 
 ### 5. What's new this week
-`search "Staff Engineer" Toronto --json` → summarize only new jobs (IDs not in DB). `search` skips existing jobs by default — re-running the same query shows only what's new since the last run.
+`search "Staff Engineer, Toronto" --json` → summarize only new jobs (IDs not in DB). `search` skips existing jobs by default — re-running the same query shows only what's new since the last run.
 
 ### 6. Find who to reach out to
 `hr "<job-url>" --json` → present best contact + ranked list + tailored hook + company-scoped LinkedIn search links.
