@@ -527,7 +527,6 @@ type jobView struct {
 	SalaryEstimated                   bool
 	Status, Source, Remote            string
 	Score, ScoreClass                 string
-	ScoreBlurb                        string
 	ScoreCapped                       bool
 	Industry, Seniority, EmpType      string
 	CoSize, CoStage, Years, Visa      string
@@ -589,16 +588,7 @@ func toJobView(j *models.JobPosting) jobView {
 		v.Score = strconv.Itoa(*j.FitScore)
 		v.ScoreClass = scoreClass(*j.FitScore)
 	}
-	// Score caption: a truncated, always-visible summary of the fit reason,
-	// shown next to the badge. Full reason stays in the expandable <details>.
-	// Prefer the per-rubric star strip when structured RubricScores is present
-	// (matches the skill.md star format); otherwise fall back to the flat line.
 	v.Rubrics = rubricViews(j)
-	if len(v.Rubrics) > 0 {
-		v.ScoreBlurb = starStrip(v.Rubrics)
-	} else if j.FitReason != "" {
-		v.ScoreBlurb = preview(j.FitReason, 110)
-	}
 	v.ScoreCapped = false // caps retired; field kept for template compatibility
 	if j.YearsExperience != nil {
 		v.Years = strconv.Itoa(*j.YearsExperience) + "+"
@@ -663,17 +653,6 @@ func rubricViews(j *models.JobPosting) []rubricView {
 		})
 	}
 	return out
-}
-
-// starStrip joins each rubric's star bar into one compact, at-a-glance strip
-// for the score caption (e.g. "★★★★★ ★★★★★ ★★★★☆"). The full labelled
-// breakdown lives in the expandable <details>.
-func starStrip(rubrics []rubricView) string {
-	bars := make([]string, 0, len(rubrics))
-	for _, r := range rubrics {
-		bars = append(bars, r.Stars)
-	}
-	return strings.Join(bars, " ")
 }
 
 // shortDate renders an RFC3339 fetched_at as a short local timestamp.
@@ -1251,19 +1230,7 @@ const pageHTML = `<!DOCTYPE html>
      the expandable <details>. Mono + letter-spacing keep the star glyphs
      evenly spaced; the flat FitReason text fallback still reads fine here. */
   .job-head-aside { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
-  .score-blurb {
-    max-width: 300px; padding: 2px 8px; border-radius: 6px;
-    font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.3;
-    letter-spacing: 1px; text-align: right;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    color: var(--ink-2);
-  }
-  .score-blurb--high   { color: var(--score-high-on); background: var(--score-high-soft); }
-  .score-blurb--mid    { color: var(--score-mid-on);  background: var(--score-mid-soft); }
-  .score-blurb--low    { color: var(--score-low-on);  background: var(--score-low-soft); }
-  .score-blurb--capped { color: var(--score-low-on);  background: var(--score-low-soft); font-weight: 600; }
-
-  /* Meta line */
+   /* Meta line */
   .meta {
     display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;
     margin: 2px 0 12px;
@@ -1487,7 +1454,6 @@ const pageHTML = `<!DOCTYPE html>
     .score-badge--high { width: 52px; height: 52px; font-size: 1.3125rem; }
     .score-badge--mid { width: 44px; height: 44px; font-size: 1.0625rem; }
     .score-badge--low, .score-badge--none { width: 40px; height: 40px; }
-    .score-blurb { max-width: 220px; }
     .actions-row form, .filtered-tag { margin-left: 0; }
     .actions-row .field { flex: 1 1 100%; }
   }
@@ -1642,7 +1608,6 @@ const pageHTML = `<!DOCTYPE html>
           </div>
           <div class="job-head-aside">
             {{if .Score}}<div class="score-badge score-badge--{{.ScoreClass}}" aria-label="Fit score {{.Score}} of 100">{{.Score}}</div>{{else}}<div class="score-badge score-badge--none" aria-label="Unscored">—</div>{{end}}
-            {{if .ScoreBlurb}}<div class="score-blurb score-blurb--{{if .ScoreCapped}}capped{{else}}{{.ScoreClass}}{{end}}" title="{{.FitReason}}">{{.ScoreBlurb}}</div>{{end}}
           </div>
         </div>
         <div class="meta">
