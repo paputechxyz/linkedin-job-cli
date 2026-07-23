@@ -146,6 +146,66 @@ func TestRenderJobCardJSContract(t *testing.T) {
 	}
 }
 
+// TestRenderFitReasonStars checks the fit-reason reskin: when structured
+// RubricScores is present, the score blurb shows a compact star strip and the
+// expandable block shows the full per-rubric breakdown (id + star bar +
+// rating/weight + reason). When absent, it falls back to the flat FitReason.
+func TestRenderFitReasonStars(t *testing.T) {
+	tpl, err := newPageTemplate()
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	withStars := scoreForTest(95, "new")
+	withStars.FitReason = "salary 5/5 (w5) CAD297864 vs CAD200000 floor, +49%, work_arrangement 5/5 (w5) remote | total 95"
+	withStars.Rubrics = []rubricView{
+		{ID: "salary", Stars: "★★★★★", Rating: 5, Weight: 5, Reason: "CAD297864 vs CAD200000 floor, +49%"},
+		{ID: "work_arrangement", Stars: "★★★★★", Rating: 5, Weight: 5, Reason: "remote"},
+		{ID: "preferred_tech", Stars: "★★★★☆", Rating: 4, Weight: 5},
+	}
+	withStars.ScoreBlurb = starStrip(withStars.Rubrics)
+	// Legacy job: no RubricScores, only the flat one-liner — must fall back.
+	legacy := scoreForTest(63, "new")
+	legacy.FitReason = "salary 3/5 (w5) no floor/salary | total 63"
+	legacy.ScoreBlurb = preview(legacy.FitReason, 110)
+
+	var buf bytes.Buffer
+	if err := tpl.Execute(&buf, pageData{CSRF: "t", F: formVals{Sort: "score"}, Jobs: []jobView{withStars, legacy}}); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	out := buf.String()
+
+	// Blurb: compact star strip (one bar per rubric, space-separated).
+	if !strings.Contains(out, `>★★★★★ ★★★★★ ★★★★☆<`) {
+		t.Errorf("score blurb missing compact star strip")
+	}
+	// Full breakdown: rubric list with id + star bar + rating/weight annotation.
+	for _, want := range []string{
+		`class="rubric-list"`,
+		`class="rubric-id">salary<`,
+		`class="rubric-stars"`,
+		`>★★★★★</span>`,                      // salary star bar
+		`>5/5 · w5 · CAD297864`,               // salary rating/weight/reason
+		`class="rubric-id">work_arrangement<`, // long id rendered, not truncated
+		`>4/5 · w5<`,                          // preferred_tech has no reason → no trailing " · "
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered output missing %q", want)
+		}
+	}
+	// A rubric with no reason must not emit a dangling " · ".
+	if strings.Contains(out, `>4/5 · w5 · <`) {
+		t.Errorf(`rubric without reason rendered dangling " · " (got "4/5 · w5 · ")`)
+	}
+	// Flat FitReason still used as the blurb title (hover).
+	if !strings.Contains(out, `title="salary 5/5 (w5) CAD297864`) {
+		t.Errorf("blurb title should carry the full FitReason for hover")
+	}
+	// Legacy fallback: flat FitReason rendered in the details block.
+	if !strings.Contains(out, `salary 3/5 (w5) no floor/salary | total 63`) {
+		t.Error("legacy job should fall back to the flat FitReason line in details")
+	}
+}
+
 func TestRenderEmptyAndErrorStates(t *testing.T) {
 	tpl, err := newPageTemplate()
 	if err != nil {

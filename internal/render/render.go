@@ -264,7 +264,7 @@ func renderRubricBreakdown(w io.Writer, j *models.JobPosting) {
 	}
 	fmt.Fprintln(w, "Rubrics:")
 	for _, r := range rs {
-		line := fmt.Sprintf("  • %-*s  %s (%d/5, w%d)", idW, r.ID, starsFor(r.Rating), r.Rating, r.Weight)
+		line := fmt.Sprintf("  • %-*s  %s (%d/5, w%d)", idW, r.ID, StarsFor(r.Rating), r.Rating, r.Weight)
 		if r.Reason != "" {
 			line += " " + r.Reason
 		}
@@ -272,9 +272,10 @@ func renderRubricBreakdown(w io.Writer, j *models.JobPosting) {
 	}
 }
 
-// starsFor renders a 5-star bar: filled stars for the rating, empty for the
-// remainder. rating is clamped to [0,5].
-func starsFor(rating int) string {
+// StarsFor renders a 5-star bar: filled stars for the rating, empty for the
+// remainder. rating is clamped to [0,5]. Shared between the CLI renderer and
+// the web UI so both show the skill.md star format identically.
+func StarsFor(rating int) string {
 	if rating < 0 {
 		rating = 0
 	}
