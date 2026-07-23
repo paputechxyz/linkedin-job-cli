@@ -45,6 +45,35 @@ func (p *Profile) PrefersArrangement(arrangement string) bool {
 	return normalized[normalizeArrangement(arrangement)]
 }
 
+// KnobCount returns how many of the structured preference knobs are set. This
+// is the single source of truth for the knob tally so the `profile show`
+// listing, the `IsEmpty` check, and the pipeline status line ("loaded N
+// preference knob(s)") can never drift apart. The five knobs are: work
+// arrangement, location, salary floor, preferred tech, avoided tech. Currency
+// is a modifier of the salary floor, not its own knob.
+func (p *Profile) KnobCount() int {
+	if p == nil {
+		return 0
+	}
+	n := 0
+	if len(p.PrefWorkArrangement) > 0 {
+		n++
+	}
+	if strings.TrimSpace(p.PrefLocation) != "" {
+		n++
+	}
+	if p.PrefMinSalary != nil {
+		n++
+	}
+	if len(p.PrefPreferredTech) > 0 {
+		n++
+	}
+	if len(p.PrefAvoidedTech) > 0 {
+		n++
+	}
+	return n
+}
+
 // normalizeArrangement converts a work arrangement token to its canonical
 // lowercase form: "on-site" and "on site" become "onsite".
 func normalizeArrangement(s string) string {

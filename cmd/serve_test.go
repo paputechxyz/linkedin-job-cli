@@ -160,7 +160,7 @@ func TestRenderFitReasonStars(t *testing.T) {
 	withStars.Rubrics = []rubricView{
 		{ID: "salary", Stars: "★★★★★", Rating: 5, Weight: 5, Reason: "CAD297864 vs CAD200000 floor, +49%"},
 		{ID: "work_arrangement", Stars: "★★★★★", Rating: 5, Weight: 5, Reason: "remote"},
-		{ID: "preferred_tech", Stars: "★★★★☆", Rating: 4, Weight: 5},
+		{ID: "preferred_tech", Stars: "★★★★☆", Rating: 4, Weight: 5, Reason: "Go and Postgres stack"},
 	}
 	// Legacy job: no RubricScores, only the flat one-liner — must fall back.
 	legacy := scoreForTest(63, "new")
@@ -172,23 +172,28 @@ func TestRenderFitReasonStars(t *testing.T) {
 	}
 	out := buf.String()
 
-	// Full breakdown: rubric list with id + star bar + rating/weight annotation.
+	// Full breakdown: rubric list with id + star bar + reason (stars convey the
+	// rating; no numeric "N/5" is rendered in the breakdown).
 	for _, want := range []string{
 		`class="rubric-list"`,
 		`class="rubric-id">salary<`,
 		`class="rubric-stars"`,
-		`>★★★★★</span>`,                      // salary star bar
-		`>5/5 · w5 · CAD297864`,               // salary rating/weight/reason
-		`class="rubric-id">work_arrangement<`, // long id rendered, not truncated
-		`>4/5 · w5<`,                          // preferred_tech has no reason → no trailing " · "
+		`>★★★★★</span>`,                       // salary star bar
+		`class="rubric-meta">CAD297864`,        // salary → reason only
+		`class="rubric-id">work_arrangement<`,  // long id rendered, not truncated
+		`class="rubric-meta">Go and Postgres stack`, // preferred_tech → reason only (no "4/5")
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("rendered output missing %q", want)
 		}
 	}
-	// A rubric with no reason must not emit a dangling " · ".
-	if strings.Contains(out, `>4/5 · w5 · <`) {
-		t.Errorf(`rubric without reason rendered dangling " · " (got "4/5 · w5 · ")`)
+	// No numeric rating ("N/5") or weight ("wN") may appear in the breakdown
+	// meta — stars carry the rating. The legacy flat FitReason fallback still
+	// carries its own "(wN)" and "N/5" — that path is unchanged.
+	for _, frag := range []string{`rubric-meta">5/5`, `rubric-meta">4/5`, `>4/5 · `, `>5/5 · `} {
+		if strings.Contains(out, frag) {
+			t.Errorf("must not render %q in rubric breakdown", frag)
+		}
 	}
 	// Legacy fallback: flat FitReason rendered in the details block.
 	if !strings.Contains(out, `salary 3/5 (w5) no floor/salary | total 63`) {

@@ -32,7 +32,7 @@ const enrichPromptTmpl = `Analyze this job posting and return ONLY a JSON object
 "salary_low": number or null — the LOW end of the cash compensation range stated in the description body. Only set when the posting EXPLICITLY states a dollar/number figure (e.g. "$184,000 - $249,000", "$150,000 CAD", "CA$190k - CA$210k"). Set to null when no figure is given ("competitive", "DOE", equity-only, etc.). Parse the literal numeric value (strip "$", ",", "k" -> *1000, "m" -> *1000000). Do NOT infer market rates or guess.
 "salary_high": number or null — the HIGH end of the same range. Same rules as salary_low. When the posting gives a single point figure rather than a range, set both salary_low and salary_high to that figure.
 "salary_currency": one of USD|CAD|EUR|GBP|AUD|INR|JPY|"" — the ISO 4217 currency of the stated range. Use the posting's explicit code/symbol (CA$/CAD -> CAD, US$/USD -> USD, £ -> GBP, € -> EUR). Empty string "" when no salary range was stated. When the description uses a bare "$" with no currency signal, infer from the user's preferred location: Canada -> CAD, United States -> USD, United Kingdom -> GBP, European Union -> EUR, India -> INR, Japan -> JPY, Australia -> AUD. When the description lists MULTIPLE locale-specific ranges (e.g. "US: $200,000-$300,000 USD; Canada: $150,000-$250,000 CAD"), pick the band matching the USER'S preferred location below — NOT the job's location. If the user's location is unknown or no band matches, fall back to the job's location, then to the first listed band.
-"ratings": an object mapping each rubric id listed below to an integer 1-5, where 1 = strong miss/negative, 2 = weak, 3 = neutral or not mentioned, 4 = good, 5 = strong match. Rate every listed rubric.
+"ratings": an object mapping each rubric id listed below to an object {"rating": <integer 1-5>, "reason": "<one short sentence citing the specific evidence from the posting that drove the rating>"}, where 1 = strong miss/negative, 2 = weak, 3 = neutral or not mentioned, 4 = good, 5 = strong match. Rate EVERY listed rubric and ALWAYS include a non-empty "reason" for each — never return a bare integer or omit the reason,
 
 Rubrics to rate (id: what to look for):
 %s
@@ -68,7 +68,7 @@ var ErrEmptyDescription = errors.New("job description is empty; cannot enrich")
 // ranges (e.g. US: $X USD / Canada: $Y CAD). Pass nil when no profile is
 // loaded — the LLM then falls back to the job's own location for band/currency
 // inference.
-func Enrich(j *models.JobPosting, provider *Provider, rubrics []config.Rubric, prof *models.Profile) (models.Enrichment, map[string]int, error) {
+func Enrich(j *models.JobPosting, provider *Provider, rubrics []config.Rubric, prof *models.Profile) (models.Enrichment, map[string]models.DynamicRating, error) {
 	if strings.TrimSpace(j.Description) == "" {
 		return models.Enrichment{}, nil, ErrEmptyDescription
 	}
@@ -202,14 +202,37 @@ type enrichJSON struct {
 	SalaryLow       *float64 `json:"salary_low"`
 	SalaryHigh      *float64 `json:"salary_high"`
 	SalaryCurrency  string   `json:"salary_currency"`
-	Ratings         map[string]int `json:"ratings"`
+	Ratings         json.RawMessage `json:"ratings"`
 }
 
-func parseEnrichment(content string) (models.Enrichment, map[string]int) {
+// parseRatings decodes the LLM "ratings" value tolerantly. The preferred shape
+// is id -> {"rating": N, "reason": "..."}; the legacy id -> int shape (with no
+// reason) is still accepted so older mocks/responses keep working. Returns nil
+// when the value is absent or unparseable.
+func parseRatings(raw json.RawMessage) map[string]models.DynamicRating {
+	if len(raw) == 0 {
+		return nil
+	}
+	var obj map[string]models.DynamicRating
+	if err := json.Unmarshal(raw, &obj); err == nil {
+		return obj
+	}
+	var ints map[string]int
+	if err := json.Unmarshal(raw, &ints); err != nil {
+		return nil
+	}
+	out := make(map[string]models.DynamicRating, len(ints))
+	for k, v := range ints {
+		out[k] = models.DynamicRating{Rating: v}
+	}
+	return out
+}
+
+func parseEnrichment(content string) (models.Enrichment, map[string]models.DynamicRating) {
 	var ej enrichJSON
 	if jstr := extractJSON(content); jstr != "" {
 		if err := json.Unmarshal([]byte(jstr), &ej); err == nil {
-			return toEnrichment(ej), clampRatings(ej.Ratings)
+			return toEnrichment(ej), clampRatings(parseRatings(ej.Ratings))
 		}
 	}
 	// Delimiter/labeled-prose fallback (facts only; ratings left empty).
@@ -217,17 +240,18 @@ func parseEnrichment(content string) (models.Enrichment, map[string]int) {
 }
 
 // clampRatings forces every rating into [1,5].
-func clampRatings(r map[string]int) map[string]int {
+func clampRatings(r map[string]models.DynamicRating) map[string]models.DynamicRating {
 	if len(r) == 0 {
 		return nil
 	}
 	for k, v := range r {
-		if v < 1 {
-			r[k] = 1
+		if v.Rating < 1 {
+			v.Rating = 1
 		}
-		if v > 5 {
-			r[k] = 5
+		if v.Rating > 5 {
+			v.Rating = 5
 		}
+		r[k] = v
 	}
 	return r
 }

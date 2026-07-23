@@ -1,5 +1,14 @@
 package models
 
+// DynamicRating carries the LLM-assigned 1–5 rating plus a short, evidence-based
+// reason for one dynamic rubric. Produced by internal/llm (parsed from the
+// enrichment response) and consumed by internal/score when composing the fit
+// score. Reason is "" only when the LLM omitted it (legacy/bare-int responses).
+type DynamicRating struct {
+	Rating int    `json:"rating"`
+	Reason string `json:"reason"`
+}
+
 // Enrichment is the structured result of the LLM enrichment call: structured
 // facts extracted from the job posting. Produced by internal/llm and persisted
 // by store.SetEnrichmentAndScore. Zero/empty values mean "not extracted".

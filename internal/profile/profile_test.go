@@ -71,3 +71,30 @@ func TestIsEmpty(t *testing.T) {
 		t.Errorf("zero-value profile must be empty, got %+v", got)
 	}
 }
+
+// TestKnobCount_CountsAllFiveKnobs is the regression for the mismatch where
+// `recommended` reported "loaded 4 preference knob(s)" while `profile show`
+// listed 5 — location was not counted. KnobCount must count all five knobs,
+// and a location-only profile must register as non-empty (1 knob).
+func TestKnobCount_CountsAllFiveKnobs(t *testing.T) {
+	full, _ := Load(config.ProfileSettings{
+		WorkArrangement: []string{"remote", "hybrid"},
+		MinSalary:       ptr(200000),
+		Location:        "Toronto, ON, Canada",
+		PreferredTech:   []string{"Python", "TypeScript"},
+		AvoidedTech:     []string{"C#"},
+	})
+	if n := full.KnobCount(); n != 5 {
+		t.Errorf("full profile KnobCount=%d want 5 (incl. location)", n)
+	}
+
+	// Location-only: previously miscounted as empty/0 because IsEmpty ignored
+	// location. It is a real knob (fed to the LLM enrich prompt), so it counts.
+	locOnly, _ := Load(config.ProfileSettings{Location: "Toronto, ON, Canada"})
+	if n := locOnly.KnobCount(); n != 1 {
+		t.Errorf("location-only KnobCount=%d want 1", n)
+	}
+	if IsEmpty(locOnly) {
+		t.Errorf("location-only profile must not be empty")
+	}
+}

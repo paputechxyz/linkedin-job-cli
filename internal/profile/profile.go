@@ -2,10 +2,12 @@
 // build the in-memory models.Profile consumed by the system rubrics (salary,
 // work arrangement) and the LLM enrich prompt.
 //
-// The preference knobs (work_arrangement, min_salary, preferred_tech,
+// The preference knobs (work_arrangement, location, min_salary, preferred_tech,
 // avoided_tech) live under the profile: section of settings.yaml
-// ($LJ_SETTINGS_FILE) and feed the system rubrics in internal/score. Location
-// is LLM-rated as a dynamic rubric and does not use these knobs.
+// ($LJ_SETTINGS_FILE) and feed the system rubrics in internal/score plus the
+// LLM enrich prompt (location drives salary-band pick + currency inference).
+// The location_proximity *rubric* is LLM-rated from the rubric description and
+// is separate from the location preference knob.
 package profile
 
 import (
@@ -31,15 +33,10 @@ func Load(prefs config.ProfileSettings) (*models.Profile, error) {
 }
 
 // IsEmpty reports whether the profile has no preference knobs — i.e.
-// scoring/filtering will run context-free.
+// scoring/filtering will run context-free. Delegates to Profile.KnobCount so
+// the "empty" decision and the status-line tally share one source of truth.
 func IsEmpty(p *models.Profile) bool {
-	if p == nil {
-		return true
-	}
-	return len(p.PrefWorkArrangement) == 0 &&
-		p.PrefMinSalary == nil &&
-		len(p.PrefPreferredTech) == 0 &&
-		len(p.PrefAvoidedTech) == 0
+	return p == nil || p.KnobCount() == 0
 }
 
 func nowISO() string {

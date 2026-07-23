@@ -114,6 +114,7 @@ func TestEnrich_ExtractsShortDescription(t *testing.T) {
 }
 
 func TestEnrich_ReturnsRatings(t *testing.T) {
+	// Legacy bare-integer ratings shape must still parse (with empty reason).
 	content := `{"company_overview":"Acme","ratings":{"free_snacks":5,"ai_intensity":4}}`
 	calls := 0
 	srv, p := fakeCompletions(t, content, 200, &calls)
@@ -126,15 +127,36 @@ func TestEnrich_ReturnsRatings(t *testing.T) {
 	if len(ratings) != 2 {
 		t.Fatalf("ratings len=%d want 2: %v", len(ratings), ratings)
 	}
-	if ratings["free_snacks"] != 5 {
-		t.Errorf("free_snacks=%d want 5", ratings["free_snacks"])
+	if ratings["free_snacks"].Rating != 5 {
+		t.Errorf("free_snacks=%d want 5", ratings["free_snacks"].Rating)
 	}
-	if ratings["ai_intensity"] != 4 {
-		t.Errorf("ai_intensity=%d want 4", ratings["ai_intensity"])
+	if ratings["ai_intensity"].Rating != 4 {
+		t.Errorf("ai_intensity=%d want 4", ratings["ai_intensity"].Rating)
 	}
 	// System rubric (salary) must never appear in the rating map.
 	if _, ok := ratings["salary"]; ok {
 		t.Errorf("system rubric 'salary' must not be rated by LLM")
+	}
+}
+
+// TestEnrich_ReturnsRatingsWithReason verifies the current object ratings shape
+// {"id": {"rating": N, "reason": "..."}} parses both fields, so every dynamic
+// rubric carries the evidence-based reason the UI/CLI render next to the stars.
+func TestEnrich_ReturnsRatingsWithReason(t *testing.T) {
+	content := `{"ratings":{"preferred_tech":{"rating":5,"reason":"stack is Go and Postgres, both preferred"},"avoided_tech":{"rating":1,"reason":"posting requires PHP, which is avoided"}}}`
+	calls := 0
+	srv, p := fakeCompletions(t, content, 200, &calls)
+	defer srv.Close()
+	j := &models.JobPosting{Description: "d"}
+	_, ratings, err := Enrich(j, p, dynamicRubrics("preferred_tech", "avoided_tech"), nil)
+	if err != nil {
+		t.Fatalf("Enrich: %v", err)
+	}
+	if ratings["preferred_tech"].Rating != 5 || ratings["preferred_tech"].Reason != "stack is Go and Postgres, both preferred" {
+		t.Errorf("preferred_tech=%+v", ratings["preferred_tech"])
+	}
+	if ratings["avoided_tech"].Rating != 1 || ratings["avoided_tech"].Reason != "posting requires PHP, which is avoided" {
+		t.Errorf("avoided_tech=%+v", ratings["avoided_tech"])
 	}
 }
 
@@ -148,11 +170,11 @@ func TestEnrich_ClampsOutOfRangeRatings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Enrich: %v", err)
 	}
-	if ratings["free_snacks"] != 5 {
-		t.Errorf("free_snacks=%d want 5 (clamped)", ratings["free_snacks"])
+	if ratings["free_snacks"].Rating != 5 {
+		t.Errorf("free_snacks=%d want 5 (clamped)", ratings["free_snacks"].Rating)
 	}
-	if ratings["ai_intensity"] != 1 {
-		t.Errorf("ai_intensity=%d want 1 (clamped)", ratings["ai_intensity"])
+	if ratings["ai_intensity"].Rating != 1 {
+		t.Errorf("ai_intensity=%d want 1 (clamped)", ratings["ai_intensity"].Rating)
 	}
 }
 

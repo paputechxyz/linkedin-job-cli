@@ -1347,28 +1347,25 @@ const pageHTML = `<!DOCTYPE html>
   .fit-reason { color: var(--ink-1); }
 
   /* Per-rubric star breakdown inside the expandable Fit reason block. Mirrors
-     the skill.md format: "<id> <★★★★☆> (4/5, w5) <reason>". Grid columns keep
-     ids aligned, star bars intact, and reasons wrapped on one row each. */
-  .rubric-list { list-style: none; margin: 0; padding: 0; white-space: normal; display: grid; gap: 5px; }
-  .rubric {
-    display: grid;
-    grid-template-columns: minmax(96px, auto) auto 1fr;
-    align-items: baseline; gap: 4px 10px;
-    font-size: 0.8125rem; line-height: 1.4;
-  }
+     the skill.md format: "<id> <★★★★☆> (4/5) <reason>". The list is one shared
+     grid so every row's id column is the same width — stars line up regardless
+     of id length. Each .rubric li uses display:contents so its spans flow into
+     the shared grid instead of each row sizing its own columns. */
+  .rubric-list { list-style: none; margin: 0; padding: 0; white-space: normal; display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; row-gap: 5px; column-gap: 10px; font-size: 0.8125rem; line-height: 1.4; }
+  .rubric { display: contents; }
   .rubric-id {
     font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-2);
-    text-transform: lowercase; letter-spacing: 0.01em;
+    text-transform: lowercase; letter-spacing: 0.01em; white-space: nowrap;
   }
   .rubric-stars {
     font-family: var(--font-mono); letter-spacing: 1px; white-space: nowrap;
     color: var(--score-mid); font-size: 0.85rem;
   }
   @media (prefers-color-scheme: dark) { .rubric-stars { color: var(--score-mid); } }
-  .rubric-meta { color: var(--ink-3); font-size: 0.75rem; word-break: break-word; }
+  .rubric-meta { color: var(--ink-3); font-size: 0.75rem; word-break: break-word; min-width: 0; }
   @media (max-width: 560px) {
     /* Narrow cards: let the reason wrap under the id+stars row. */
-    .rubric { grid-template-columns: auto 1fr; }
+    .rubric-list { grid-template-columns: auto 1fr; }
     .rubric-meta { grid-column: 1 / -1; }
   }
 
@@ -1646,7 +1643,7 @@ const pageHTML = `<!DOCTYPE html>
                 <li class="rubric">
                   <span class="rubric-id">{{.ID}}</span>
                   <span class="rubric-stars" title="{{.Rating}} of 5">{{.Stars}}</span>
-                  <span class="rubric-meta">{{.Rating}}/5 · w{{.Weight}}{{if .Reason}} · {{.Reason}}{{end}}</span>
+                  <span class="rubric-meta">{{.Reason}}</span>
                 </li>
                 {{end}}
               </ul>

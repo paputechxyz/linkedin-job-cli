@@ -156,26 +156,14 @@ func ingest(jobs []*models.JobPosting, provider *llm.Provider, opts ingestOption
 
 // profileStatus renders a one-line summary of what profile context scoring will
 // use: a count of the structured preference knobs active in settings.yaml.
-// Reports the project dir the loader looked in.
+// Reports the project dir the loader looked in. The count comes from
+// Profile.KnobCount so it matches what `profile show` lists.
 func profileStatus(p *models.Profile) string {
 	dir := profileDir()
 	if profile.IsEmpty(p) {
 		return fmt.Sprintf("Profile: no profile knobs in %s (scoring without candidate context).", dir)
 	}
-	knobs := 0
-	if len(p.PrefWorkArrangement) > 0 {
-		knobs++
-	}
-	if p.PrefMinSalary != nil {
-		knobs++
-	}
-	if len(p.PrefPreferredTech) > 0 {
-		knobs++
-	}
-	if len(p.PrefAvoidedTech) > 0 {
-		knobs++
-	}
-	return fmt.Sprintf("Profile: loaded %d preference knob(s) from settings.yaml", knobs)
+	return fmt.Sprintf("Profile: loaded %d preference knob(s) from settings.yaml", p.KnobCount())
 }
 
 // profileDir returns the directory the profile loader looked in, for display.

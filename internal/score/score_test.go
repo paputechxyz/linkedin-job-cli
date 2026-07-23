@@ -45,10 +45,10 @@ func itoa(i int) string {
 
 // ratingsFor builds a dynamicRatings map giving every id in rubrics the same
 // rating.
-func ratingsFor(rubrics []config.Rubric, rating int) map[string]int {
-	m := make(map[string]int, len(rubrics))
+func ratingsFor(rubrics []config.Rubric, rating int) map[string]models.DynamicRating {
+	m := make(map[string]models.DynamicRating, len(rubrics))
 	for _, r := range rubrics {
-		m[r.ID] = rating
+		m[r.ID] = models.DynamicRating{Rating: rating}
 	}
 	return m
 }
@@ -61,7 +61,7 @@ func TestCompute_WeightedAverage(t *testing.T) {
 		dynRubric("a", 5),
 		dynRubric("b", 5),
 	}
-	ratings := map[string]int{"a": 4, "b": 5}
+	ratings := map[string]models.DynamicRating{"a": {Rating: 4}, "b": {Rating: 5}}
 	r := Compute(&models.JobPosting{}, &models.Profile{}, rubrics, ratings)
 	if r.Score != 90 {
 		t.Errorf("Score=%d want 90 (w5·r4 + w5·r5 → avg 4.5)", r.Score)
@@ -194,7 +194,7 @@ func TestCompute_WorkArrangementRating(t *testing.T) {
 func TestCompute_MissingDynamicRatingDefaultsNeutral(t *testing.T) {
 	// "team_fit" is absent from dynamicRatings → rating 3 → score 60.
 	rubrics := []config.Rubric{dynRubric("team_fit", 5)}
-	r := Compute(&models.JobPosting{}, &models.Profile{}, rubrics, map[string]int{})
+	r := Compute(&models.JobPosting{}, &models.Profile{}, rubrics, map[string]models.DynamicRating{})
 	if r.Score != 60 {
 		t.Errorf("Score=%d want 60 (missing dynamic rating defaults neutral)", r.Score)
 	}
@@ -216,7 +216,7 @@ func TestCompute_DynamicRatingClamped(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			rubrics := []config.Rubric{dynRubric("x", 5)}
-			r := Compute(&models.JobPosting{}, &models.Profile{}, rubrics, map[string]int{"x": tc.rating})
+			r := Compute(&models.JobPosting{}, &models.Profile{}, rubrics, map[string]models.DynamicRating{"x": {Rating: tc.rating}})
 			if r.Score != tc.wantScore {
 				t.Errorf("input=%d Score=%d want %d", tc.rating, r.Score, tc.wantScore)
 			}
@@ -238,7 +238,7 @@ func TestCompute_NoCaps(t *testing.T) {
 		dynRubric("avoid_tech", 5),
 		dynRubric("great_fit", 5),
 	}
-	ratings := map[string]int{"avoid_tech": 1, "great_fit": 5}
+	ratings := map[string]models.DynamicRating{"avoid_tech": {Rating: 1}, "great_fit": {Rating: 5}}
 	r := Compute(j, prof, rubrics, ratings)
 	// avg = (5·1 + 5·5)/10 = 3.0 → 60. Pure weighted average, no cap applied.
 	if r.Score != 60 {
@@ -260,7 +260,7 @@ func TestCompute_AppliesToSkipsRemote(t *testing.T) {
 		dynRubric("a", 5),
 		{ID: "location_proximity", Kind: "dynamic", Weight: 5, AppliesTo: []string{"hybrid", "onsite"}},
 	}
-	ratings := map[string]int{"a": 5, "location_proximity": 5}
+	ratings := map[string]models.DynamicRating{"a": {Rating: 5}, "location_proximity": {Rating: 5}}
 	remoteJob := &models.JobPosting{Location: "Remote"}
 	r := Compute(remoteJob, &models.Profile{}, rubrics, ratings)
 	if r.Score != 100 {
@@ -277,7 +277,7 @@ func TestCompute_AppliesToKeepsForHybrid(t *testing.T) {
 		dynRubric("a", 5),
 		{ID: "location_proximity", Kind: "dynamic", Weight: 5, AppliesTo: []string{"hybrid", "onsite"}},
 	}
-	ratings := map[string]int{"a": 5, "location_proximity": 3}
+	ratings := map[string]models.DynamicRating{"a": {Rating: 5}, "location_proximity": {Rating: 3}}
 	hybridJob := &models.JobPosting{Location: "Hybrid · Toronto"}
 	r := Compute(hybridJob, &models.Profile{}, rubrics, ratings)
 	// avg = (5·5 + 5·3)/10 = 4.0 → 80. If location_proximity were wrongly
@@ -297,7 +297,7 @@ func TestCompute_AppliesToUnknownArrangementKeeps(t *testing.T) {
 		{ID: "loc", Kind: "dynamic", Weight: 5, AppliesTo: []string{"hybrid"}},
 	}
 	unknownJob := &models.JobPosting{Location: "New York, NY"} // no arrangement keyword
-	r := Compute(unknownJob, &models.Profile{}, rubrics, map[string]int{"loc": 5})
+	r := Compute(unknownJob, &models.Profile{}, rubrics, map[string]models.DynamicRating{"loc": {Rating: 5}})
 	if r.Score != 100 {
 		t.Errorf("unknown-arrangement Score=%d want 100 (rubric kept, not excluded)", r.Score)
 	}
@@ -339,12 +339,29 @@ func TestCompute_EmptyRubrics(t *testing.T) {
 
 func TestCompute_NilJob(t *testing.T) {
 	rubrics := []config.Rubric{dynRubric("a", 5)}
-	r := Compute(nil, &models.Profile{}, rubrics, map[string]int{"a": 5})
+	r := Compute(nil, &models.Profile{}, rubrics, map[string]models.DynamicRating{"a": {Rating: 5}})
 	if r.Score != 0 {
 		t.Errorf("nil job Score=%d want 0", r.Score)
 	}
 	if len(r.Rubrics) != 0 {
 		t.Errorf("nil job should produce no rubric scores, got %d", len(r.Rubrics))
+	}
+}
+
+// TestCompute_DynamicReasonCarriedThrough verifies that an LLM-supplied reason
+// for a dynamic rubric reaches the RubricScore result (so the UI/CLI can show
+// why every rating landed where it did, not just the system rubrics).
+func TestCompute_DynamicReasonCarriedThrough(t *testing.T) {
+	rubrics := []config.Rubric{dynRubric("preferred_tech", 5)}
+	ratings := map[string]models.DynamicRating{
+		"preferred_tech": {Rating: 5, Reason: "stack matches Go + Postgres preferences"},
+	}
+	r := Compute(&models.JobPosting{}, &models.Profile{}, rubrics, ratings)
+	if len(r.Rubrics) != 1 {
+		t.Fatalf("want 1 rubric, got %d", len(r.Rubrics))
+	}
+	if r.Rubrics[0].Reason != "stack matches Go + Postgres preferences" {
+		t.Errorf("dynamic reason not carried through, got %q", r.Rubrics[0].Reason)
 	}
 }
 

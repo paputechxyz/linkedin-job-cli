@@ -1,7 +1,7 @@
 ---
 name: linkedin-jobs
 description: "Use when the user wants to search, fetch, score, or manage LinkedIn job postings — pull their personalized recommended feed, search the public job board, score fit against their preferences, find who to reach out to for a job, manage a job pipeline, or configure their job-search profile. Wraps the linkedin-jobs CLI."
-version: 0.1.45
+version: 0.1.47
 author: Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]

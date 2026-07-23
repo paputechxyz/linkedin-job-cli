@@ -56,12 +56,12 @@ const NeutralRating = RatingNeutral
 // Compute derives the fit score from the rubric set. System rubrics are rated
 // here in Go; dynamic rubrics take their rating from dynamicRatings (defaulting
 // to neutral when absent). The weighted average is mapped to 0–100.
-func Compute(job *models.JobPosting, profile *models.Profile, rubrics []config.Rubric, dynamicRatings map[string]int) Result {
+func Compute(job *models.JobPosting, profile *models.Profile, rubrics []config.Rubric, dynamicRatings map[string]models.DynamicRating) Result {
 	if job == nil || len(rubrics) == 0 {
 		return Result{}
 	}
 	if dynamicRatings == nil {
-		dynamicRatings = map[string]int{}
+		dynamicRatings = map[string]models.DynamicRating{}
 	}
 
 	out := Result{Rubrics: make([]RubricScore, 0, len(rubrics))}
@@ -90,7 +90,7 @@ func Compute(job *models.JobPosting, profile *models.Profile, rubrics []config.R
 }
 
 // rateRubric returns the 1–5 rating and a short reason for one rubric.
-func rateRubric(r config.Rubric, job *models.JobPosting, profile *models.Profile, dynamicRatings map[string]int) (int, string) {
+func rateRubric(r config.Rubric, job *models.JobPosting, profile *models.Profile, dynamicRatings map[string]models.DynamicRating) (int, string) {
 	if r.Kind == "system" {
 		switch r.ID {
 		case config.RubricSalary:
@@ -100,15 +100,17 @@ func rateRubric(r config.Rubric, job *models.JobPosting, profile *models.Profile
 		}
 	}
 	// Dynamic rubric (or an unrecognized system id): take the LLM rating,
-	// defaulting to neutral when absent.
+	// defaulting to neutral when absent. The LLM-supplied reason is carried
+	// through so the UI/CLI can show why the rubric scored as it did.
 	if v, ok := dynamicRatings[r.ID]; ok {
-		if v < RatingMiss {
-			v = RatingMiss
+		rating := v.Rating
+		if rating < RatingMiss {
+			rating = RatingMiss
 		}
-		if v > RatingStrong {
-			v = RatingStrong
+		if rating > RatingStrong {
+			rating = RatingStrong
 		}
-		return v, ""
+		return rating, v.Reason
 	}
 	return NeutralRating, "not rated"
 }
