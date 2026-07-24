@@ -1,0 +1,57 @@
+# GoReleaser config for linkedin-jobs.
+#
+# Published by the `release` GitHub Actions workflow: release-please creates the
+# git tag + GitHub Release, then GoReleaser runs with `--skip=publish` (builds
+# artifacts only) and the workflow attaches the binaries + checksums.txt to the
+# release via `gh release upload`.
+#
+# Asset names are pinned to `linkedin-jobs_<os>_<arch>[.exe]` so the CLI's own
+# self-update (`cmd/update.go` `platformAsset()`) and the skill installer
+# (`hermes-skill/scripts/install-cli.sh`) resolve the same filenames.
+version: 2
+
+project_name: linkedin-jobs
+
+builds:
+  - id: linkedin-jobs
+    main: .
+    binary: linkedin-jobs
+    # Pure-Go SQLite driver (modernc.org/sqlite) → static, portable binaries.
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # Match the platforms the project has always shipped (no windows/arm64).
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w -X linkedin-jobs/cmd.Version={{.Version}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: default
+    # Ship raw binaries (not tar/zip) so filenames match `platformAsset()`.
+    # The `binary` format auto-appends `.exe` on windows.
+    formats: [binary]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-dev"
+
+# Publishing is intentionally NOT done by GoReleaser: the `release` GitHub
+# Actions workflow runs `goreleaser release --clean --skip=publish` (build
+# artifacts only), then attaches the binaries + checksums.txt to the release
+# that release-please created, via `gh release upload`. This keeps a single
+# owner (release-please) of the GitHub Release object.
+
+dist: dist

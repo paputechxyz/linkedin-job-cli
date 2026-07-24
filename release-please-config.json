@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    ".": {
+      "release-type": "go",
+      "package-name": "linkedin-jobs",
+      "extra-files": [
+        "hermes-skill/SKILL.md",
+        "hermes-skill/scripts/install-cli.sh"
+      ]
+    }
+  }
+}

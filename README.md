@@ -66,7 +66,7 @@ hermes skills install paputechxyz/linkedin-job-cli/hermes-skill
 
 Start a **new agent session** after installing — skills load at session start,
 not mid-session. The first time you use it, the skill detects if the
-`linkedin-jobs` binary is missing, downloads the latest release into
+`linkedin-jobs` binary is missing, downloads a pinned, checksum-verified release into
 `~/.local/bin`, and walks you through setup (LLM provider, LinkedIn session). Browse it on [skills.sh](https://www.skills.sh/paputechxyz/linkedin-job-cli/linkedin-jobs).
 
 #### Update
@@ -111,10 +111,20 @@ rm -rf ~/.linkedin-jobs        # config, cache, db
 If you don't use an agent, or want the binary on `PATH` yourself:
 
 - **Prebuilt binary** — download the asset for your platform from the
-[latest release](https://github.com/paputechxyz/linkedin-job-cli/releases/latest),
-put it on `PATH` (e.g. `~/.local/bin`), and `chmod +x` it. Assets:
-`linkedin-jobs_{darwin,linux}_{arm64,amd64}` and
-`linkedin-jobs_windows_amd64.exe`.
+  [latest release](https://github.com/paputechxyz/linkedin-job-cli/releases/latest),
+  verify it against the release's `checksums.txt`, put it on `PATH`
+  (e.g. `~/.local/bin`), and `chmod +x` it. Assets:
+  `linkedin-jobs_{darwin,linux}_{arm64,amd64}` and
+  `linkedin-jobs_windows_amd64.exe`:
+  ```bash
+  LJ_VER=$(curl -fsSL https://api.github.com/repos/paputechxyz/linkedin-job-cli/releases/latest | jq -r .tag_name | sed 's/^v//')
+  asset="linkedin-jobs_$(uname -s | tr A-Z a-z | sed 's/mingw.*\|msys\|cygwin/windows/')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
+  base="https://github.com/paputechxyz/linkedin-job-cli/releases/download/v${LJ_VER}"
+  curl -fL -o "$asset" "$base/$asset"
+  curl -fsSL -o checksums.txt "$base/checksums.txt"
+  grep "  $asset\$" checksums.txt | sha256sum -c -   # verify (shasum -a 256 on macOS)
+  install -m 0755 "$asset" ~/.local/bin/linkedin-jobs
+  ```
 - **From source** — requires Go 1.26+:
   ```bash
   just build

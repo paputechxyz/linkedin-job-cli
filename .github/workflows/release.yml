@@ -1,0 +1,89 @@
+name: release
+
+# Automated release pipeline.
+#
+# release-please (job 1) reads Conventional Commit messages merged to main,
+# maintains a "release PR" that bumps the CHANGELOG + the version strings in
+# hermes-skill/SKILL.md and hermes-skill/scripts/install-cli.sh (configured in
+# release-please-config.json), and — when that release PR is merged — creates the
+# git tag vX.Y.Z and the GitHub Release with a generated changelog.
+#
+# When a release is created, job 2 checks out the tag, cross-compiles the CLI
+# with GoReleaser (--skip=publish: build only), then attaches the platform
+# binaries + checksums.txt to the release release-please just created.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    name: release-please (release PR + tag + release)
+    runs-on: ubuntu-latest
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
+
+  release-assets:
+    name: build + attach binaries and checksums
+    needs: release-please
+    if: needs.release-please.outputs.releases_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build cross-platform binaries (GoReleaser, no publish)
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
+        with:
+          version: latest
+          # Build artifacts only; the GitHub Release is owned by release-please.
+          # We attach the binaries + checksums.txt ourselves with `gh` below.
+          args: release --clean --skip=publish
+
+      - name: Flatten binaries to publish names + upload to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          # GoReleaser's binary archive format leaves each platform's binary in a
+          # per-target subdir (dist/linkedin-jobs_<os>_<arch>_<v>/) but lists the
+          # flat publish name in checksums.txt. Copy each binary to its publish
+          # name so the file set matches checksums.txt, then upload.
+          while read -r sha f; do
+            base="${f%.exe}"
+            bin="linkedin-jobs"
+            case "$f" in *.exe) bin="linkedin-jobs.exe";; esac
+            cp "dist/${base}"_*/"$bin" "dist/$f"
+          done < dist/checksums.txt
+
+          files=""
+          while read -r sha f; do files="$files dist/$f"; done < dist/checksums.txt
+          gh release upload "$TAG" $files dist/checksums.txt --clobber
+
+      - name: Summary
+        run: |
+          echo "### Released ${{ needs.release-please.outputs.tag_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Attached binaries + checksums.txt:" >> "$GITHUB_STEP_SUMMARY"
+          awk '{print "- `" $2 "`"}' dist/checksums.txt >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`checksums.txt\`" >> "$GITHUB_STEP_SUMMARY"
