@@ -54,7 +54,7 @@ jobs:
       - name: Build cross-platform binaries (GoReleaser, no publish)
         uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:
-          version: latest
+          version: ~> v2
           # Build artifacts only; the GitHub Release is owned by release-please.
           # We attach the binaries + checksums.txt ourselves with `gh` below.
           args: release --clean --skip=publish
