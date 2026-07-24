@@ -68,8 +68,8 @@ first unresolved gate and guide the user through it before continuing.
    Re-run `linkedin-jobs config show` to confirm the resolved provider (key redacted). See `references/auth-config.md` → "LLM Configuration".
 
 4. **Set up the LinkedIn session (only if `recommended` or `url` will be used).** From the `LJ_COOKIES_FILE` line in `doctor` output: if it shows `(unset)` AND the default `~/.linkedin-jobs/cookies.txt` doesn't exist, the session is missing.
-   - **macOS + Chrome (preferred):** tell the user to run `linkedin-jobs auth login`. It reads cookies silently from Chrome (or launches a guided login window) and writes `~/.linkedin-jobs/cookies.txt`. The first run triggers a macOS keychain prompt — tell the user to click "Always Allow". After they confirm it ran, re-check with `linkedin-jobs auth status` (should show "Session available").
-   - **Headless / non-macOS / CI:** the user exports `LJ_COOKIES_FILE=/path/to/cookies.txt` (raw `Cookie:` header or Netscape `cookies.txt` format) or `LJ_COOKIE="li_at=...; JSESSIONID=..."`.
+   - **macOS or Windows + Chrome (preferred):** tell the user to run `linkedin-jobs auth login`. It reads cookies silently from Chrome (or launches a guided login window) and writes `~/.linkedin-jobs/cookies.txt`. On macOS the first run triggers a keychain prompt — tell the user to click "Always Allow" (Windows DPAPI needs no prompt). After they confirm it ran, re-check with `linkedin-jobs auth status` (should show "Session available").
+   - **Headless / Linux / CI:** the user exports `LJ_COOKIES_FILE=/path/to/cookies.txt` (raw `Cookie:` header or Netscape `cookies.txt` format) or `LJ_COOKIE="li_at=...; JSESSIONID=..."`.
    - **Cookie resolution priority** (first match wins): `LJ_COOKIE` → `LJ_COOKIES_FILE` → `~/.linkedin-jobs/cookies.txt` (default, written by `auth login`). Never assume a path — always verify with `doctor`.
    - **Do NOT silently fall back to anonymous `search`** when the session is missing — that returns irrelevant global results. See Pitfall #1.
 
@@ -116,7 +116,7 @@ Commands grouped by intent. Auth column: **auth** = requires LinkedIn session, *
 | `config show` | Show resolved LLM provider + settings | — | text |
 | `config path` | Print settings/db file locations | — | text |
 | `doctor` | Diagnose config completeness | — | text |
-| `auth login` | Capture LinkedIn session from Chrome or guided browser login (macOS) | — | text |
+| `auth login` | Capture LinkedIn session from Chrome or guided browser login (macOS/Windows) | — | text |
 | `auth status` | Check LinkedIn session availability | — | text |
 | `version` | Print CLI version | — | text |
 | **Web UI** | | | |
@@ -152,7 +152,7 @@ they finish, re-check with `doctor` and proceed to Recipe #2.
 `doctor` → confirm session is available (look for `LJ_COOKIES_FILE` under `== Environment ==`, or the default `~/.linkedin-jobs/cookies.txt`; if unset and no default file, stop and tell the user — see Pitfall #1; **do not fall back to `search`**) → `recommended --json --top 25` → summarize top-N by fit score → offer to `tag` strong matches `saved`. **Always prefer `recommended` over `search` for personalized results.** `search` is a fallback for users with no session, not a default.
 
 ### 2a. Set up auth (first time or expired session)
-`auth status` → if "No session" or "incomplete": tell the user to run `linkedin-jobs auth login` in their terminal (macOS + Chrome). Explain: it reads cookies silently from Chrome (no browser opens if already logged in), or launches a guided Chrome window for login. First run triggers a macOS keychain prompt — click "Always Allow". After they confirm it ran, re-check: `auth status` → should show "Session available [source: login]". Then proceed to Recipe #2.
+`auth status` → if "No session" or "incomplete": tell the user to run `linkedin-jobs auth login` in their terminal (macOS or Windows + Chrome). Explain: it reads cookies silently from Chrome (no browser opens if already logged in), or launches a guided Chrome window for login. On macOS the first run triggers a keychain prompt — click "Always Allow" (Windows DPAPI needs no prompt). After they confirm it ran, re-check: `auth status` → should show "Session available [source: login]". Then proceed to Recipe #2.
 
 ### 3. Search anonymous (only when no session is available)
 `search "Staff Engineer" --location Toronto --json --top 25` → summarize results. Use `--remote`/`--hybrid`/`--onsite` for workplace-type filtering. **Only use this when the user has explicitly opted out of cookies** — see Pitfall #1. Default to Recipe #2 (`recommended`) whenever `LJ_COOKIES_FILE` is set.
@@ -212,8 +212,8 @@ Rubrics:
 
    **Do NOT silently fall back to anonymous `search` when the session is missing.** This is the single most common failure mode: the agent sees "no session", decides `recommended` is unavailable, and downgrades the user to a global anonymous search that returns irrelevant jobs in distant locations. That is the wrong behavior. When `doctor` shows `LJ_COOKIES_FILE = (unset)` and no default cookies file exists:
       1. Stop and tell the user: "Your LinkedIn session isn't set up."
-      2. **Recommend `linkedin-jobs auth login` (macOS + Chrome)** — it captures the session automatically with no manual cookie export. Tell the user to run it in their terminal: it reads from Chrome silently (or opens a guided login window), then writes `~/.linkedin-jobs/cookies.txt`. After they run it, re-check with `auth status`.
-      3. **For headless / non-macOS / CI:** the user must export `LJ_COOKIES_FILE=/path/to/their/linkedin_cookie.txt` in the agent's shell, or paste the path so you can prefix the command: `LJ_COOKIES_FILE=<path> linkedin-jobs recommended ...`.
+      2. **Recommend `linkedin-jobs auth login` (macOS or Windows + Chrome)** — it captures the session automatically with no manual cookie export. Tell the user to run it in their terminal: it reads from Chrome silently (or opens a guided login window), then writes `~/.linkedin-jobs/cookies.txt`. After they run it, re-check with `auth status`.
+      3. **For headless / Linux / CI:** the user must export `LJ_COOKIES_FILE=/path/to/their/linkedin_cookie.txt` in the agent's shell, or paste the path so you can prefix the command: `LJ_COOKIES_FILE=<path> linkedin-jobs recommended ...`.
       4. Re-run `doctor` or `auth status` to confirm the session now resolves, THEN proceed with `recommended`.
       5. Only fall back to anonymous `search` if the user explicitly says "just search anonymously" or "I don't have cookies." Never decide that for them.
 

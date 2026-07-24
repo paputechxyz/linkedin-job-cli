@@ -18,7 +18,7 @@ The CSRF token is derived automatically from the `JSESSIONID` cookie. The CLI ch
 
 ### Browser-based login (`auth login`)
 
-**macOS + Chrome only.** The easiest way to set up a session — no manual cookie export needed.
+**macOS & Windows + Chrome.** The easiest way to set up a session — no manual cookie export needed.
 
 ```bash
 linkedin-jobs auth login
@@ -28,10 +28,10 @@ linkedin-jobs auth login
 
 The CLI reads cookies directly from Chrome's encrypted cookie database on disk:
 
-1. Locates `~/Library/Application Support/Google/Chrome/Default/Network/Cookies`.
+1. Locates the cookie DB — macOS: `~/Library/Application Support/Google/Chrome/Default/Network/Cookies`; Windows: `%LOCALAPPDATA%\Google\Chrome\User Data\Default\Network\Cookies`.
 2. Copies it to a temp dir (Chrome locks the file while running; WAL sidecars included).
-3. Retrieves the Chrome "Safe Storage" passphrase from the macOS Keychain (`security find-generic-password`). **First run triggers a keychain prompt** — the user clicks "Always Allow" for silent future runs.
-4. Decrypts each LinkedIn cookie: PBKDF2-HMAC-SHA1 (salt `saltysalt`, 1003 iterations) → AES-128-CBC (IV of 16 spaces) → PKCS7 unpad. Chrome 130+ (DB v24) prepends a SHA256 host digest that is stripped automatically.
+3. Retrieves the Chrome cookie key from the OS secret store. **macOS:** `Chrome Safe Storage` passphrase via the Keychain (`security find-generic-password`) — first run triggers a keychain prompt, the user clicks "Always Allow". **Windows:** the AES key in Chrome's `Local State`, base64-decoded, `DPAPI`-prefix-stripped, and unprotected via `CryptUnprotectData` (no prompt).
+4. Decrypts each LinkedIn cookie. **macOS:** PBKDF2-HMAC-SHA1 (salt `saltysalt`, 1003 iterations) → AES-128-CBC (IV of 16 spaces) → PKCS7 unpad. **Windows:** AES-256-GCM (`v10` || nonce(12) || ciphertext || tag(16)) with the DPAPI-unprotected key. Chrome 130+ (DB v24) prepends a SHA256 host digest that is stripped automatically on both platforms.
 5. `li_at` (auth token) is persisted to disk and usually present. `JSESSIONID` (CSRF source) is session-only and often absent — when missing, the CLI fetches a fresh one via HTTP GET to `https://www.linkedin.com/` with `li_at` and reads it from `Set-Cookie`.
 6. If both are present → session assembled and written. **No browser opens.**
 
@@ -51,7 +51,7 @@ LinkedIn may challenge a fresh managed profile on first login (email/SMS verific
 
 **Refreshing:** re-run `auth login` when `auth status` reports an incomplete/stale session.
 
-### Manual cookie setup (headless, non-macOS, CI)
+### Manual cookie setup (headless, non-macOS/Windows, CI)
 
 For environments without a browser, export cookies manually and set an env var:
 
@@ -73,7 +73,7 @@ linkedin-jobs auth status     # fast mid-session boolean check. Only meaningful
                               # the session is set up.
 ```
 
-**If `doctor` shows no session:** recommend `auth login` on macOS. For non-macOS or headless, the user must export `LJ_COOKIES_FILE` or `LJ_COOKIE` in the agent's shell. Do **not** silently fall back to anonymous `search`; that yields irrelevant global results. See SKILL.md Pitfall #1.
+**If `doctor` shows no session:** recommend `auth login` on macOS or Windows. For other platforms or headless, the user must export `LJ_COOKIES_FILE` or `LJ_COOKIE` in the agent's shell. Do **not** silently fall back to anonymous `search`; that yields irrelevant global results. See SKILL.md Pitfall #1.
 
 **Security:** LinkedIn session cookies enable full account takeover. The cookies file has `0600` permissions in a user-only directory. Treat it with the same care as SSH private keys. The agent must never `cat`, `echo`, or transmit the file contents — use `doctor` / `auth status` for session checks only.
 

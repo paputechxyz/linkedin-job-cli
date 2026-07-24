@@ -1,43 +1,29 @@
 package auth
 
 import (
-	"bytes"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/sha1"
 	"database/sql"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
-
-	"golang.org/x/crypto/pbkdf2"
 
 	_ "modernc.org/sqlite"
 )
 
 // ErrUnsupportedPlatform is returned when browser capture is attempted on a
-// platform other than macOS.
-var ErrUnsupportedPlatform = errors.New("browser capture is only supported on macOS with Chrome")
-
-const (
-	chromeSalt       = "saltysalt"
-	chromeIterations = 1003
-	chromeKeyLen     = 16
-)
+// platform other than macOS or Windows.
+var ErrUnsupportedPlatform = errors.New("browser capture is only supported on macOS or Windows with Chrome")
 
 // ReadChromeCookies reads LinkedIn cookies from the local Chrome cookie store
-// on macOS. It decrypts values using the macOS Keychain and fetches JSESSIONID
-// via HTTP when it is absent from the DB (session-only cookies are not
-// persisted to disk).
+// on macOS or Windows. It decrypts values using the OS-native secret store
+// (macOS Keychain / Windows DPAPI) and fetches JSESSIONID via HTTP when it is
+// absent from the DB (session-only cookies are not persisted to disk).
 func ReadChromeCookies() (map[string]string, error) {
-	if runtime.GOOS != "darwin" {
+	if !browserCaptureSupported() {
 		return nil, ErrUnsupportedPlatform
 	}
 
@@ -70,11 +56,10 @@ func ReadChromeCookies() (map[string]string, error) {
 
 	dbVersion := getDBVersion(db)
 
-	pass, err := keychainPassphrase()
+	key, err := chromeCookieKey()
 	if err != nil {
-		return nil, fmt.Errorf("keychain: %w", err)
+		return nil, err
 	}
-	key := deriveAESKey(pass)
 
 	cookies, err := queryCookies(db, key, dbVersion)
 	if err != nil {
@@ -92,88 +77,8 @@ func ReadChromeCookies() (map[string]string, error) {
 	return cookies, nil
 }
 
-// chromeCookieDBPath returns the path to Chrome's cookie database, checking
-// both the Chrome 96+ location (under Network/) and the legacy location.
-func chromeCookieDBPath() string {
-	home, _ := os.UserHomeDir()
-	candidates := []string{
-		filepath.Join(home, "Library", "Application Support", "Google", "Chrome", "Default", "Network", "Cookies"),
-		filepath.Join(home, "Library", "Application Support", "Google", "Chrome", "Default", "Cookies"),
-	}
-	for _, p := range candidates {
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
-	}
-	return candidates[0]
-}
-
-// keychainPassphrase retrieves the Chrome Safe Storage passphrase from the
-// macOS Keychain via the `security` CLI.
-func keychainPassphrase() ([]byte, error) {
-	out, err := exec.Command("security", "find-generic-password",
-		"-w", "-s", "Chrome Safe Storage", "-a", "Chrome").Output()
-	if err != nil {
-		return nil, err
-	}
-	return bytes.TrimRight(out, "\n"), nil
-}
-
-// deriveAESKey derives the AES-128 decryption key from the Chrome Safe Storage
-// passphrase using PBKDF2-HMAC-SHA1.
-func deriveAESKey(pass []byte) []byte {
-	return pbkdf2.Key(pass, []byte(chromeSalt), chromeIterations, chromeKeyLen, sha1.New)
-}
-
-// decryptCookieValue decrypts a Chrome cookie encrypted_value blob. It strips
-// the v10/v11 prefix, AES-128-CBC decrypts with a fixed IV (16 spaces), removes
-// PKCS7 padding, and strips the SHA256(host_key) prefix on DB version >= 24.
-func decryptCookieValue(enc, key []byte, dbVersion int) (string, error) {
-	if len(enc) == 0 {
-		return "", nil
-	}
-	if len(enc) < 3 || enc[0] != 'v' || enc[1] != '1' || (enc[2] != '0' && enc[2] != '1') {
-		return string(enc), nil
-	}
-	body := enc[3:]
-	if len(body) == 0 || len(body)%aes.BlockSize != 0 {
-		return "", fmt.Errorf("encrypted value has invalid length %d", len(body))
-	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", err
-	}
-	iv := bytes.Repeat([]byte{0x20}, 16)
-	pt := make([]byte, len(body))
-	cipher.NewCBCDecrypter(block, iv).CryptBlocks(pt, body)
-	pt, err = pkcs7Unpad(pt)
-	if err != nil {
-		return "", err
-	}
-	if dbVersion >= 24 && len(pt) >= 32 {
-		pt = pt[32:]
-	}
-	return string(pt), nil
-}
-
-func pkcs7Unpad(data []byte) ([]byte, error) {
-	if len(data) == 0 {
-		return nil, errors.New("empty data")
-	}
-	p := int(data[len(data)-1])
-	if p < 1 || p > aes.BlockSize || p > len(data) {
-		return nil, fmt.Errorf("invalid PKCS7 padding byte %d", p)
-	}
-	for _, b := range data[len(data)-p:] {
-		if int(b) != p {
-			return nil, errors.New("invalid PKCS7 padding")
-		}
-	}
-	return data[:len(data)-p], nil
-}
-
 // queryCookies reads all linkedin.com cookies from the database and decrypts
-// their values.
+// their values. Decryption is platform-specific (see decryptCookieValue).
 func queryCookies(db *sql.DB, key []byte, dbVersion int) (map[string]string, error) {
 	rows, err := db.Query(`SELECT name, encrypted_value, value FROM cookies WHERE host_key LIKE '%linkedin.com'`)
 	if err != nil {

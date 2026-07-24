@@ -64,6 +64,44 @@ func TestRunAuthLoginNonMacOS(t *testing.T) {
 	}
 }
 
+func TestRunAuthLoginWindowsSilentSuccess(t *testing.T) {
+	origGOOS := runtimeGOOS
+	runtimeGOOS = "windows"
+	defer func() { runtimeGOOS = origGOOS }()
+
+	tmpFile := filepath.Join(t.TempDir(), "cookies.txt")
+	os.Setenv("LJ_COOKIES_FILE", tmpFile)
+	defer os.Unsetenv("LJ_COOKIES_FILE")
+
+	origRead := readChromeCookies
+	readChromeCookies = func() (map[string]string, error) {
+		return map[string]string{"li_at": "win", "JSESSIONID": "ajax:w"}, nil
+	}
+	defer func() { readChromeCookies = origRead }()
+
+	browserCalled := false
+	origLogin := loginViaBrowser
+	loginViaBrowser = func(string, time.Duration) (map[string]string, error) {
+		browserCalled = true
+		return nil, nil
+	}
+	defer func() { loginViaBrowser = origLogin }()
+
+	if err := runAuthLogin(nil, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if browserCalled {
+		t.Error("loginViaBrowser should not be called when silent read succeeds")
+	}
+	data, err := os.ReadFile(tmpFile)
+	if err != nil {
+		t.Fatalf("cookies file not written: %v", err)
+	}
+	if !strings.Contains(string(data), "li_at=win") {
+		t.Errorf("cookies file does not contain li_at: %s", string(data))
+	}
+}
+
 func TestRunAuthLoginSilentSuccess(t *testing.T) {
 	origGOOS := runtimeGOOS
 	runtimeGOOS = "darwin"

@@ -104,7 +104,7 @@ are stale), it launches a Chrome window so you can log in to LinkedIn, then
 captures the session automatically.
 
 The captured session is written to a cookies file that 'recommended' and 'url'
-use automatically. On macOS with Chrome, this is the easiest way to authenticate.
+use automatically. On macOS or Windows with Chrome, this is the easiest way to authenticate.
 
 The existing LJ_COOKIE / LJ_COOKIES_FILE env path still takes priority for
 headless and agent use.`,
@@ -112,8 +112,8 @@ headless and agent use.`,
 }
 
 func runAuthLogin(cmd *cobra.Command, args []string) error {
-	if runtimeGOOS != "darwin" {
-		fmt.Println("Browser capture is only supported on macOS.")
+	if runtimeGOOS != "darwin" && runtimeGOOS != "windows" {
+		fmt.Println("Browser capture is supported on macOS and Windows.")
 		fmt.Println("See the README for setting up a session on other platforms.")
 		return nil
 	}

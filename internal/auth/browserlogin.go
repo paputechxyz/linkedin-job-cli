@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -18,12 +17,9 @@ import (
 // LoginViaBrowser launches a headed Chrome with a managed persistent profile,
 // navigates to LinkedIn, and waits for the user to log in. Once the li_at
 // cookie appears, it captures all linkedin.com cookies and returns them.
-// The browser is closed when the function returns.
+// The browser is closed when the function returns. Works on macOS and Windows
+// (and any platform with Chrome installed via chromedp).
 func LoginViaBrowser(profileDir string, timeout time.Duration) (map[string]string, error) {
-	if runtime.GOOS != "darwin" {
-		return nil, ErrUnsupportedPlatform
-	}
-
 	if err := os.MkdirAll(profileDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create profile dir: %w", err)
 	}

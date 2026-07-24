@@ -135,7 +135,7 @@ operations, workflow recipes, and common pitfalls.
 
 `recommended` and `url` use your LinkedIn session. `search` works without it.
 
-### Easy way: `auth login` (macOS + Chrome)
+### Easy way: `auth login` (macOS & Windows + Chrome)
 
 If you're already logged into LinkedIn in Chrome, the CLI grabs your session
 automatically — no cookie extensions, no DevTools:
@@ -150,7 +150,7 @@ linkedin-jobs auth login
 
 1. The CLI locates Chrome's encrypted cookie database
 2. Chrome holds a lock on this file while running, so the CLI copies it to a temp directory, then opens the copy read-only.
-3. It retrieves the Chrome "Safe Storage" passphrase from the macOS Keychain. **The first time, macOS shows a keychain prompt** — click **Always Allow** so every future run is silent.
+3. It retrieves the Chrome cookie key from the OS secret store — the **macOS Keychain** (`Chrome Safe Storage` passphrase) on macOS, or **Windows DPAPI** (the AES key in Chrome's `Local State`, unprotected via `CryptUnprotectData`) on Windows. **On macOS the first run shows a keychain prompt** — click **Always Allow** so every future run is silent. Windows DPAPI needs no prompt.
 
 **Stage 2 — guided browser login (fallback):**
 
