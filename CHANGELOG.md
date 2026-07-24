@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/paputechxyz/linkedin-job-cli/compare/v0.2.0...v0.3.0) (2026-07-24)
+
+
+### Features
+
+* cosign-sign releases + checksum-verified self-update ([554a05a](https://github.com/paputechxyz/linkedin-job-cli/commit/554a05a94ff74874908e283f697d94d32189f62c))
+* cosign-sign releases + checksum-verified self-update ([57ef0ba](https://github.com/paputechxyz/linkedin-job-cli/commit/57ef0ba650153eeb5cdf3a378f28ad108b90818a))
+
 ## [0.2.0](https://github.com/paputechxyz/linkedin-job-cli/compare/v0.1.51...v0.2.0) (2026-07-24)
 
 
