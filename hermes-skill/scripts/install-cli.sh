@@ -16,7 +16,7 @@ set -euo pipefail
 
 REPO="paputechxyz/linkedin-job-cli"
 BINARY_NAME="linkedin-jobs"
-VERSION="0.1.51"
+VERSION="0.2.0"
 INSTALL_DIR="${LJ_INSTALL_DIR:-${HOME}/.local/bin}"
 
 # --- detect platform → GOOS/GOARCH (matches the release asset names) ---
