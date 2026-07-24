@@ -506,6 +506,42 @@ internal/
   store/                   SQLite + FTS5 persistence + content-hash dedup
 ```
 
+## Releasing
+
+Releases are automated by [release-please](https://github.com/googleapis/release-please)
+(see `.github/workflows/release.yml` and `release-please-config.json`). Merge a
+[Conventional Commit](https://www.conventionalcommits.org/) to `main` and
+release-please opens a "release PR"; merge that PR and it tags `vX.Y.Z`, builds
+the platform binaries with GoReleaser, keyless-signs `checksums.txt` with
+cosign, and attaches binaries + checksums + signature to the GitHub Release.
+The skill installer's version pin then auto-advances to the new tag (via the
+`sync-version-pin` job).
+
+Which commit **type** triggers a release (release-please's default strategy):
+
+| Type                                        | Bump    | Example                              |
+| ------------------------------------------- | ------- | ------------------------------------ |
+| `feat:` / `feat(scope):`                    | minor   | `feat: add csv export`               |
+| `fix:` / `fix(scope):`                      | patch   | `fix: stop double-counting salaries` |
+| `feat!:` / `fix!:` / any `<type>!:`         | major\* | `feat!: drop the visa field`         |
+| any type + `BREAKING CHANGE:` footer        | major\* | any commit carrying this footer      |
+
+\* On a `0.x` version a breaking change bumps to `1.0.0` by default. Set
+`bump-minor-pre-major` in `release-please-config.json` if you'd rather keep
+breaking changes within the `0.x` line.
+
+These types do **not** trigger a release on their own — they're folded into the
+*next* release's changelog when one happens: `chore:`, `docs:`, `refactor:`,
+`perf:`, `style:`, `test:`, `build:`, `ci:`, `revert:`.
+
+Notes:
+
+- **Highest bump wins.** A release window with both a `feat` and a breaking
+  change bumps major — there's no mixing.
+- **`feat(scope)` is still `feat`.** The scope is informational (it groups the
+  changelog entry) and doesn't change the bump.
+- **Force a specific version** with a `Release-As: X.Y.Z` footer on any commit.
+
 ## Notes
 
 - This tool is for personal job-search use. Respect LinkedIn's Terms of Service.
