@@ -59,11 +59,9 @@ Examples:
 				"Score this one job with: linkedin-jobs job %s", rawURL, id)
 		}
 		provider := mustResolveProvider()
-		// url is an authenticated command: a session drives the Voyager
-		// jobCards search path, which returns the full result set the signed-in
-		// browser sees. Without a session it degrades to a limited anonymous
-		// endpoint that caps early, so attachSession failure is non-fatal but
-		// worth surfacing via auth status rather than hard-exiting.
+		// url is an authenticated command: a session exposes the full result
+		// set the signed-in browser sees. Without one, search still paginates
+		// but over a smaller anonymous total.
 		c, _ := newClient(true)
 		fmt.Fprintf(os.Stderr, "Fetching jobs from URL…\n")
 		jobs, err := c.SearchURL(rawURL, urlTop)

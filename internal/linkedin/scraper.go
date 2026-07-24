@@ -78,14 +78,12 @@ func (c *Client) Search(p SearchParams) ([]*models.JobPosting, error) {
 // URL (e.g. a job-alert email link, a saved-search URL, or a URL pasted from
 // the browser). Strategy, in priority order:
 //
-//  1. URL has a `keywords` query param — when a session is available, replay
-//     its filters against the authenticated Voyager jobCards API
-//     (voyagerJobsDashJobCards), the same XHR the signed-in browser fires when
-//     scrolling /jobs/search/. It returns the full result set the signed-in
-//     user sees (the anonymous guest endpoint returns a smaller/different set
-//     and caps early, e.g. 10 of 32), so `top` can pull every page. Without a
-//     session, fall back to the paginated guest seeMoreJobPostings API.
-//     geoId/distance/f_TPR filters from the URL are preserved either way.
+//  1. URL has a `keywords` query param — replay its filters against the
+//     paginated guest seeMoreJobPostings API (the same XHR the browser fires
+//     when scrolling /jobs/search/). When a session is available the call is
+//     authenticated, exposing the full result set the signed-in browser sees;
+//     anonymous it still paginates but over a smaller total.
+//     geoId/distance/f_TPR filters from the URL are preserved.
 //  2. URL carries explicit job IDs (originToLandingJobPostings from a job-alert
 //     email, or currentJobId) and NO keywords — those IDs are used directly.
 //  3. Otherwise, fetch the URL HTML and parse cards via the same selectors as
@@ -102,15 +100,12 @@ func (c *Client) Search(p SearchParams) ([]*models.JobPosting, error) {
 func (c *Client) SearchURL(rawURL string, top int) ([]*models.JobPosting, error) {
 	rawURL = strings.ReplaceAll(rawURL, "\\", "")
 	if u, err := url.Parse(rawURL); err == nil && u.Query().Has("keywords") {
-		// Prefer the authenticated Voyager jobCards API when signed in: it
-		// returns the same set the browser sees. On any miss (no session,
-		// non-200, empty result, decorationId bump) fall back to the guest
-		// endpoint so the command still works anonymously.
-		if c.HasSession() {
-			if jobs, err := c.jobsFromVoyagerSearch(rawURL, top); err == nil && len(jobs) > 0 {
-				return jobs, nil
-			}
-		}
+		// Replay the URL's filters against the paginated guest seeMoreJobPostings
+		// endpoint (the same XHR the browser fires when scrolling /jobs/search/).
+		// When a session is available the call is made authenticated, which
+		// exposes the full result set the signed-in browser sees; anonymous it
+		// still paginates but returns a smaller total. jobsFromSearchURL steps
+		// `start` by the page size LinkedIn actually returns (see note there).
 		return c.jobsFromSearchURL(rawURL, top)
 	}
 	if ids := jobIDsFromURL(rawURL); len(ids) > 0 {
@@ -122,7 +117,18 @@ func (c *Client) SearchURL(rawURL string, top int) ([]*models.JobPosting, error)
 // jobsFromSearchURL paginates through a LinkedIn job search by replaying the
 // URL's query params against the guest seeMoreJobPostings endpoint — the same
 // XHR the browser fires when you scroll the left panel of /jobs/search/.
-// maxJobs <= 0 means pull until fewer than a full page comes back.
+// maxJobs <= 0 means pull until the result set is exhausted.
+//
+// When a session is available the call is made authenticated, which returns
+// the full result set the signed-in browser sees; anonymous it still paginates
+// but over a smaller total.
+//
+// IMPORTANT page-size handling: seeMoreJobPostings currently returns ~10 cards
+// per page (not 25). We therefore step `start` by the number of cards actually
+// returned and stop only when a page yields no NEW job (all duplicates or
+// empty), which is the true exhaustion signal. An earlier version assumed
+// 25/page and broke on `cards < 25`, which ended pagination after the first
+// 10-card page for every query — the root cause of the "only 10 jobs" bug.
 //
 // Tracking/pinning params (currentJobId, originToLandingJobPostings, trk, …)
 // are stripped; everything else (keywords, geoId, distance, f_TPR, f_WT, …) is
@@ -141,11 +147,11 @@ func (c *Client) jobsFromSearchURL(rawURL string, maxJobs int) ([]*models.JobPos
 	}
 	var out []*models.JobPosting
 	seen := map[string]bool{}
-	const pageSize = 25
-	for start := 0; maxJobs <= 0 || len(out) < maxJobs; start += pageSize {
+	authed := c.HasSession()
+	for start := 0; maxJobs <= 0 || len(out) < maxJobs; {
 		q.Set("start", itoa(start))
 		apiURL := guestSearchURL + "?" + q.Encode()
-		html, _, status, err := c.get(apiURL, false, nil)
+		html, _, status, err := c.get(apiURL, authed, nil)
 		if err != nil {
 			return out, err
 		}
@@ -160,6 +166,7 @@ func (c *Client) jobsFromSearchURL(rawURL string, maxJobs int) ([]*models.JobPos
 		if cards.Length() == 0 {
 			break
 		}
+		added := 0
 		cards.Each(func(_ int, s *goquery.Selection) {
 			j := parseCard(s)
 			if j == nil || seen[j.ID] {
@@ -168,10 +175,12 @@ func (c *Client) jobsFromSearchURL(rawURL string, maxJobs int) ([]*models.JobPos
 			seen[j.ID] = true
 			j.Source = "url"
 			out = append(out, j)
+			added++
 		})
-		if cards.Length() < pageSize {
-			break // last page
+		if added == 0 {
+			break // page returned only already-seen jobs → result set exhausted
 		}
+		start += cards.Length() // adaptive step: matches LinkedIn's real page size
 	}
 	return out, nil
 }
