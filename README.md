@@ -229,15 +229,21 @@ skipped entirely — re-running the same query shows only what's new since the
 last run. Pass `--force-overwrite` to re-process existing jobs.
 
 The first positional argument is the keyword search. Use `--location` for
-geographic filtering and `--remote`/`--hybrid`/`--onsite` for workplace type;
-these are passed to LinkedIn as structured query params (`location`,
-`f_WT`). LinkedIn geocodes the location server-side, so "Toronto" covers the
-entire GTA. Combine work-type flags for OR (e.g. `--remote --hybrid`).
+geographic filtering, `--remote`/`--hybrid`/`--onsite` for workplace type, and
+`--posted-within` to limit how recent listings are. These are passed to LinkedIn
+as structured query params (`location`, `f_WT`, `f_TPR`). LinkedIn geocodes the
+location server-side, so "Toronto" covers the entire GTA. Combine work-type
+flags for OR (e.g. `--remote --hybrid`).
+
+`--posted-within Nd` keeps only jobs posted in the last N days (LinkedIn's
+`f_TPR` "Date posted" filter). The value must be a number of days with a `d`
+suffix — e.g. `1d`, `7d`, `30d`, `365d`; any other shape errors out.
 
 ```bash
 linkedin-jobs search "Senior Software Engineer" --location Toronto --remote
 linkedin-jobs search "Staff Engineer" --location "Mississauga, ON" --hybrid --top 50
 linkedin-jobs search "Backend Developer" --location "San Francisco" --remote --hybrid
+linkedin-jobs search "Go Engineer" --posted-within 7d                   # only postings from the past week
 linkedin-jobs search "Go Engineer"                                     # keywords only
 ```
 

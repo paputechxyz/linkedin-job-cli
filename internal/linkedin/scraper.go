@@ -20,10 +20,11 @@ var jobIDRE = regexp.MustCompile(`jobPosting:(\d+)`)
 
 // SearchParams holds the filterable parameters for an anonymous job search.
 type SearchParams struct {
-	Keywords string
-	Location string
-	WorkType string // "" | "1"(onsite) | "2"(remote) | "3"(hybrid); comma-separated for OR
-	Pages    int
+	Keywords      string
+	Location      string
+	WorkType      string // "" | "1"(onsite) | "2"(remote) | "3"(hybrid); comma-separated for OR
+	PostedWithin  string // "" or a LinkedIn f_TPR value, e.g. "r604800-" (past 7 days)
+	Pages         int
 }
 
 // Search runs an anonymous job search and returns parsed job cards (no
@@ -36,6 +37,9 @@ func (c *Client) Search(p SearchParams) ([]*models.JobPosting, error) {
 		u := guestSearchURL + "?keywords=" + urlEncode(p.Keywords) + "&location=" + urlEncode(p.Location)
 		if p.WorkType != "" {
 			u += "&f_WT=" + p.WorkType
+		}
+		if p.PostedWithin != "" {
+			u += "&f_TPR=" + p.PostedWithin
 		}
 		if start > 0 {
 			u += "&start=" + itoa(start)

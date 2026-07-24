@@ -1,6 +1,9 @@
 package cmd
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestResolveWorkType(t *testing.T) {
 	cases := []struct {
@@ -47,6 +50,46 @@ func TestWorkTypeLabel(t *testing.T) {
 			if got != c.want {
 				t.Errorf("workTypeLabel(remote=%v, hybrid=%v, onsite=%v) = %q, want %q",
 					c.remote, c.hybrid, c.onsite, got, c.want)
+			}
+		})
+	}
+}
+
+func TestResolvePostedWithin(t *testing.T) {
+	cases := []struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{"", "", false},
+		{"   ", "", false},
+		{"1d", "r86400-", false},
+		{"7d", "r604800-", false},
+		{"30d", "r2592000-", false},
+		{"365d", "r31536000-", false},
+		{"0d", "", true},     // non-positive
+		{"-3d", "", true},    // negative
+		{"7", "", true},      // missing 'd' suffix
+		{"7days", "", true},  // extra chars after number
+		{"week", "", true},   // not Nd
+		{"24h", "", true},    // hours not accepted
+		{"d", "", true},      // no digits
+		{"1.5d", "", true},   // non-integer
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%q", c.in), func(t *testing.T) {
+			got, err := resolvePostedWithin(c.in)
+			if c.wantErr {
+				if err == nil {
+					t.Fatalf("resolvePostedWithin(%q) = %q, nil; want error", c.in, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolvePostedWithin(%q) = _, %v; want %q, nil", c.in, err, c.want)
+			}
+			if got != c.want {
+				t.Errorf("resolvePostedWithin(%q) = %q, nil; want %q", c.in, got, c.want)
 			}
 		})
 	}

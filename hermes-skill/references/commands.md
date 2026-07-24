@@ -34,7 +34,7 @@ Search LinkedIn's public job board anonymously. **No session required.** Jobs al
 linkedin-jobs search "<keywords>" [flags]
 ```
 
-Arg: `<keywords>` (required) — the keyword search (e.g. `"Senior Software Engineer"`). Use `--location` for geographic filtering and `--remote`/`--hybrid`/`--onsite` for workplace type; these are passed to LinkedIn as structured filters.
+Arg: `<keywords>` (required) — the keyword search (e.g. `"Senior Software Engineer"`). Use `--location` for geographic filtering, `--remote`/`--hybrid`/`--onsite` for workplace type, and `--posted-within` for recency; these are passed to LinkedIn as structured filters.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -42,6 +42,7 @@ Arg: `<keywords>` (required) — the keyword search (e.g. `"Senior Software Engi
 | `--remote` | bool | false | Only remote jobs (`f_WT=2`); combine with `--hybrid`/`--onsite` for OR |
 | `--hybrid` | bool | false | Only hybrid jobs (`f_WT=3`); combine with `--remote`/`--onsite` for OR |
 | `--onsite` | bool | false | Only on-site jobs (`f_WT=1`); combine with `--remote`/`--hybrid` for OR |
+| `--posted-within` | string | "" | Only jobs posted in the last N days, given as `Nd` (e.g. `1d`, `7d`, `30d`, `365d`); any other shape errors out. Maps to LinkedIn's `f_TPR` (Date posted) filter. |
 | `--top` | int | 20 | Cap on number of jobs to fetch + process end-to-end (each is LLM-scored; raise to burn more tokens) |
 | `--force-overwrite` | bool | false | Re-parse and re-score jobs already in the DB (bypasses new-only pre-filter and dedup) |
 
@@ -52,6 +53,7 @@ Examples:
 linkedin-jobs search "Senior Software Engineer" --location Toronto --remote
 linkedin-jobs search "Staff Engineer" --location "Mississauga, ON" --hybrid --top 50
 linkedin-jobs search "Backend Developer" --location "San Francisco" --remote --hybrid
+linkedin-jobs search "Go Engineer" --posted-within 7d
 linkedin-jobs search "Go Engineer"
 ```
 

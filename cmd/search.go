@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -12,12 +13,13 @@ import (
 )
 
 var (
-	searchTop      int
-	searchForceOW  bool
-	searchLocation string
-	searchRemote   bool
-	searchHybrid   bool
-	searchOnsite   bool
+	searchTop           int
+	searchForceOW       bool
+	searchLocation      string
+	searchRemote        bool
+	searchHybrid        bool
+	searchOnsite        bool
+	searchPostedWithin  string
 )
 
 var searchCmd = &cobra.Command{
@@ -38,6 +40,8 @@ these are passed directly to LinkedIn as structured filters:
   --hybrid               Only hybrid roles (f_WT=3)
   --onsite               Only on-site roles (f_WT=1)
   Combine --remote/--hybrid/--onsite for OR (e.g. --remote --hybrid).
+  --posted-within Nd     Only jobs posted in the last N days (f_TPR), e.g.
+                         --posted-within 7d, --posted-within 30d, --posted-within 365d.
 
 --top N caps the number of jobs processed end-to-end (detail fetch + LLM score).
 Jobs already in the DB (by LinkedIn ID) are skipped entirely — only brand-new
@@ -50,12 +54,17 @@ filters to exclude at view time.
 Examples:
   linkedin-jobs search "Senior Software Engineer" --location Toronto --remote
   linkedin-jobs search "Staff Engineer" --location "Mississauga, ON" --hybrid --top 50
-  linkedin-jobs search "Backend Developer" --location "San Francisco" --remote --hybrid
-  linkedin-jobs search "Go Engineer"`,
+  linkedin-jobs search "Backend Developer" --location "San Francisco" --remote --hybrid --posted-within 7d
+  linkedin-jobs search "Go Engineer" --posted-within 30d
+`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		provider := mustResolveProvider()
 		keywords := strings.TrimSpace(strings.Join(args, " "))
 		c, err := newClient(false)
+		if err != nil {
+			die("%v", err)
+		}
+		postedWithin, err := resolvePostedWithin(searchPostedWithin)
 		if err != nil {
 			die("%v", err)
 		}
@@ -70,12 +79,16 @@ Examples:
 		if wt := resolveWorkType(searchRemote, searchHybrid, searchOnsite); wt != "" {
 			fmt.Fprintf(os.Stderr, " [%s]", workTypeLabel(searchRemote, searchHybrid, searchOnsite))
 		}
+		if searchPostedWithin != "" {
+			fmt.Fprintf(os.Stderr, " [last %s]", searchPostedWithin)
+		}
 		fmt.Fprintln(os.Stderr, "…")
 		jobs, err := c.Search(linkedin.SearchParams{
-			Keywords: keywords,
-			Location: searchLocation,
-			WorkType: resolveWorkType(searchRemote, searchHybrid, searchOnsite),
-			Pages:    pages,
+			Keywords:     keywords,
+			Location:     searchLocation,
+			WorkType:     resolveWorkType(searchRemote, searchHybrid, searchOnsite),
+			PostedWithin: postedWithin,
+			Pages:        pages,
 		})
 		if err != nil {
 			die("search failed: %v", err)
@@ -111,6 +124,7 @@ func init() {
 	searchCmd.Flags().BoolVar(&searchRemote, "remote", false, "only remote jobs (f_WT=2)")
 	searchCmd.Flags().BoolVar(&searchHybrid, "hybrid", false, "only hybrid jobs (f_WT=3); combine with --remote/--onsite for OR")
 	searchCmd.Flags().BoolVar(&searchOnsite, "onsite", false, "only on-site jobs (f_WT=1); combine with --remote/--hybrid for OR")
+	searchCmd.Flags().StringVar(&searchPostedWithin, "posted-within", "", "only jobs posted in the last N days, e.g. --posted-within 7d (30d, 365d, …)")
 	rootCmd.AddCommand(searchCmd)
 }
 
@@ -156,6 +170,26 @@ func resolveWorkType(remote, hybrid, onsite bool) string {
 		parts = append(parts, "3")
 	}
 	return strings.Join(parts, ",")
+}
+
+// resolvePostedWithin maps a "--posted-within Nd" flag value to LinkedIn's
+// f_TPR query parameter value. Accepts only the form "<N>d" (days), e.g.
+// "1d", "7d", "30d", "365d"; any other shape is rejected with an error so the
+// user gets a clear message instead of a silent no-op. Returns "" when the flag
+// is empty (filter disabled). LinkedIn encodes "past N seconds" as "r<secs>-".
+func resolvePostedWithin(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", nil
+	}
+	if len(s) < 2 || s[len(s)-1] != 'd' {
+		return "", fmt.Errorf(`--posted-within must be "<N>d" (e.g. 7d, 30d), got %q`, s)
+	}
+	n, err := strconv.Atoi(s[:len(s)-1])
+	if err != nil || n <= 0 {
+		return "", fmt.Errorf(`--posted-within must be a positive number of days (e.g. 7d), got %q`, s)
+	}
+	return "r" + strconv.Itoa(n*86400) + "-", nil
 }
 
 // workTypeLabel produces a human-readable label for the progress message.
