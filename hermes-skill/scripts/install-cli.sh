@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
-# install-cli.sh — download and install the latest linkedin-jobs CLI binary
-# from the project's GitHub releases.
+# install-cli.sh — download and install a pinned linkedin-jobs CLI binary from
+# the project's GitHub releases, verifying it against the release's
+# checksums.txt before executing it.
 #
 # Invoked by the linkedin-jobs Hermes skill when `linkedin-jobs` is not on PATH.
-# Uses GitHub's /releases/latest/download/<asset> redirect, so it needs no API
-# call and is unaffected by unauthenticated rate limits.
+#
+# VERSION is pinned to a specific release tag (and is bumped automatically by
+# release-please on each release — see release-please-config.json extra-files).
+# Do not change it to "latest": a pinned tag + checksum verification is what
+# makes the download verifiable rather than a blind execute of whatever is
+# currently published.
 #
 # Usage:  bash install-cli.sh
 set -euo pipefail
 
 REPO="paputechxyz/linkedin-job-cli"
 BINARY_NAME="linkedin-jobs"
+VERSION="0.1.51"
 INSTALL_DIR="${LJ_INSTALL_DIR:-${HOME}/.local/bin}"
 
 # --- detect platform → GOOS/GOARCH (matches the release asset names) ---
@@ -31,26 +37,62 @@ ext=""
 [ "$goos" = "windows" ] && ext=".exe"
 asset="linkedin-jobs_${goos}_${goarch}${ext}"
 
-echo "-> platform: ${goos}/${goarch}  (asset: ${asset})"
+echo "-> platform: ${goos}/${goarch}  (asset: ${asset}, version: ${VERSION})"
 
-# --- download the latest release's matching asset ---
-url="https://github.com/${REPO}/releases/latest/download/${asset}"
+base_url="https://github.com/${REPO}/releases/download/v${VERSION}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-echo "-> downloading ${url}"
-if ! curl -fL --progress-bar -o "${tmp}/${BINARY_NAME}${ext}" "$url"; then
-    echo "-> download failed. No release asset named '${asset}' was found." >&2
-    echo "   Check available assets at https://github.com/${REPO}/releases/latest" >&2
-    echo "   (a release may not exist yet — publish one with 'just release')." >&2
+# --- download the binary for this platform ---
+echo "-> downloading ${base_url}/${asset}"
+if ! curl -fL --progress-bar -o "${tmp}/${asset}" "${base_url}/${asset}"; then
+    echo "-> download failed. Asset '${asset}' was not found in release v${VERSION}." >&2
+    echo "   Check available assets at https://github.com/${REPO}/releases/tag/v${VERSION}" >&2
+    echo "   (a release may not exist yet — the maintainer must merge a release-please PR)." >&2
     exit 1
 fi
-chmod +x "${tmp}/${BINARY_NAME}${ext}"
+
+# --- resolve a sha256 tool (macOS ships shasum; Linux/Git-Bash ship sha256sum) ---
+sha256_cmd=""
+if command -v sha256sum >/dev/null 2>&1; then
+    sha256_cmd="sha256sum"
+elif command -v shasum >/dev/null 2>&1; then
+    sha256_cmd="shasum -a 256"
+else
+    echo "-> cannot verify checksum: neither sha256sum nor shasum is installed" >&2
+    echo "   refusing to run an unverified binary" >&2
+    exit 1
+fi
+
+# --- download checksums.txt for this release and verify the binary ---
+echo "-> downloading ${base_url}/checksums.txt"
+if ! curl -fsSL -o "${tmp}/checksums.txt" "${base_url}/checksums.txt"; then
+    echo "-> checksums.txt missing for release v${VERSION}; cannot verify the binary." >&2
+    echo "   refusing to run an unverified binary" >&2
+    exit 1
+fi
+
+expected=$(awk -v a="$asset" '$2==a {print $1; exit}' "${tmp}/checksums.txt")
+if [ -z "$expected" ]; then
+    echo "-> no checksum entry for '${asset}' in checksums.txt; cannot verify." >&2
+    exit 1
+fi
+
+actual=$(${sha256_cmd} "${tmp}/${asset}" | awk '{print $1}')
+if [ "$expected" != "$actual" ]; then
+    echo "-> CHECKSUM MISMATCH for ${asset} — do not run this binary." >&2
+    echo "   expected: ${expected}" >&2
+    echo "   actual:   ${actual}" >&2
+    exit 1
+fi
+echo "-> verified (sha256 matches checksums.txt)"
+
+chmod +x "${tmp}/${asset}"
 
 # --- install ---
 mkdir -p "$INSTALL_DIR"
 target="${INSTALL_DIR}/${BINARY_NAME}${ext}"
-mv "${tmp}/${BINARY_NAME}${ext}" "$target"
+mv "${tmp}/${asset}" "$target"
 echo "-> installed: ${target}"
 
 # --- confirm version + PATH ---
