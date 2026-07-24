@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/paputechxyz/linkedin-job-cli/compare/v0.3.0...v0.3.1) (2026-07-24)
+
+
+### Bug Fixes
+
+* cosign v3 bundle signing + re-runnable builds + version-pin sync ([c87fc69](https://github.com/paputechxyz/linkedin-job-cli/commit/c87fc69cb6dca20829209ef1b221913c8c8a197e))
+* cosign v3 bundle signing, re-runnable asset builds, version-pin sync ([b63aadb](https://github.com/paputechxyz/linkedin-job-cli/commit/b63aadb8956e0edaefdc2306bc0d27ed2384685d))
+
 ## [0.3.0](https://github.com/paputechxyz/linkedin-job-cli/compare/v0.2.0...v0.3.0) (2026-07-24)
 
 
