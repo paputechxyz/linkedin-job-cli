@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.0](https://github.com/paputechxyz/linkedin-job-cli/compare/v0.1.51...v0.2.0) (2026-07-24)
+
+
+### Features
+
+* automate releases via release-please + GoReleaser with checksum verification ([07bfec8](https://github.com/paputechxyz/linkedin-job-cli/commit/07bfec89e85f3be6fb5a947a5366ee4bd497a1d2))
+* automate releases with release-please + GoReleaser ([103c74e](https://github.com/paputechxyz/linkedin-job-cli/commit/103c74e978e653dc39ec48886457f6e4138d0cca))
+
+
+### Bug Fixes
+
+* correct release-please tag format + anchor version to 0.1.51 ([951f795](https://github.com/paputechxyz/linkedin-job-cli/commit/951f79593cd978a99b8b25d2a65812815de5853b))
+* use include-component-in-tag (singular) for plain vX.Y.Z tags ([b1d2bd3](https://github.com/paputechxyz/linkedin-job-cli/commit/b1d2bd3c4405599f877e038689c17e9566d2d65d))
+
 ## 1.0.0 (2026-07-24)
 
 
