@@ -5,11 +5,11 @@
 #
 # Invoked by the linkedin-jobs Hermes skill when `linkedin-jobs` is not on PATH.
 #
-# VERSION is pinned to a specific release tag (and is bumped automatically by
-# release-please on each release — see release-please-config.json extra-files).
-# Do not change it to "latest": a pinned tag + checksum verification is what
-# makes the download verifiable rather than a blind execute of whatever is
-# currently published.
+# VERSION is pinned to a specific release tag (and is kept in sync with the
+# latest release by the `sync-version-pin` job in release.yml — do not change
+# it to "latest": a pinned tag + checksum verification is what makes the
+# download verifiable rather than a blind execute of whatever is currently
+# published).
 #
 # Usage:  bash install-cli.sh
 set -euo pipefail
@@ -89,13 +89,11 @@ echo "-> verified (sha256 matches checksums.txt)"
 
 # --- optional cosign signature verification (proves checksums.txt came from
 # this repo's release workflow via keyless Sigstore signing; falls back
-# gracefully if cosign or the signature artifacts are absent) ---
-if curl -fsSL -o "${tmp}/checksums.txt.sig" "${base_url}/checksums.txt.sig" \
-  && curl -fsSL -o "${tmp}/checksums.txt.pem" "${base_url}/checksums.txt.pem"; then
+# gracefully if cosign or the signature bundle is absent) ---
+if curl -fsSL -o "${tmp}/checksums.txt.sigstore.json" "${base_url}/checksums.txt.sigstore.json"; then
     if command -v cosign >/dev/null 2>&1; then
         if cosign verify-blob \
-            --certificate "${tmp}/checksums.txt.pem" \
-            --signature "${tmp}/checksums.txt.sig" \
+            --bundle "${tmp}/checksums.txt.sigstore.json" \
             --certificate-identity-regexp "https://github.com/${REPO}/.github/workflows/release.yml@.*" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             "${tmp}/checksums.txt"; then

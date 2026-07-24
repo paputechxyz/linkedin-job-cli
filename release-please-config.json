@@ -5,11 +5,7 @@
     ".": {
       "release-type": "go",
       "package-name": "linkedin-jobs",
-      "include-component-in-tag": false,
-      "extra-files": [
-        "hermes-skill/SKILL.md",
-        "hermes-skill/scripts/install-cli.sh"
-      ]
+      "include-component-in-tag": false
     }
   }
 }
