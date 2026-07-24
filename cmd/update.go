@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -148,6 +151,92 @@ func downloadAsset(version, asset string) (io.ReadCloser, error) {
 	return resp.Body, nil
 }
 
+// downloadAssetBytes downloads an entire release asset into memory. Used for
+// artifacts that must be fully read before use (e.g. to hash and verify).
+func downloadAssetBytes(version, asset string) ([]byte, error) {
+	body, err := downloadAsset(version, asset)
+	if err != nil {
+		return nil, err
+	}
+	defer body.Close()
+	return io.ReadAll(body)
+}
+
+// parseChecksums parses a sha256sum-style checksums file (one
+// "<sha256>  <filename>" line per asset) into a filename → hex digest map.
+func parseChecksums(r io.Reader) (map[string]string, error) {
+	sums := make(map[string]string)
+	sc := bufio.NewScanner(r)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		// last field is the filename (strip a binary-mode '*' prefix if present)
+		name := strings.TrimPrefix(fields[len(fields)-1], "*")
+		sums[name] = fields[0]
+	}
+	return sums, sc.Err()
+}
+
+// fetchChecksums downloads the release's checksums.txt and returns a
+// filename → expected sha256 map.
+func fetchChecksums(version string) (map[string]string, error) {
+	body, err := downloadAsset(version, "checksums.txt")
+	if err != nil {
+		return nil, fmt.Errorf("download checksums.txt: %w", err)
+	}
+	defer body.Close()
+	return parseChecksums(body)
+}
+
+// verifyChecksum looks up asset in sums and confirms data hashes to the entry.
+// A missing entry or a mismatch is a hard error: the whole point of self-update
+// is not executing an unverified binary.
+func verifyChecksum(asset string, data []byte, sums map[string]string) error {
+	want, ok := sums[asset]
+	if !ok {
+		return fmt.Errorf("no checksum entry for %s in checksums.txt", asset)
+	}
+	sum := sha256.Sum256(data)
+	got := hex.EncodeToString(sum[:])
+	if got != want {
+		return fmt.Errorf("checksum mismatch for %s: expected %s, got %s", asset, want, got)
+	}
+	return nil
+}
+
+// verifyAssetChecksum confirms data matches the entry for asset in the
+// release's checksums.txt.
+func verifyAssetChecksum(version, asset string, data []byte) error {
+	sums, err := fetchChecksums(version)
+	if err != nil {
+		return err
+	}
+	return verifyChecksum(asset, data, sums)
+}
+
+// downloadVerified downloads the platform binary for a release version and
+// verifies its sha256 against the release's checksums.txt before returning the
+// asset name and bytes. Callers must not write the bytes anywhere until this
+// returns nil.
+func downloadVerified(version string) (asset string, data []byte, err error) {
+	asset = platformAsset()
+	data, err = downloadAssetBytes(version, asset)
+	if err != nil {
+		return "", nil, err
+	}
+	if err := verifyAssetChecksum(version, asset, data); err != nil {
+		return "", nil, err
+	}
+	fmt.Fprintf(os.Stderr, "-> verified %s (sha256 matches checksums.txt)\n", asset)
+	return asset, data, nil
+}
+
 // selfUpdate downloads the release binary and atomically replaces the running
 // executable. On Unix the rename is atomic; on Windows the old binary is moved
 // aside first since a running exe cannot be overwritten.
@@ -160,11 +249,10 @@ func selfUpdate(version string) error {
 		exePath = resolved
 	}
 
-	body, err := downloadAsset(version, platformAsset())
+	_, data, err := downloadVerified(version)
 	if err != nil {
 		return err
 	}
-	defer body.Close()
 
 	dir := filepath.Dir(exePath)
 	tmp, err := os.CreateTemp(dir, ".linkedin-jobs-update-*")
@@ -174,7 +262,7 @@ func selfUpdate(version string) error {
 	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath)
 
-	if _, err := io.Copy(tmp, body); err != nil {
+	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		return fmt.Errorf("write download: %w", err)
 	}
@@ -215,32 +303,18 @@ func installToLocalBin(version string) error {
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
 
-	body, err := downloadAsset(version, platformAsset())
+	_, data, err := downloadVerified(version)
 	if err != nil {
 		return err
 	}
-	defer body.Close()
 
 	name := "linkedin-jobs"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
 	target := filepath.Join(dir, name)
-	out, err := os.Create(target)
-	if err != nil {
-		return fmt.Errorf("create %s: %w", target, err)
-	}
-	if _, err := io.Copy(out, body); err != nil {
-		out.Close()
-		return fmt.Errorf("write download: %w", err)
-	}
-	if err := out.Close(); err != nil {
-		return fmt.Errorf("close %s: %w", target, err)
-	}
-	if runtime.GOOS != "windows" {
-		if err := os.Chmod(target, 0o755); err != nil {
-			return fmt.Errorf("chmod: %w", err)
-		}
+	if err := os.WriteFile(target, data, 0o755); err != nil {
+		return fmt.Errorf("write %s: %w", target, err)
 	}
 	fmt.Fprintf(os.Stderr, "-> installed: %s\n", target)
 	return nil
