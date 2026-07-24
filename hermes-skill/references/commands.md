@@ -67,6 +67,8 @@ linkedin-jobs url <linkedin-search-url> [flags]
 
 For URLs with `keywords=`, replays the URL's filters against the authenticated Voyager `jobCards` API so `--top` pulls every page. For URLs with only job IDs (`originToLandingJobPostings`, `currentJobId`), uses those IDs directly.
 
+**Gate:** `<linkedin-search-url>` must be a search/collection **page** (e.g. `/jobs/search/?...`, `/jobs/collections/recommended/`). A single-job posting URL (`/jobs/view/<id>/`, incl. the slug form `/jobs/view/<slug>-<id>/`) is rejected — extract the id and run `job <id>` instead.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--top` | int | 0 | Cap on jobs to process (0 = all jobs from the URL) |
@@ -81,6 +83,8 @@ Fetch + fit-score a single LinkedIn job by its numeric ID. **Works with or witho
 ```bash
 linkedin-jobs job <job-id>
 ```
+
+**Gate:** `<job-id>` must be a **bare integer** (digits only), e.g. `4431544268` — the trailing digits of a `/jobs/view/<...>-<id>/` URL. A full URL or any non-integer is rejected; if you paste a `/jobs/view/` URL the error prints the id to use. For a page of many jobs, run `url <search-url>` instead.
 
 No command-specific flags. `--json`: yes.
 

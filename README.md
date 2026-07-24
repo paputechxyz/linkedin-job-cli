@@ -268,6 +268,23 @@ Authenticated via your captured browser session (see `auth status`); without a
 session it falls back to the limited anonymous endpoint. Salary and full
 description are fetched per-job from the public detail page.
 
+`url` is for **pages of many jobs**. A single-job posting URL
+(`/jobs/view/<id>/`) is rejected with a hint to use `job <id>` instead — that
+one-job URL carries no job-card list, so `url` would do the wrong thing.
+
+### Job (single posting by ID)
+
+Fetch + fit-score exactly one posting by its numeric LinkedIn job ID.
+
+```bash
+linkedin-jobs job 4431544268
+```
+
+The argument must be a bare integer ID (digits only) — the trailing digits of a
+`/jobs/view/<...>-<id>/` URL. A full URL or any non-integer is rejected with a
+hint; if you paste a `/jobs/view/` URL the error tells you the ID to use. For a
+page of many jobs, use `url <search-url>` instead.
+
 ### HR (who to reach out to about a job)
 
 Paste any LinkedIn job URL and get back the single best person to contact to get

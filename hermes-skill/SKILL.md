@@ -1,7 +1,7 @@
 ---
 name: linkedin-jobs
 description: "Use when the user wants to search, fetch, score, or manage LinkedIn job postings — pull their personalized recommended feed, search the public job board, score fit against their preferences, find who to reach out to for a job, manage a job pipeline, or configure their job-search profile. Wraps the linkedin-jobs CLI."
-version: 0.1.51
+version: 0.1.53
 author: Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -92,8 +92,8 @@ Commands grouped by intent. Auth column: **auth** = requires LinkedIn session, *
 | **Fetch** | | | |
 | `recommended` | Pull personalized "Recommended for you" feed | auth | yes |
 | `search <keywords>` | Search public job board (filter with --location, --remote, --hybrid, --onsite, --posted-within); skips jobs already in DB | anon | yes |
-| `url <linkedin-url>` | Score every job on a search/collection URL | auth | yes |
-| `job <job-id>` | Fetch + score a single job by numeric ID | either | yes |
+| `url <linkedin-url>` | Score every job on a search/collection URL (NOT a single `/jobs/view/<id>/` posting — use `job` for that) | auth | yes |
+| `job <job-id>` | Fetch + score a single job by numeric ID (digits only; a URL is rejected with the id to use) | either | yes |
 | **Store/Query** | | | |
 | `list` | List saved jobs with filters | — | yes |
 | `show <job-id>` | Show full details for one job | — | yes |
@@ -158,7 +158,10 @@ they finish, re-check with `doctor` and proceed to Recipe #2.
 `search "Staff Engineer" --location Toronto --json --top 25` → summarize results. Use `--remote`/`--hybrid`/`--onsite` for workplace-type filtering and `--posted-within Nd` (e.g. `7d`, `30d`) to keep only jobs posted in the last N days (LinkedIn `f_TPR`). **Only use this when the user has explicitly opted out of cookies** — see Pitfall #1. Default to Recipe #2 (`recommended`) whenever `LJ_COOKIES_FILE` is set.
 
 ### 4. Score a URL
-`url "<url>" --json` → summarize. Requires auth session.
+`url "<search-or-collection-url>" --json` → summarize. Requires auth session. The URL must be a **search/collection page** (e.g. `/jobs/search/?...`, `/jobs/collections/recommended/`); a single `/jobs/view/<id>/` posting is rejected — use `job <id>` (Recipe 4a) for one job.
+
+### 4a. Fetch + score a single job
+`job <id> --json` → summarize. `<id>` is the trailing digits of a `/jobs/view/<...>-<id>/` URL (e.g. `job 4431544268`). A bare integer is required — if the user pastes a single posting URL, extract the id and pass it here; do not pass it to `url`.
 
 ### 5. What's new this week
 `search "Staff Engineer" --location Toronto --posted-within 7d --json` → summarize only new jobs (IDs not in DB). `search` skips existing jobs by default; combine with `--posted-within` to also restrict how recent the postings are.
@@ -217,6 +220,8 @@ Rubrics:
       4. Re-run `doctor` or `auth status` to confirm the session now resolves, THEN proceed with `recommended`.
       5. Only fall back to anonymous `search` if the user explicitly says "just search anonymously" or "I don't have cookies." Never decide that for them.
 
+1b. **`job` vs `url` — don't mix them up.** `job` takes a **bare numeric ID** (e.g. `job 4431544268`); `url` takes a **search/collection page** (many jobs). The CLI gates both: `job` rejects a non-integer (a URL or text) and prints the id to use; `url` rejects a single `/jobs/view/<id>/` posting and prints `job <id>` to run instead. When the user pastes a single posting URL like `https://www.linkedin.com/jobs/view/senior-full-stack-...-at-stan-ai-4431544268/`, extract the trailing digits and run `job <id>` — do **not** pass it to `url`.
+
 2. **`--json` is not universal.** `auth status`, `config show`, `config path`, `doctor`, `version`, `purge`, `rescore-all`, and `serve` always emit human-readable text. `export` uses `--format json` (not `--json`). Parse text output from these commands, not JSON.
 
 3. **No ingest-time filters — score everything, filter at view time.** Every fetched job is persisted and scored; nothing is dropped pre-LLM. Preferences (work arrangement, salary floor) live under `profile:` in `settings.yaml` and feed the soft system rubrics, which lower the weighted-average score on mismatches rather than dropping jobs. To exclude low-fit jobs when reading the DB, use view-time filters: `list --remote --hybrid --min-salary 200k --salary-currency CAD`, or the `serve` UI filters. Top-N lists may contain jobs that fail prefs — they're just ranked lower.
@@ -247,3 +252,4 @@ Rubrics:
 - [ ] No cookie values echoed in output
 - [ ] `serve` started with localhost binding only (never `--addr 0.0.0.0`)
 - [ ] For personalized job discovery, `recommended` was used (not anonymous `search`) whenever a session was available
+- [ ] A single `/jobs/view/<id>/` posting was handled with `job <id>` (trailing digits), not passed to `url`; `job` was given a bare integer ID, not a URL

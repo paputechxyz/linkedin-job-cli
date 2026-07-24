@@ -19,10 +19,24 @@ through the same fetch → score pipeline as 'search'. No flags: scoring context
 (salary floor, work arrangement) comes from your settings.yaml profile. The
 job is always (re-)fetched and (re-)scored.
 
+The argument must be a bare integer ID (digits only), e.g. 4434368088 — the
+trailing digits of a /jobs/view/<...>-<id>/ URL. A full URL or any non-integer
+is rejected; for a page of many jobs use 'url <search-url>' instead.
+
 Example:
   linkedin-jobs job 4434368088`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id := args[0]
+		id := parseJobIDArg(args[0])
+		if id == "" {
+			if hint := viewJobIDFromURL(args[0]); hint != "" {
+				die("job expects a numeric LinkedIn job ID, got %q.\n"+
+					"That URL points to one job — extract its id and run:\n"+
+					"  linkedin-jobs job %s", args[0], hint)
+			}
+			die("job expects a numeric LinkedIn job ID (digits only), got %q.\n"+
+				"Example: linkedin-jobs job 4434368088\n"+
+				"For a search/collection page, use: linkedin-jobs url <search-url>", args[0])
+		}
 		provider := mustResolveProvider()
 		job := &models.JobPosting{
 			ID:         id,

@@ -30,6 +30,9 @@ Strategy, in priority order:
     email, or currentJobId) and no keywords → those IDs are used directly.
   - Otherwise → fetch the URL HTML and parse job cards.
 
+This command is for search/collection URLs (pages with many jobs). A single
+/job posting URL (/jobs/view/<id>/) is rejected — use 'job <id>' for one job.
+
 Title/company/location are filled from JSON-LD on the detail page when the
 listing didn't provide them. Salary + description are fetched per-job, then
 every job is enriched + fit-scored against your profile. No ingest-time
@@ -45,8 +48,17 @@ Examples:
   linkedin-jobs url "https://www.linkedin.com/jobs/search/?currentJobId=4415889466&originToLandingJobPostings=4415889466%2C4434154740&keywords=Staff%20Engineer"
   linkedin-jobs url "https://www.linkedin.com/jobs/collections/recommended/?start=0"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		provider := mustResolveProvider()
 		rawURL := args[0]
+		// Gate: a single-job /jobs/view/<id>/ URL is not a collection. The
+		// user almost certainly wants to score one job, so point them at `job`
+		// with the extracted id instead of silently doing the wrong thing.
+		// Run before provider/session resolution so it fails fast.
+		if id := viewJobIDFromURL(rawURL); id != "" {
+			die("url expects a LinkedIn search/collection URL (a page with many jobs), got a single job posting:\n"+
+				"  %s\n"+
+				"Score this one job with: linkedin-jobs job %s", rawURL, id)
+		}
+		provider := mustResolveProvider()
 		// url is an authenticated command: a session drives the Voyager
 		// jobCards search path, which returns the full result set the signed-in
 		// browser sees. Without a session it degrades to a limited anonymous
