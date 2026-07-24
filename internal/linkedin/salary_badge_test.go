@@ -99,6 +99,38 @@ func TestExtractSalaryBadge_PrefersFirstCurrencyMatch(t *testing.T) {
 	}
 }
 
+// TestExtractSalaryBadge_CompensationSection is the regression test for
+// postings whose salary lives in LinkedIn's "Base pay range" compensation
+// section rather than a .main-job-card__salary-info span. On these pages the
+// only .main-job-card__salary-info spans belong to the similar-jobs rail (and
+// are correctly skipped), so the badge must be read from
+// .compensation__salary. Markup mirrors job 4424405642 (Draftaid), which the
+// header rendered as "CA$120,000.00/yr - CA$180,000.00/yr".
+func TestExtractSalaryBadge_CompensationSection(t *testing.T) {
+	html := `<html><body>
+		<div class="compensation__salary-range">
+			<h3 class="compensation__heading">Base pay range</h3>
+			<div class="salary compensation__salary">
+				CA$120,000.00/yr - CA$180,000.00/yr
+			</div>
+		</div>
+		<section class="core-section-container my-3 similar-jobs">
+			<span class="main-job-card__salary-info">CA$100,000.00 - CA$150,000.00</span>
+		</section>
+	</body></html>`
+
+	cur, sal := extractSalaryBadge(docFrom(t, html))
+	if sal == nil || sal.Low == nil || sal.High == nil {
+		t.Fatalf("expected compensation-section badge parsed; got sal=%+v cur=%q", sal, cur)
+	}
+	if *sal.Low != 120000 || *sal.High != 180000 {
+		t.Errorf("expected 120000-180000; got %v-%v", *sal.Low, *sal.High)
+	}
+	if cur != "CAD" {
+		t.Errorf("expected CAD currency; got %q", cur)
+	}
+}
+
 func ptrVal(p *float64) float64 {
 	if p == nil {
 		return 0

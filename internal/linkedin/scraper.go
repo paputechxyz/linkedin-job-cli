@@ -423,13 +423,44 @@ func (c *Client) FetchDetail(j *models.JobPosting) error {
 // different job and must not be attributed to the one being viewed.
 const similarJobsAncestor = ".similar-jobs, .aside-section-container, .people-also-viewed"
 
-// extractSalaryBadge reads the page-chrome salary badge scoped to the main
-// job's own region. It returns the parsed badge (and its currency) or nil when
-// the posting carries no badge of its own. See FetchDetail's step-1 comment for
-// why the scope excludes the similar-jobs/aside sidebars.
+// salaryBadgeSelectors lists the LinkedIn salary-badge selectors in priority
+// order. The "Base pay range" compensation section (.compensation__salary) is
+// the prominent, structured figure LinkedIn renders in the job header; many
+// modern postings carry it and no main-region .main-job-card__salary-info (the
+// only such spans on the page belong to the similar-jobs rail). The legacy
+// .main-job-card__salary-info badge is kept as a fallback for older postings.
+var salaryBadgeSelectors = []string{
+	".compensation__salary",
+	".main-job-card__salary-info",
+}
+
+// extractSalaryBadge reads the salary badge scoped to the main job's own
+// region. It returns the parsed badge (and its currency) or nil when no badge
+// of its own is found. See FetchDetail's step-1 comment for why the scope
+// excludes the similar-jobs/aside sidebars. Selectors are tried in priority
+// order; the first one whose (non-sidebar) text parses to a salary wins.
 func extractSalaryBadge(doc *goquery.Document) (currency string, sal *salary.Salary) {
+	for _, sel := range salaryBadgeSelectors {
+		t := firstScopedSalaryText(doc, sel)
+		if t == "" {
+			continue
+		}
+		parsed := salary.Parse(t)
+		if parsed == nil {
+			continue
+		}
+		return parsed.Currency, parsed
+	}
+	return "", nil
+}
+
+// firstScopedSalaryText returns the trimmed text of the first element matching
+// sel that is NOT inside a similar-jobs/aside sidebar. Among matches it prefers
+// one whose text carries a currency signal ($, CAD, USD); otherwise it accepts
+// the first non-empty one.
+func firstScopedSalaryText(doc *goquery.Document, sel string) string {
 	var salaryText string
-	doc.Find(".main-job-card__salary-info").EachWithBreak(func(_ int, s *goquery.Selection) bool {
+	doc.Find(sel).EachWithBreak(func(_ int, s *goquery.Selection) bool {
 		if s.Closest(similarJobsAncestor).Length() > 0 {
 			return true
 		}
@@ -447,14 +478,7 @@ func extractSalaryBadge(doc *goquery.Document) (currency string, sal *salary.Sal
 		}
 		return true
 	})
-	if salaryText == "" {
-		return "", nil
-	}
-	parsed := salary.Parse(salaryText)
-	if parsed == nil {
-		return "", nil
-	}
-	return parsed.Currency, parsed
+	return salaryText
 }
 
 // extractDescription pulls the job description body, trying JSON-LD first
