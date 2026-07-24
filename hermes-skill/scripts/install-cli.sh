@@ -87,6 +87,28 @@ if [ "$expected" != "$actual" ]; then
 fi
 echo "-> verified (sha256 matches checksums.txt)"
 
+# --- optional cosign signature verification (proves checksums.txt came from
+# this repo's release workflow via keyless Sigstore signing; falls back
+# gracefully if cosign or the signature artifacts are absent) ---
+if curl -fsSL -o "${tmp}/checksums.txt.sig" "${base_url}/checksums.txt.sig" \
+  && curl -fsSL -o "${tmp}/checksums.txt.pem" "${base_url}/checksums.txt.pem"; then
+    if command -v cosign >/dev/null 2>&1; then
+        if cosign verify-blob \
+            --certificate "${tmp}/checksums.txt.pem" \
+            --signature "${tmp}/checksums.txt.sig" \
+            --certificate-identity-regexp "https://github.com/${REPO}/.github/workflows/release.yml@.*" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${tmp}/checksums.txt"; then
+            echo "-> verified cosign signature (keyless, this repo's release workflow)"
+        else
+            echo "-> cosign signature verification FAILED — do not run this binary." >&2
+            exit 1
+        fi
+    else
+        echo "-> (cosign not installed; skipped signature verification — sha256 still verified)"
+    fi
+fi
+
 chmod +x "${tmp}/${asset}"
 
 # --- install ---

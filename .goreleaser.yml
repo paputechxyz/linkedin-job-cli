@@ -45,6 +45,24 @@ checksum:
   name_template: "checksums.txt"
   algorithm: sha256
 
+# Keyless cosign signing of checksums.txt. The release workflow installs cosign
+# and grants id-token:write so cosign can mint a Sigstore certificate from the
+# GitHub Actions OIDC token. Verifying checksums.txt.sig proves the checksums
+# file (and thus every binary listed in it) was produced by this repo's release
+# workflow — the supply-chain escalation beyond pinning+checksums alone.
+signs:
+  - id: cosign
+    cmd: cosign
+    certificate: "${artifact}.pem"
+    signature: "${artifact}.sig"
+    args:
+      - sign-blob
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "--yes"
+      - "${artifact}"
+    artifacts: checksum
+
 snapshot:
   version_template: "{{ incpatch .Version }}-dev"
 
