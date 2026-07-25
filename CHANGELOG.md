@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.2](https://github.com/paputechxyz/linkedin-job-cli/compare/v0.3.1...v0.3.2) (2026-07-25)
+
+
+### Bug Fixes
+
+* bump go toolchain to 1.26.5 (crypto/tls + os vuln fixes) ([8911644](https://github.com/paputechxyz/linkedin-job-cli/commit/8911644e3cba87fbab06954f0ce638813e5b4771))
+* bump go toolchain to 1.26.5 for crypto/tls + os vuln fixes ([755bbd5](https://github.com/paputechxyz/linkedin-job-cli/commit/755bbd507976b389353b7f6c256cd109900849db))
+
 ## [0.3.1](https://github.com/paputechxyz/linkedin-job-cli/compare/v0.3.0...v0.3.1) (2026-07-24)
 
 
