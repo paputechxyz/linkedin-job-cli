@@ -1,7 +1,7 @@
 ---
 name: linkedin-jobs
 description: "Use when the user wants to search, fetch, score, or manage LinkedIn job postings — pull their personalized recommended feed, search the public job board, score fit against their preferences, find who to reach out to for a job, manage a job pipeline, or configure their job-search profile. Wraps the linkedin-jobs CLI."
-version: 0.3.1
+version: 0.3.2
 author: Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -45,7 +45,7 @@ first unresolved gate and guide the user through it before continuing.
 1. **Ensure the CLI is installed.** Check `command -v linkedin-jobs`.
    - **Missing → download a pinned release binary and verify it against the release's `checksums.txt` before executing it.** `LJ_VERSION` below is kept in sync with the `version:` at the top of this file (the `sync-version-pin` release job bumps both on each release); use whatever value is there:
      ```
-     LJ_VERSION=0.3.1
+     LJ_VERSION=0.3.2
      os=$(uname -s | tr '[:upper:]' '[:lower:]'); case "$os" in mingw*|msys*|cygwin*) os=windows;; esac
      arch=$(uname -m); case "$arch" in x86_64|amd64) arch=amd64;; arm64|aarch64) arch=arm64;; esac
      ext=""; [ "$os" = windows ] && ext=".exe"
