@@ -1,5 +1,9 @@
 # linkedin-jobs
 
+<p align="center">
+  <img src="docs/assets/logo.png" width="200" alt="linkedin-jobs logo">
+</p>
+
 Pull your personalized **LinkedIn "Recommended for you"** feed from your own
 browser session, search the public job board, and score every job with
 **custom rubrics you describe in plain English** — write a preferences

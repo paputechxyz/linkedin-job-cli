@@ -3,6 +3,7 @@ package cmd
 import (
 	"crypto/rand"
 	"crypto/subtle"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -31,6 +32,9 @@ var (
 	serveAddr string
 	servePort int
 )
+
+//go:embed assets/logo.png
+var logoPNG []byte
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
@@ -69,6 +73,7 @@ Read-only — no data is written. Binds to localhost only.`,
 		}
 		mux := http.NewServeMux()
 		mux.HandleFunc("GET /", ws.handleIndex)
+		mux.HandleFunc("GET /assets/logo.png", handleLogo)
 		mux.HandleFunc("POST /jobs/{id}/status", ws.handleStatus)
 		mux.HandleFunc("POST /jobs/{id}/view", ws.handleView)
 		mux.HandleFunc("POST /jobs/{id}/delete", ws.handleDelete)
@@ -96,6 +101,14 @@ func init() {
 // render path and the render-safety test share one parse entry point.
 func newPageTemplate() (*template.Template, error) {
 	return template.New("page").Parse(pageHTML)
+}
+
+// handleLogo serves the embedded brand logo. Immutable bytes, so headers are
+// set once and the body is written straight from the embed.
+func handleLogo(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=604800, immutable")
+	_, _ = w.Write(logoPNG)
 }
 
 // webServer holds the open store, the parsed page template, and a per-session
@@ -1015,13 +1028,10 @@ const pageHTML = `<!DOCTYPE html>
   .brand-mark {
     width: 30px; height: 30px;
     border-radius: 8px;
-    background: var(--accent);
-    display: grid;
-    place-items: center;
     flex: 0 0 auto;
-    box-shadow: 0 1px 3px color-mix(in oklch, var(--accent) 40%, transparent);
+    display: block;
+    object-fit: contain;
   }
-  .brand-mark svg { width: 16px; height: 16px; display: block; }
   .app-titles { min-width: 0; }
   .app-title {
     font-family: var(--font-mono);
@@ -1445,14 +1455,7 @@ const pageHTML = `<!DOCTYPE html>
   <div class="wrap">
 
     <header class="app-header">
-      <span class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 16 16" fill="none">
-          <circle cx="4" cy="4" r="1.6" fill="#fff"/>
-          <circle cx="12" cy="4" r="1.6" fill="#fff"/>
-          <circle cx="4" cy="12" r="1.6" fill="#fff"/>
-          <circle cx="12" cy="12" r="1.6" fill="#fff"/>
-        </svg>
-      </span>
+      <img class="brand-mark" src="/assets/logo.png" alt="linkedin-jobs logo" width="30" height="30" decoding="async">
       <div class="app-titles">
         <div class="app-title">linkedin-jobs</div>
         <div class="app-subtitle">local browser · status &amp; delete editable</div>
