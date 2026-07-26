@@ -8,9 +8,7 @@ each posting your way. Everything persists to a local SQLite store with
 offline full-text search.
 
 <p align="center">
-  <video src="docs/assets/intro.mp4" controls muted width="100%">
-    Intro video showing linkedin-jobs in action.
-  </video>
+  <video src="https://github.com/user-attachments/assets/9761f996-eea1-4cbc-ac62-3670ccbb4f44" controls muted width="640"></video>
 </p>
 
 ## Highlights
