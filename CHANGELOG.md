@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.3](https://github.com/paputechxyz/linkedin-job-cli/compare/v0.3.2...v0.3.3) (2026-07-26)
+
+
+### Bug Fixes
+
+* add intro video to README ([69a4174](https://github.com/paputechxyz/linkedin-job-cli/commit/69a4174253b8a5cbcc16200aad71af0c7ad307ae))
+* add intro video to README ([a04a2b6](https://github.com/paputechxyz/linkedin-job-cli/commit/a04a2b6fc52f4362e0113ed2e168ebfe98c388a5))
+
 ## [0.3.2](https://github.com/paputechxyz/linkedin-job-cli/compare/v0.3.1...v0.3.2) (2026-07-25)
 
 
