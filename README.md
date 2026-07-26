@@ -110,21 +110,20 @@ rm -rf ~/.linkedin-jobs        # config, cache, db
 
 If you don't use an agent, or want the binary on `PATH` yourself:
 
-- **Prebuilt binary** — download the asset for your platform from the
+- **Prebuilt binary** — run the canonical installer (the same one the skill
+  uses). It pins to the latest release tag and verifies the binary against
+  `checksums.txt` (sha256) plus a cosign keyless signature before installing to
+  `~/.local/bin`:
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/paputechxyz/linkedin-job-cli/main/hermes-skill/scripts/install-cli.sh \
+    -o /tmp/lj-install.sh && bash /tmp/lj-install.sh
+  ```
+  To do it by hand instead: download the asset for your platform from the
   [latest release](https://github.com/paputechxyz/linkedin-job-cli/releases/latest),
   verify it against the release's `checksums.txt`, put it on `PATH`
   (e.g. `~/.local/bin`), and `chmod +x` it. Assets:
   `linkedin-jobs_{darwin,linux}_{arm64,amd64}` and
-  `linkedin-jobs_windows_amd64.exe`:
-  ```bash
-  LJ_VER=$(curl -fsSL https://api.github.com/repos/paputechxyz/linkedin-job-cli/releases/latest | jq -r .tag_name | sed 's/^v//')
-  asset="linkedin-jobs_$(uname -s | tr A-Z a-z | sed 's/mingw.*\|msys\|cygwin/windows/')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
-  base="https://github.com/paputechxyz/linkedin-job-cli/releases/download/v${LJ_VER}"
-  curl -fL -o "$asset" "$base/$asset"
-  curl -fsSL -o checksums.txt "$base/checksums.txt"
-  grep "  $asset\$" checksums.txt | sha256sum -c -   # verify (shasum -a 256 on macOS)
-  install -m 0755 "$asset" ~/.local/bin/linkedin-jobs
-  ```
+  `linkedin-jobs_windows_amd64.exe`.
 - **From source** — requires Go 1.26+:
   ```bash
   just build
