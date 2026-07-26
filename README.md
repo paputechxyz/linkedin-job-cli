@@ -7,6 +7,12 @@ paragraph once and the LLM turns it into a weighted scoring model that rates
 each posting your way. Everything persists to a local SQLite store with
 offline full-text search.
 
+<p align="center">
+  <video src="docs/assets/intro.mp4" controls muted width="100%">
+    Intro video showing linkedin-jobs in action.
+  </video>
+</p>
+
 ## Highlights
 
 - `**recommended**` — your personalized job feed, authenticated via your own
