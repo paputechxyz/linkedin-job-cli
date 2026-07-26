@@ -1078,7 +1078,7 @@ const pageHTML = `<!DOCTYPE html>
     border-radius: var(--radius-card);
     padding: 16px;
     box-shadow: var(--shadow-card);
-    margin: 0;
+    margin: 6px 0 0;
   }
 
   /* Collapsible sections (all collapsed by default; <details> keeps it JS-free). */
