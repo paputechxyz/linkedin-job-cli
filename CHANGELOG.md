@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.4](https://github.com/paputechxyz/linkedin-job-cli/compare/v0.3.3...v0.3.4) (2026-07-26)
+
+
+### Bug Fixes
+
+* sticky sidebar layout for filters with collapsible sections ([6270d53](https://github.com/paputechxyz/linkedin-job-cli/commit/6270d53912afd989f5b33158a5809d20bf56dbab))
+
 ## [0.3.3](https://github.com/paputechxyz/linkedin-job-cli/compare/v0.3.2...v0.3.3) (2026-07-26)
 
 
