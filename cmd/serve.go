@@ -452,9 +452,30 @@ func hasFilterParams(q url.Values) bool {
 }
 
 // defaultFormVals returns the empty filter state (sort defaults to fit score,
-// page size defaults to 20, matching readForm's behavior for a bare form submit).
+// page size to defaultPageSize) used on a fresh visit or after Clear.
 func defaultFormVals() formVals {
 	return formVals{Sort: "score", PageSize: defaultPageSize}
+}
+
+// Section-active checkers report whether a collapsible filter group holds at
+// least one non-default value. The sidebar uses these to badge sections that
+// contain active filters, so users can see at a glance where their state lives
+// without expanding every section.
+func (f formVals) SearchActive() bool { return f.Q != "" }
+
+func (f formVals) CompanyLocationActive() bool { return f.Company != "" || f.Location != "" }
+
+func (f formVals) WorkSalaryActive() bool {
+	return f.Remote || f.Hybrid || f.Onsite || f.HasSalary ||
+		f.MinSalary != "" || f.MinSalaryCurrency != ""
+}
+
+func (f formVals) ScorePipelineActive() bool {
+	return f.MinScore != "" || f.Status != "" || f.Source != "" || f.SinceSearched != ""
+}
+
+func (f formVals) DisplayActive() bool {
+	return f.Sort != "score" || f.PageSize != defaultPageSize
 }
 
 // filtersFilePath returns the path to the persisted web-filter state, placed
@@ -1033,22 +1054,74 @@ const pageHTML = `<!DOCTYPE html>
   }
   .app-subtitle { font-size: 0.8125rem; color: var(--ink-3); line-height: 1.3; }
 
-  /* Filter bar */
+  /* Two-column layout: sticky filter sidebar + scrolling job list. */
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(240px, 280px) minmax(0, 1fr);
+    gap: 24px;
+    align-items: start;
+  }
+  .layout-sidebar {
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    /* Thin scrollbar so long sidebars don't visually crowd the form. */
+    scrollbar-width: thin;
+  }
+  .layout-main { min-width: 0; }
+
+  /* Filter bar (lives in the sidebar; fields stack vertically). */
   .filters {
     background: var(--card-bg);
     border: 1px solid var(--line);
     border-radius: var(--radius-card);
-    padding: 14px;
+    padding: 16px;
     box-shadow: var(--shadow-card);
-    margin-bottom: 14px;
+    margin: 0;
   }
-  .filters-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-  .filters-row + .filters-row { margin-top: 10px; }
+
+  /* Collapsible sections (all collapsed by default; <details> keeps it JS-free). */
+  details.filter-section { border-top: 1px solid var(--line); }
+  details.filter-section:first-of-type { border-top: none; }
+  details.filter-section > summary {
+    list-style: none; cursor: pointer;
+    padding: 10px 2px;
+    font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--ink-3);
+    display: flex; align-items: center; gap: 7px; user-select: none;
+  }
+  details.filter-section > summary::-webkit-details-marker { display: none; }
+  details.filter-section > summary::before {
+    content: ""; width: 0; height: 0;
+    border-left: 4px solid var(--ink-4);
+    border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+    transition: transform .14s;
+  }
+  details.filter-section[open] > summary::before { transform: rotate(90deg); }
+  details.filter-section > summary:hover { color: var(--ink-1); }
+  /* Pill badge that flags sections holding active (non-default) values. */
+  details.filter-section > summary .filter-section-badge {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 0.625rem; font-weight: 700; letter-spacing: 0;
+    text-transform: none;
+    background: var(--accent-soft); color: var(--accent);
+    padding: 1px 7px; border-radius: 999px;
+    line-height: 1.5;
+  }
+  details.filter-section[open] > summary .filter-section-badge { display: none; }
+  .filter-section-body {
+    display: flex; flex-direction: column; gap: 12px;
+    padding: 2px 2px 14px;
+  }
+  .filter-section-body .checks { gap: 10px; }
 
   .field { display: flex; flex-direction: column; gap: 4px; }
-  .field-grow { flex: 2 1 260px; }
-  .field-1 { flex: 1 1 130px; }
-  .field-narrow { flex: 0 1 108px; }
+
+  /* In the vertical sidebar, action buttons stretch full width. */
+  .filters .actions { margin-left: 0; width: 100%; }
+  .filters .actions .btn { flex: 1; text-align: center; }
 
   .field label {
     font-size: 0.6875rem;
@@ -1418,9 +1491,11 @@ const pageHTML = `<!DOCTYPE html>
 
   /* Responsive */
   @media (max-width: 720px) {
-    .field-grow { flex: 1 1 100%; }
-    .field-1 { flex: 1 1 45%; }
-    .field-narrow { flex: 1 1 30%; }
+    /* Collapse the sidebar layout: filters go back on top as a block. */
+    .layout { grid-template-columns: 1fr; gap: 0; }
+    .layout-sidebar { position: static; max-height: none; overflow: visible; margin-bottom: 14px; }
+    .filters .actions { margin-left: auto; width: auto; }
+    .filters .actions .btn { flex: none; }
     .actions { margin-left: 0; width: 100%; }
     .actions .btn { flex: 1; text-align: center; }
     .job { padding: 14px 14px 12px 16px; }
@@ -1459,95 +1534,126 @@ const pageHTML = `<!DOCTYPE html>
       </div>
     </header>
 
+    <div class="layout">
+    <aside class="layout-sidebar">
     <form class="filters" method="get" action="/" aria-label="Filters">
-      <div class="filters-row">
-        <div class="field field-grow">
-          <label for="q">Search (full-text or job id)</label>
-          <input type="search" id="q" name="q" value="{{.F.Q}}" placeholder="title, keyword, stack… or paste a job id">
+
+      <details class="filter-section">
+        <summary>Search{{if .F.SearchActive}}<span class="filter-section-badge">on</span>{{end}}</summary>
+        <div class="filter-section-body">
+          <div class="field">
+            <label for="q">Full-text or job id</label>
+            <input type="search" id="q" name="q" value="{{.F.Q}}" placeholder="title, keyword, stack… or paste a job id">
+          </div>
         </div>
-        <div class="field field-1">
-          <label for="company">Company</label>
-          <input type="text" id="company" name="company" value="{{.F.Company}}" placeholder="any">
+      </details>
+
+      <details class="filter-section">
+        <summary>Company &amp; Location{{if .F.CompanyLocationActive}}<span class="filter-section-badge">on</span>{{end}}</summary>
+        <div class="filter-section-body">
+          <div class="field">
+            <label for="company">Company</label>
+            <input type="text" id="company" name="company" value="{{.F.Company}}" placeholder="any">
+          </div>
+          <div class="field">
+            <label for="location">Location</label>
+            <input type="text" id="location" name="location" value="{{.F.Location}}" placeholder="any">
+          </div>
         </div>
-        <div class="field field-1">
-          <label for="location">Location</label>
-          <input type="text" id="location" name="location" value="{{.F.Location}}" placeholder="any">
+      </details>
+
+      <details class="filter-section">
+        <summary>Work &amp; Salary{{if .F.WorkSalaryActive}}<span class="filter-section-badge">on</span>{{end}}</summary>
+        <div class="filter-section-body">
+          <div class="checks">
+            <label class="check"><input type="checkbox" id="remote" name="remote" value="1"{{if .F.Remote}} checked{{end}}> remote</label>
+            <label class="check"><input type="checkbox" id="hybrid" name="hybrid" value="1"{{if .F.Hybrid}} checked{{end}}> hybrid</label>
+            <label class="check"><input type="checkbox" id="onsite" name="onsite" value="1"{{if .F.Onsite}} checked{{end}}> on-site</label>
+            <label class="check"><input type="checkbox" id="has_salary" name="has_salary" value="1"{{if .F.HasSalary}} checked{{end}}> has salary</label>
+          </div>
+          <div class="field">
+            <label for="min_salary">Min salary</label>
+            <input type="text" id="min_salary" name="min_salary" value="{{.F.MinSalary}}" placeholder="200k">
+          </div>
+          <div class="field">
+            <label for="salary_currency">Currency</label>
+            <select id="salary_currency" name="salary_currency">
+              <option value="">raw (any)</option>
+              <option value="CAD"{{if eq .F.MinSalaryCurrency "CAD"}} selected{{end}}>CAD</option>
+              <option value="USD"{{if eq .F.MinSalaryCurrency "USD"}} selected{{end}}>USD</option>
+              <option value="EUR"{{if eq .F.MinSalaryCurrency "EUR"}} selected{{end}}>EUR</option>
+              <option value="GBP"{{if eq .F.MinSalaryCurrency "GBP"}} selected{{end}}>GBP</option>
+              <option value="AUD"{{if eq .F.MinSalaryCurrency "AUD"}} selected{{end}}>AUD</option>
+            </select>
+          </div>
         </div>
-        <div class="field field-narrow">
-          <label for="min_salary">Min salary</label>
-          <input type="text" id="min_salary" name="min_salary" value="{{.F.MinSalary}}" placeholder="200k">
+      </details>
+
+      <details class="filter-section">
+        <summary>Score &amp; Pipeline{{if .F.ScorePipelineActive}}<span class="filter-section-badge">on</span>{{end}}</summary>
+        <div class="filter-section-body">
+          <div class="field">
+            <label for="min_score">Min score</label>
+            <input type="number" id="min_score" name="min_score" value="{{.F.MinScore}}" placeholder="0–100">
+          </div>
+          <div class="field">
+            <label for="status">Status</label>
+            <select id="status" name="status">
+              <option value="">any</option>
+              <option value="new"{{if eq .F.Status "new"}} selected{{end}}>new</option>
+              <option value="viewed"{{if eq .F.Status "viewed"}} selected{{end}}>viewed</option>
+              <option value="saved"{{if eq .F.Status "saved"}} selected{{end}}>saved</option>
+              <option value="applied"{{if eq .F.Status "applied"}} selected{{end}}>applied</option>
+              <option value="rejected"{{if eq .F.Status "rejected"}} selected{{end}}>rejected</option>
+              <option value="filtered"{{if eq .F.Status "filtered"}} selected{{end}}>filtered</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="source">Source</label>
+            <select id="source" name="source">
+              <option value="">any</option>
+              <option value="recommended"{{if eq .F.Source "recommended"}} selected{{end}}>recommended</option>
+              <option value="search"{{if eq .F.Source "search"}} selected{{end}}>search</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="since_searched">Added since</label>
+            <input type="text" id="since_searched" name="since_searched" value="{{.F.SinceSearched}}" placeholder="2026-07-03 00:00:00" title="Only show jobs first stored on or after this date/time">
+          </div>
         </div>
-        <div class="field field-narrow">
-          <label for="salary_currency">Currency</label>
-          <select id="salary_currency" name="salary_currency">
-            <option value="">raw (any)</option>
-            <option value="CAD"{{if eq .F.MinSalaryCurrency "CAD"}} selected{{end}}>CAD</option>
-            <option value="USD"{{if eq .F.MinSalaryCurrency "USD"}} selected{{end}}>USD</option>
-            <option value="EUR"{{if eq .F.MinSalaryCurrency "EUR"}} selected{{end}}>EUR</option>
-            <option value="GBP"{{if eq .F.MinSalaryCurrency "GBP"}} selected{{end}}>GBP</option>
-            <option value="AUD"{{if eq .F.MinSalaryCurrency "AUD"}} selected{{end}}>AUD</option>
-          </select>
+      </details>
+
+      <details class="filter-section">
+        <summary>Display{{if .F.DisplayActive}}<span class="filter-section-badge">on</span>{{end}}</summary>
+        <div class="filter-section-body">
+          <div class="field">
+            <label for="sort">Sort</label>
+            <select id="sort" name="sort">
+              <option value="score"{{if eq .F.Sort "score"}} selected{{end}}>fit score</option>
+              <option value="searched"{{if eq .F.Sort "searched"}} selected{{end}}>recently searched</option>
+              <option value="salary"{{if eq .F.Sort "salary"}} selected{{end}}>salary</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="page_size">Per page</label>
+            {{$ps := .F.PageSizeOrDefault}}
+            <select id="page_size" name="page_size">
+              <option value="20"{{if eq $ps 20}} selected{{end}}>20</option>
+              <option value="50"{{if eq $ps 50}} selected{{end}}>50</option>
+              <option value="100"{{if eq $ps 100}} selected{{end}}>100</option>
+            </select>
+          </div>
         </div>
-        <div class="field field-narrow">
-          <label for="min_score">Min score</label>
-          <input type="number" id="min_score" name="min_score" value="{{.F.MinScore}}" placeholder="0–100">
-        </div>
-      </div>
-      <div class="filters-row">
-        <div class="field field-1">
-          <label for="status">Status</label>
-          <select id="status" name="status">
-            <option value="">any</option>
-            <option value="new"{{if eq .F.Status "new"}} selected{{end}}>new</option>
-            <option value="viewed"{{if eq .F.Status "viewed"}} selected{{end}}>viewed</option>
-            <option value="saved"{{if eq .F.Status "saved"}} selected{{end}}>saved</option>
-            <option value="applied"{{if eq .F.Status "applied"}} selected{{end}}>applied</option>
-            <option value="rejected"{{if eq .F.Status "rejected"}} selected{{end}}>rejected</option>
-            <option value="filtered"{{if eq .F.Status "filtered"}} selected{{end}}>filtered</option>
-          </select>
-        </div>
-        <div class="field field-1">
-          <label for="source">Source</label>
-          <select id="source" name="source">
-            <option value="">any</option>
-            <option value="recommended"{{if eq .F.Source "recommended"}} selected{{end}}>recommended</option>
-            <option value="search"{{if eq .F.Source "search"}} selected{{end}}>search</option>
-          </select>
-        </div>
-        <div class="field field-1">
-          <label for="sort">Sort</label>
-          <select id="sort" name="sort">
-            <option value="score"{{if eq .F.Sort "score"}} selected{{end}}>fit score</option>
-            <option value="searched"{{if eq .F.Sort "searched"}} selected{{end}}>recently searched</option>
-            <option value="salary"{{if eq .F.Sort "salary"}} selected{{end}}>salary</option>
-          </select>
-        </div>
-        <div class="field field-narrow">
-          <label for="page_size">Per page</label>
-          {{$ps := .F.PageSizeOrDefault}}
-          <select id="page_size" name="page_size">
-            <option value="20"{{if eq $ps 20}} selected{{end}}>20</option>
-            <option value="50"{{if eq $ps 50}} selected{{end}}>50</option>
-            <option value="100"{{if eq $ps 100}} selected{{end}}>100</option>
-          </select>
-        </div>
-        <div class="field field-narrow">
-          <label for="since_searched">Added since</label>
-          <input type="text" id="since_searched" name="since_searched" value="{{.F.SinceSearched}}" placeholder="2026-07-03 00:00:00" title="Only show jobs first stored on or after this date/time">
-        </div>
-        <div class="checks">
-          <label class="check"><input type="checkbox" id="remote" name="remote" value="1"{{if .F.Remote}} checked{{end}}> remote</label>
-          <label class="check"><input type="checkbox" id="hybrid" name="hybrid" value="1"{{if .F.Hybrid}} checked{{end}}> hybrid</label>
-          <label class="check"><input type="checkbox" id="onsite" name="onsite" value="1"{{if .F.Onsite}} checked{{end}}> on-site</label>
-          <label class="check"><input type="checkbox" id="has_salary" name="has_salary" value="1"{{if .F.HasSalary}} checked{{end}}> has salary</label>
-        </div>
-        <div class="actions">
-          <button class="btn btn-primary" type="submit">Apply</button>
-          <a href="/?clear=1" class="btn btn-ghost">Clear</a>
-        </div>
+      </details>
+
+      <div class="actions">
+        <button class="btn btn-primary" type="submit">Apply</button>
+        <a href="/?clear=1" class="btn btn-ghost">Clear</a>
       </div>
     </form>
+    </aside>
 
+    <section class="layout-main">
     {{if .Error}}<div class="err">Search error: {{.Error}}<br><em>Tip: wrap multi-word phrases in quotes, e.g. "staff engineer".</em></div>{{end}}
     {{if eq .Mode "search"}}<div class="notice">Showing full-text search results ranked by relevance. Column filters and sort are ignored while searching — clear the search box to filter and sort.</div>{{end}}
     {{if eq .Mode "id"}}<div class="notice">Showing the stored job with id <strong>{{.F.Q}}</strong>. Clear the search box to filter and sort.</div>{{end}}
@@ -1671,6 +1777,9 @@ const pageHTML = `<!DOCTYPE html>
       {{if .Pagination.HasNext}}<a class="pager-nav" href="{{.Pagination.NextURL}}" rel="next">Next ›</a>{{else}}<span class="pager-nav pager-nav--disabled" aria-disabled="true">Next ›</span>{{end}}
     </nav>
     {{end}}
+
+    </section>
+    </div>
 
     <footer class="app-footer">
       Status &amp; delete editable · everything else read-only · <code>linkedin-jobs serve</code> · localhost only
