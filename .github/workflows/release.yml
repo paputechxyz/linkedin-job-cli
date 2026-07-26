@@ -131,7 +131,6 @@ jobs:
           fi
           sed -i "s/^VERSION=\"${old}\"/VERSION=\"${new}\"/" hermes-skill/scripts/install-cli.sh
           sed -i "s/^version: ${old}$/version: ${new}/" hermes-skill/SKILL.md
-          sed -i "s/LJ_VERSION=${old}/LJ_VERSION=${new}/" hermes-skill/SKILL.md
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "chore(release): sync installer/SKILL pin to ${new}"
