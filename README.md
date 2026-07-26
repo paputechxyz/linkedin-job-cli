@@ -8,7 +8,9 @@ each posting your way. Everything persists to a local SQLite store with
 offline full-text search.
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/9761f996-eea1-4cbc-ac62-3670ccbb4f44" controls muted width="640"></video>
+  <a href="https://www.youtube.com/shorts/9_SiM2UVm_I">
+    <img src="https://img.youtube.com/vi/9_SiM2UVm_I/maxresdefault.jpg" width="640" alt="Intro video — click to play on YouTube">
+  </a>
 </p>
 
 ## Highlights
