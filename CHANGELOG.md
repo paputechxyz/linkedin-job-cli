@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.5](https://github.com/paputechxyz/linkedin-job-cli/compare/v0.3.4...v0.3.5) (2026-07-27)
+
+
+### Bug Fixes
+
+* parse amend response correctly and apply profile field changes ([486aba2](https://github.com/paputechxyz/linkedin-job-cli/commit/486aba28730207db6698d0702110bf2b58a28fed))
+* parse amend response correctly and apply profile field changes ([ae8d4ca](https://github.com/paputechxyz/linkedin-job-cli/commit/ae8d4ca51288fc8655ff5ed793f377d74a701a8d))
+
 ## [0.3.4](https://github.com/paputechxyz/linkedin-job-cli/compare/v0.3.3...v0.3.4) (2026-07-26)
 
 
