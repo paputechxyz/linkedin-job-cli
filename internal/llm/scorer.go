@@ -256,17 +256,28 @@ func clampRatings(r map[string]models.DynamicRating) map[string]models.DynamicRa
 	return r
 }
 
-// extractJSON pulls the outermost {...} block out of content that may be wrapped
-// in markdown code fences or surrounded by prose. Returns "" if none found.
+// extractJSON pulls the outermost {...} or [...] block out of content that may
+// be wrapped in markdown code fences or surrounded by prose. Whichever bracket
+// appears first wins (an array `[...]` is not stripped down to its inner
+// objects). Returns "" if none found.
 func extractJSON(content string) string {
 	s := strings.TrimSpace(content)
 	s = strings.TrimPrefix(s, "```json")
 	s = strings.TrimPrefix(s, "```")
 	s = strings.TrimSuffix(s, "```")
 	s = strings.TrimSpace(s)
-	start := strings.Index(s, "{")
-	end := strings.LastIndex(s, "}")
-	if start == -1 || end == -1 || end <= start {
+	arrStart := strings.Index(s, "[")
+	objStart := strings.Index(s, "{")
+	var start, end int
+	switch {
+	case arrStart != -1 && (objStart == -1 || arrStart < objStart):
+		start, end = arrStart, strings.LastIndex(s, "]")
+	case objStart != -1:
+		start, end = objStart, strings.LastIndex(s, "}")
+	default:
+		return ""
+	}
+	if end <= start {
 		return ""
 	}
 	return s[start : end+1]

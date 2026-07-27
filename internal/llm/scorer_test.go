@@ -366,3 +366,54 @@ func TestEnrichPrompt_NilProfileFallsBackToNA(t *testing.T) {
 		}
 	}
 }
+
+// TestExtractJSON covers the four shapes extractJSON must handle: object,
+// array, code-fenced array, and array surrounded by prose. The array cases
+// are a regression for a bug where the brackets were stripped, breaking
+// GenerateAmend.
+func TestExtractJSON(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "bare object",
+			in:   `{"a":1}`,
+			want: `{"a":1}`,
+		},
+		{
+			name: "bare array of objects",
+			in:   `[{"id":"a"},{"id":"b"}]`,
+			want: `[{"id":"a"},{"id":"b"}]`,
+		},
+		{
+			name: "code-fenced array",
+			in:   "```json\n[{\"id\":\"a\"},{\"id\":\"b\"}]\n```",
+			want: `[{"id":"a"},{"id":"b"}]`,
+		},
+		{
+			name: "array surrounded by prose",
+			in:   `Here you go: [{"id":"a"},{"id":"b"}] hope that helps`,
+			want: `[{"id":"a"},{"id":"b"}]`,
+		},
+		{
+			name: "object with nested array value keeps object form",
+			in:   `{"rubrics":[{"id":"a"}]}`,
+			want: `{"rubrics":[{"id":"a"}]}`,
+		},
+		{
+			name: "no json",
+			in:   `just words`,
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractJSON(tt.in)
+			if got != tt.want {
+				t.Errorf("extractJSON(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
