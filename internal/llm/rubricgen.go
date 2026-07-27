@@ -85,60 +85,128 @@ type amendChange struct {
 const amendPrompt = `Here is the user's current set of scoring rubrics (JSON):
 %s
 
+Here is the user's current structured profile (JSON):
+%s
+
 The user wants to amend them with this follow-up paragraph:
 %s
 
-Return ONLY a JSON array (no prose, no code fences) of the rubrics to ADD or CHANGE. Even a single change must be wrapped in an array, e.g. a weight edit returns [{"id": "...", "weight": N}]. For each element, include "id", and whichever of "description", "items", "applies_to", and "weight" apply. Do NOT include rubrics the paragraph does not mention — they must be preserved unchanged. A new rubric returns id, description, and items if it is a list. Use "applies_to" (a list of arrangements from remote/hybrid/onsite) ONLY when the rubric should be scored conditionally — e.g. a hybrid-only location constraint has applies_to: ["hybrid", "onsite"] so remote jobs skip it; to clear an existing applies_to and make the rubric unconditional, return an empty array [].`
+Return ONLY a JSON object (no prose, no code fences) describing the rubrics and
+structured profile fields that should CHANGE. OMIT any key the paragraph does
+not mention — unmentioned keys are preserved untouched by the caller. The
+object uses EXACTLY these keys when present:
 
-// GenerateAmend returns the rubric changes implied by a follow-up paragraph
-// against the existing set. The caller merges them (MergeRubrics) so untouched
-// rubrics survive.
-func GenerateAmend(existing []config.Rubric, paragraph string, provider *Provider) ([]amendChange, error) {
+"rubrics": array of rubrics to ADD or CHANGE. Each element has:
+  - "id": a short snake_case identifier (existing id = change; new id = add),
+  - "description": one phrase on what to look for,
+  - "items": list of strings, ONLY for list-type criteria (omit otherwise),
+  - "applies_to": OPTIONAL list of arrangements from remote/hybrid/onsite, only
+    when the rubric should be scored conditionally (e.g. a hybrid-only location
+    constraint has applies_to: ["hybrid","onsite"]; an empty array [] clears it),
+  - "weight": OPTIONAL new weight (1-10).
+
+"work_arrangement": new full list of preferred arrangements among remote/hybrid/onsite (replaces the existing list),
+"min_salary": new salary floor as a number,
+"min_salary_currency": one of USD/CAD/EUR/GBP/AUD/INR/JPY,
+"location": new preferred location as a single string (e.g. "Seattle, WA, USA"),
+"preferred_tech": new full list of preferred technologies (replaces the existing list),
+"avoided_tech": new full list of technologies to penalize (replaces the existing list).
+
+Salary and work_arrangement are SYSTEM rubrics scored from the structured
+fields — do NOT add them as rubrics; emit them as min_salary / work_arrangement
+/ min_salary_currency / location instead. The structured fields are REPLACE
+semantics: if the paragraph names a new city or salary, the new value replaces
+the old one (not appended).`
+
+// AmendResult captures both rubric changes and structured profile field changes
+// extracted from a follow-up paragraph. Only fields the paragraph mentioned are
+// populated; the caller preserves everything else. Pointer / slice fields use
+// nil/empty as "paragraph did not mention".
+type AmendResult struct {
+	Rubrics           []amendChange `json:"rubrics"`
+	WorkArrangement   []string      `json:"work_arrangement"`
+	MinSalary         *float64      `json:"min_salary"`
+	MinSalaryCurrency string        `json:"min_salary_currency"`
+	Location          string        `json:"location"`
+	PreferredTech     []string      `json:"preferred_tech"`
+	AvoidedTech       []string      `json:"avoided_tech"`
+}
+
+// GenerateAmend returns the rubric + structured-profile changes implied by a
+// follow-up paragraph against the existing settings. The caller merges each
+// portion (MergeRubrics for rubrics, field-by-field for profile) so untouched
+// rubrics and profile fields survive.
+func GenerateAmend(existing []config.Rubric, profile config.ProfileSettings, paragraph string, provider *Provider) (AmendResult, error) {
 	existingJSON, _ := json.Marshal(existing)
+	profileJSON, _ := json.Marshal(profile)
 	content, err := Chat(provider, rubricGenSystem,
-		fmt.Sprintf(amendPrompt, string(existingJSON), paragraph), 2048, 0.2)
+		fmt.Sprintf(amendPrompt, string(existingJSON), string(profileJSON), paragraph), 2048, 0.2)
 	if err != nil {
-		return nil, err
+		return AmendResult{}, err
 	}
 	jstr := extractJSON(content)
 	if jstr == "" {
-		return nil, fmt.Errorf("could not parse amend response: %s", truncateForError(content))
+		return AmendResult{}, fmt.Errorf("could not parse amend response: %s", truncateForError(content))
 	}
-	changes, err := parseAmendChanges(jstr)
+	res, err := parseAmendResult(jstr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid amend JSON: %w", err)
+		return AmendResult{}, fmt.Errorf("invalid amend JSON: %w", err)
 	}
-	return changes, nil
+	return res, nil
 }
 
-// parseAmendChanges accepts the three shapes an LLM may emit for an amend
-// response: a bare JSON array [...], a wrapper object {"rubrics": [...]}, or
-// (defensively) a single bare object {...} describing one change. All are
-// normalized to a slice.
-func parseAmendChanges(jstr string) ([]amendChange, error) {
+// parseAmendResult accepts the shapes an LLM may emit for an amend response:
+// the canonical wrapper object {"rubrics":[...], "location":"...", ...}, a bare
+// JSON array [...], a wrapper object with only {"rubrics":[...]}, or
+// (defensively) a single bare object describing one rubric change. All are
+// normalized into an AmendResult.
+func parseAmendResult(jstr string) (AmendResult, error) {
 	trimmed := strings.TrimSpace(jstr)
 	if trimmed == "" {
-		return nil, fmt.Errorf("empty response")
+		return AmendResult{}, fmt.Errorf("empty response")
 	}
-	// Array form: [...].
+	// Bare array form: treat as rubric-only changes (back-compat for older
+	// prompts and LLMs that return only rubric edits).
 	if trimmed[0] == '[' {
 		var changes []amendChange
 		if err := json.Unmarshal([]byte(jstr), &changes); err != nil {
-			return nil, err
+			return AmendResult{}, err
 		}
-		return changes, nil
+		return AmendResult{Rubrics: changes}, nil
 	}
-	// Object forms: try the {"rubrics": [...]} wrapper first.
-	var wrap struct {
-		Rubrics []amendChange `json:"rubrics"`
+	// Object form. Unmarshal into the full AmendResult; if nothing populated,
+	// fall through to single-bare-object, then comma-separated recovery before
+	// finally rejecting. (A single bare rubric object like {"id":"...","weight":N}
+	// unmarshals to an empty AmendResult because Go's decoder ignores unknown
+	// fields — so we cannot reject the empty case outright.)
+	var res AmendResult
+	if err := json.Unmarshal([]byte(jstr), &res); err == nil && hasAmendField(res) {
+		return res, nil
 	}
-	if err := json.Unmarshal([]byte(jstr), &wrap); err == nil && wrap.Rubrics != nil {
-		return wrap.Rubrics, nil
-	}
-	// Fall back to a single bare object {"id": "...", "weight": N}.
+	// Single bare object {"id":"...","weight":N} without a "rubrics" wrapper.
 	var single amendChange
 	if err := json.Unmarshal([]byte(jstr), &single); err == nil && single.ID != "" {
-		return []amendChange{single}, nil
+		return AmendResult{Rubrics: []amendChange{single}}, nil
 	}
-	return nil, fmt.Errorf("could not parse amend response: %s", truncateForError(jstr))
+	// Last resort: the extractor stripped array brackets from a multi-object
+	// response. Re-wrap "{...}, {...}" into "[...]" and retry once. We only
+	// do this when there is clearly more than one object (a `},{` boundary),
+	// otherwise we'd mask legitimate single-object parse failures.
+	if trimmed[0] == '{' && strings.Contains(trimmed, "},") && strings.HasSuffix(trimmed, "}") {
+		wrapped := "[" + trimmed + "]"
+		var changes []amendChange
+		if err := json.Unmarshal([]byte(wrapped), &changes); err == nil && len(changes) > 1 {
+			return AmendResult{Rubrics: changes}, nil
+		}
+	}
+	return AmendResult{}, fmt.Errorf("could not parse amend response: %s", truncateForError(jstr))
+}
+
+// hasAmendField reports whether the AmendResult has at least one populated
+// field — used to distinguish a real (possibly sparse) amend response from a
+// bare object that the JSON decoder silently accepted.
+func hasAmendField(r AmendResult) bool {
+	return len(r.Rubrics) > 0 || r.Location != "" || r.MinSalary != nil ||
+		r.MinSalaryCurrency != "" || len(r.WorkArrangement) > 0 ||
+		len(r.PreferredTech) > 0 || len(r.AvoidedTech) > 0
 }
