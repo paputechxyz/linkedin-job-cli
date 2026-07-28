@@ -39,8 +39,8 @@ Exits 1 if any check fails, 0 if all pass.`,
 			ok = false
 			fmt.Printf("  [✗] no provider resolved: %v\n", err)
 			fmt.Println("      fix: set OPENAI_API_KEY / LJ_LLM_* / ANTHROPIC_API_KEY,")
-			fmt.Println("            log in with `claude` (Claude Code session reuse),")
-			fmt.Println("            or rely on opencode discovery")
+			fmt.Println("            rely on opencode discovery,")
+			fmt.Println("            or log in with `claude` (Claude Code session reuse)")
 		} else {
 			fmt.Printf("  [✓] provider resolved: source=%s model=%s base=%s key=%s\n",
 				p.Source, p.Model, p.BaseURL, p.Redacted())
