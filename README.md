@@ -417,15 +417,16 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
 Resolution order (first match wins): `LJ_LLM_*` / `OPENAI_API_KEY` env →
-`ANTHROPIC_API_KEY` env → **`claude` CLI (Claude Code session reuse)** →
-opencode's stored credentials. Explicit env vars win over both, so you can
-override either. The `claude` CLI path detects a logged-in `claude` on PATH
+`ANTHROPIC_API_KEY` env → opencode's stored credentials → **`claude` CLI
+(Claude Code session reuse, last fallback)**. Explicit env vars win over both,
+so you can override either. The opencode path reuses the provider configured in
+opencode (e.g. your GLM Coding Plan key → `glm-5.2`); `ANTHROPIC_API_KEY`
+targets Anthropic's OpenAI-compatible endpoint. If no opencode credentials are
+found, the `claude` CLI path detects a logged-in `claude` on PATH
 (`claude auth status`) and shells out to `claude -p` per call, reusing your
 Claude Pro/Max subscription **without a separate API key** — handy when running
 under a Claude Code OAuth session, whose token is not exposed to subprocesses.
-Set `LJ_LLM_DISABLE_CLAUDE_CLI=1` to force the HTTP/key path. The opencode path
-reuses the provider configured in opencode (e.g. your GLM Coding Plan key →
-`glm-5.2`); `ANTHROPIC_API_KEY` targets Anthropic's OpenAI-compatible endpoint.
+Set `LJ_LLM_DISABLE_CLAUDE_CLI=1` to force the HTTP/key path.
 
 ```bash
 linkedin-jobs config show             # resolved provider (key redacted) + settings

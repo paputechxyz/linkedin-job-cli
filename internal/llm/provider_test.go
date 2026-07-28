@@ -276,18 +276,20 @@ func TestResolve_AnthropicEnvBeatsClaudeCLI(t *testing.T) {
 	}
 }
 
-func TestResolve_ClaudeCLIBeatsOpencode(t *testing.T) {
+func TestResolve_OpencodeBeatsClaudeCLI(t *testing.T) {
 	home := clearProviderEnv(t)
 	enableFakeClaudeCLI(t, true)
-	// opencode creds exist too — claude-cli must take priority.
+	// claude CLI is available too, but opencode creds take priority.
 	writeJSON(t, filepath.Join(home, ".local", "share", "opencode", "auth.json"),
 		map[string]map[string]string{"zai-coding-plan": {"type": "api", "key": "zai-secret"}})
+	writeJSON(t, filepath.Join(home, ".config", "opencode", "opencode.json"),
+		map[string]string{"model": "zai-coding-plan/glm-5.2"})
 	p, err := Resolve(config.Config{})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if p.Kind != backendClaudeCLI {
-		t.Errorf("claude-cli must beat opencode: %+v", p)
+	if p.Source != "opencode" {
+		t.Errorf("opencode must beat claude-cli: %+v", p)
 	}
 }
 

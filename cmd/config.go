@@ -22,8 +22,8 @@ var configShowCmd = &cobra.Command{
 		p, err := llm.Resolve(cfg)
 		if err != nil {
 			fmt.Println("No provider resolved:", err)
-			fmt.Println("Set OPENAI_API_KEY / LJ_LLM_* / ANTHROPIC_API_KEY, log in with")
-			fmt.Println("`claude` (session reuse), or rely on opencode discovery.")
+			fmt.Println("Set OPENAI_API_KEY / LJ_LLM_* / ANTHROPIC_API_KEY, rely on")
+			fmt.Println("opencode discovery, or log in with `claude` (session reuse, last fallback).")
 			return nil
 		}
 		fmt.Printf("Provider: %s\n", p.Source)

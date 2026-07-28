@@ -70,8 +70,8 @@ func (p *Provider) Apply(req *http.Request) {
 //  1. LJ_LLM_* / OPENAI_* env (explicit env override)
 //  2. ANTHROPIC_API_KEY env (Anthropic preset; honors a redirected
 //     ANTHROPIC_BASE_URL, e.g. an opencode/Hermes session pointing it at z.ai)
-//  3. claude CLI (reuses a logged-in Claude Code session's subscription)
-//  4. opencode stored credentials (implicit discovery)
+//  3. opencode stored credentials (implicit discovery)
+//  4. claude CLI (reuses a logged-in Claude Code session's subscription)
 //  5. ErrNoProvider
 //
 // Resolution is env-driven only — there is no persisted provider file. cfg
@@ -101,10 +101,10 @@ func Resolve(cfg config.Config) (*Provider, error) {
 		p.Source = "anthropic-env"
 		return p, nil
 	}
-	if p, ok := FromClaudeCLI(); ok {
+	if p, ok := FromOpencode(); ok {
 		return p, nil
 	}
-	if p, ok := FromOpencode(); ok {
+	if p, ok := FromClaudeCLI(); ok {
 		return p, nil
 	}
 	return nil, ErrNoProvider
