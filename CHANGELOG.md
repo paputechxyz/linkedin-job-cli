@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.6](https://github.com/paputechxyz/linkedin-job-cli/compare/v0.3.5...v0.3.6) (2026-07-28)
+
+
+### Bug Fixes
+
+* **llm:** prefer opencode credentials over claude CLI ([f310358](https://github.com/paputechxyz/linkedin-job-cli/commit/f310358811042a68c60237198a0f3c32a4eedaad))
+* **llm:** resolve opencode credentials before claude CLI fallback ([b565b2a](https://github.com/paputechxyz/linkedin-job-cli/commit/b565b2a1fd0fb5cd5e4afe94704cd2f001ece9b2))
+
 ## [0.3.5](https://github.com/paputechxyz/linkedin-job-cli/compare/v0.3.4...v0.3.5) (2026-07-27)
 
 
